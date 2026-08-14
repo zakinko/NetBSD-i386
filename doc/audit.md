@@ -27,7 +27,7 @@ pkgsrc 側の状態は **CVS HEAD で確認済み** (GitHub のミラーでは�
 | ncurses 6.6 | 1 | **6.6 に修正が入っている** | pkgsrc のエントリ。誤検知 |
 | libxml2 2.15.1 | 6 | **5 件は 2.15.2 で修正済み。開発も再開** | pkgsrc の版上げ (2.15.1 → 2.15.3) |
 | augeas 1.14.1 | 1 | master に修正あり・未リリース | pkgsrc に patch。**この repo に入れた** |
-| emacs26-nox11 | 2 | 26 系は 2019 で終了 | `EMACS_TYPE` を `emacs30nox` に |
+| emacs26-nox11 | 2 | 26 系は 2019 で終了 | **上げられない**。anthy-elisp が付いてこない。`IGNORE_URL` で黙らせた |
 | lua53 | eol | Lua 5.3 サポート終了 | lua54 / lua55 へ |
 | expat 2.8.2 | 1 | 健在だが本件だけ未修正 | 待ち |
 | python313 3.13.15 | 8 | 健在。未リリース | 待ち |
@@ -115,7 +115,7 @@ pkgsrc がこの package に持っている patch は `patch-configure` の一�
 それが 2.15.3 にそのまま当たることを確認した。つまり版上げは
 `DISTNAME` と `distinfo` だけの話。
 
-- 手元向け: [overlay/textproc/libxml2](../overlay/textproc/libxml2/) に入れた。
+- 手元向け: [pkgsrc-zakinko の overlay/textproc/libxml2](https://github.com/zakinko/pkgsrc-zakinko/tree/main/overlay/textproc/libxml2) に入れた。
   次の CI で 2.15.3 になる。
 - 上流向け: [doc/upstream/libxml2.diff](upstream/libxml2.diff) と
   [libxml2.mail](upstream/libxml2.mail)。宛先は pkgsrc-users@NetBSD.org
@@ -148,7 +148,7 @@ Debian / SUSE / Mageia は独自パッチを出荷している。
 
 ### どこを直すか
 
-**[overlay/sysutils/augeas/patches/patch-src_fa.c](../overlay/sysutils/augeas/patches/patch-src_fa.c) に入れてある。**
+**[pkgsrc-zakinko の overlay/sysutils/augeas](https://github.com/zakinko/pkgsrc-zakinko/tree/main/overlay/sysutils/augeas) に入れてある。**
 CI がビルド前に pkgsrc へ被せる。手元では次の更新で `augeas-1.14.1nb2` として
 入れ替わる。
 
@@ -169,7 +169,7 @@ pkgsrc 本体に入れてもらうことで、送るものは
 [doc/upstream/augeas.diff](upstream/augeas.diff) と
 [augeas.mail](upstream/augeas.mail) に用意した。`sysutils/augeas` の
 MAINTAINER は bsiegert@NetBSD.org。取り込まれたら
-`overlay/sysutils/augeas` は消す。
+pkgsrc-zakinko の `overlay/sysutils/augeas` は消す。
 
 ## emacs26-nox11 / CVE-2022-45939, CVE-2024-39331 — 設定一行
 
@@ -180,27 +180,77 @@ MAINTAINER は bsiegert@NetBSD.org。取り込まれたら
 無い。Emacs 26 は 2019 年で終わっている。**上流が直せないのではなく、直す
 対象から外れている**。28.2 と 29.4 でそれぞれ修正済み。
 
-pkgsrc には emacs30 があり、`emacs30<30.1` しか挙がっていない。
-[mk.conf](../mk.conf) の
+pkgsrc には emacs30 (30.2) があり、`emacs30<30.1` しか挙がっていない。
+一見すると `EMACS_TYPE` を `emacs30nox` にすれば消える話に見える。
+
+### だが上げられない。日本語入力が死ぬ
+
+`~/.emacs` が
+
+```elisp
+(load-library "anthy")
+(setq default-input-method 'japanese-anthy)
+```
+
+で `inputmethod/anthy-elisp` の `anthy.el` を読んでいる。`anthy.el` を入れる
+のはこのパッケージだけ (あとは tamago 系)。そしてそれが pkgsrc で
+
+```make
+EMACS_VERSIONS_ACCEPTED= emacs21 emacs21nox emacs20 xemacs215 ...
+```
+
+のまま止まっていて、**emacs26 でも建たない**。techne の実ツリーで
+`env EMACS_TYPE=emacs26nox make fetch` して確認した:
 
 ```
-EMACS_TYPE=emacs26nox
+ERROR: [can-be-built-here.mk] This package has PKG_FAIL_REASON set:
+ERROR: Accepted versions are: emacs21 emacs21nox emacs20 xemacs215 ...
+ERROR: No valid Emacs version installed found
 ```
 
-を `emacs30nox` にすれば消える。**今回、設定を変えるだけで確実に消えるのは
-ここだけ。**
+`~/.emacs` にある
+
+```elisp
+(define-obsolete-variable-alias 'last-command-char 'last-command-event "at least 19.34")
+```
+
+は、Emacs 26 で消えた変数を anthy.el のために埋め戻している手当で、これも
+同じ事情。上げるほど手当が増える構造になっている。
+
+### 現状の判断
+
+**`EMACS_TYPE` は `emacs26nox` のまま**にして、消えない二件は
+`pkg_install.conf` の `IGNORE_URL` で黙らせた。理由は `~/etc/mk.conf` の
+`EMACS_TYPE` のところにも書いてある (半年後に誰かが「audit が消えるから」と
+上げようとしたときに止まるように)。
+
+```
+IGNORE_URL=https://nvd.nist.gov/vuln/detail/CVE-2022-45939
+IGNORE_URL=https://nvd.nist.gov/vuln/detail/CVE-2024-39331
+```
+
+### 根治するなら
+
+[pkgsrc-zakinko の overlay/inputmethod/anthy-elisp](https://github.com/zakinko/pkgsrc-zakinko/tree/main/overlay/inputmethod/anthy-elisp) で
+`EMACS_VERSIONS_ACCEPTED` に emacs26〜30 を足してある。塞いでいるのはこの
+一行だけで、patch も無く Makefile 自体は 2024 年に触られているので、単に誰も
+新しい Emacs で試していないだけに見える。CI で実際に byte-compile が通るかを
+見て、通れば上流 (MAINTAINER: taya@NetBSD.org) に送る。
+
+通らなければ入力方式を移すことになる (`inputmethod/ddskk` か
+`mozc-elisp`)。どちらも現役で新しい Emacs に追従している。
 
 ### 巻き込まれるもの
 
-`devel/apel` と `graphics/artist` は `EMACS_PKGNAME_PREFIX` を使う
-EMACS_TYPE 依存のパッケージなので、一緒に作り直しになる。入っているのは
-この二つだけのはず。確認は
+`devel/apel` と `graphics/artist` は EMACS_TYPE 依存だが、
+`EMACS_PKGNAME_PREFIX` は GNU Emacs では空 (`xemacs-` が付くのは XEmacs の
+とき) なので **PKGNAME は変わらない**。つまり `EMACS_TYPE` を変えても CI は
+「もう .tgz がある」と判断して作り直さず、pkgin も更新と認識しない。
+作り直すにはリリースから消すか `scratch` で全部作り直す必要がある。
 
-```sh
-pkg_info -R emacs26-nox11
-```
-
-`ng` は Emacs クローンの別ソフトで無関係。`lv` も無関係。
+`apel` は `EMACS_VERSIONS_ACCEPTED` に emacs30 まで入っているので、上げること
+自体は問題ない。`artist` は制限を書いていないので全部通る。`ng` は Emacs
+クローンの別ソフトで無関係。`lv` も無関係。
 
 ## lua53 — eol
 
@@ -281,17 +331,32 @@ IGNORE_URL=https://nvd.nist.gov/vuln/detail/CVE-2011-4116
 
 ## まとめ
 
-| やること | 消える件数 | 手間 |
+### 黙らせたもの (`~/etc/pkg_install.conf` の `IGNORE_URL`)
+
+消えないと分かっているものだけ。上流が直せるものは書かない。
+
+```
+CVE-2011-4116   perl File::Temp。15 年どの版でも直っていない
+CVE-2022-45939  emacs26。26 系に修正は来ないが、anthy のため上げられない
+CVE-2024-39331  同上
+CVE-2025-69720  ncurses。6.6 で修正済み。pkgsrc のエントリが古いだけ
+```
+
+audit の表示は **21 件 → 17 件**になる。
+
+### 残っているもの
+
+| やること | 件数 | 手間 |
 |---|---|---|
 | libxml2 を 2.15.3 へ (overlay 済) + エントリを絞ってもらう | 5 | メールを送るだけ |
-| `EMACS_TYPE=emacs30nox` | 2 | 一行 |
 | augeas の patch (overlay 済) + pkgsrc へ送る | 1 | メールを送るだけ |
-| ncurses のエントリを絞ってもらう | 1 | メールを送るだけ |
 | lua53 → lua54 か削除 | eol 1 | 依存次第 |
 | certbot を webroot 化 → augeas と libxml2 を落とす | (上と重複) | 設定変更 |
-| python313 / expat | 9 | 上流待ち |
-| perl | 1 | File::Temp に PR。長い道 |
+| python313 / expat | 9 | 上流待ち。何もできない |
+| perl / emacs26 / ncurses | (黙らせ済) | 上の `IGNORE_URL` |
 
 **動かない上流を待つしかないのは python313 の 8 件と expat の 1 件だけ。**
+emacs26 の 2 件は「上流は直せるが、こちらの都合で上げられない」という別の
+理由で残っている。anthy-elisp が新しい Emacs で建つようになれば動く。
 libxml2 は「上流が死んでいるから諦める」案件ではなく、**pkgsrc が追いついて
 いない**案件だった。

@@ -1,0 +1,22 @@
+Index: inputmethod/anthy-elisp/Makefile
+===================================================================
+RCS file: /cvsroot/pkgsrc/inputmethod/anthy-elisp/Makefile,v
+retrieving revision 1.14
+diff -u -r1.14 Makefile
+--- inputmethod/anthy-elisp/Makefile	8 May 2024 12:20:52 -0000	1.14
++++ inputmethod/anthy-elisp/Makefile	14 Aug 2026 15:13:45 -0000
+@@ -14,7 +14,13 @@
+ CONFIGURE_ENV+=	EMACS=${EMACS_BIN:Q}
+ EMACS_MODULES+=	base leim
+ 
+-EMACS_VERSIONS_ACCEPTED=	emacs21 emacs21nox emacs20 xemacs215 xemacs215nox xemacs214 xemacs214nox
++EMACS_VERSIONS_ACCEPTED=	emacs21 emacs21nox emacs20
++EMACS_VERSIONS_ACCEPTED+=	xemacs215 xemacs215nox xemacs214 xemacs214nox
++EMACS_VERSIONS_ACCEPTED+=	emacs26 emacs26nox
++EMACS_VERSIONS_ACCEPTED+=	emacs27 emacs27nox
++EMACS_VERSIONS_ACCEPTED+=	emacs28 emacs28nox
++EMACS_VERSIONS_ACCEPTED+=	emacs29 emacs29nox
++EMACS_VERSIONS_ACCEPTED+=	emacs30 emacs30nox
+ 
+ .include "../../editors/emacs/modules.mk"
+ 

@@ -8,7 +8,6 @@
 #   mk.conf.ci        CI でだけ効かせる追加分
 #   roles             作る役割の一覧
 #   sbin.tar.gz       ~/.sbin の写し (list.pkg.*)
-#   overlay.tar.gz    pkgsrc に被せる自前の patch (なくてもよい)
 #   prev-packages.tar 前回作った All/*.tgz (なくてもよい)
 # を置いている。
 #
@@ -62,26 +61,17 @@ if [ ! -f $PKGSRCDIR/mk/bsd.pkg.mk ]; then
 fi
 
 ##
-## 2. overlay
+## 2. overlay の当たり先
 ##
-## 上流 pkgsrc がまだ取り込んでいない patch を被せる。詳しくは
-## overlay/README.md。distinfo の SHA1 は pkgsrc 標準の makepatchsum に
-## 任せるので、こちらでハッシュは触らない。
+## 上流 pkgsrc がまだ取り込んでいない当て物は、ホスト側で pkgsrc ツリーに
+## 焼き込んだうえで渡ってくる (ci/make-pkgsrc-tarball.sh)。実体は
+## pkgsrc-zakinko の overlay/。ここでは当たった場所の一覧を受け取るだけ。
 ##
-if fetch overlay.tar.gz /tmp/overlay.tar.gz 2>/dev/null &&
-   tar tzf /tmp/overlay.tar.gz >/dev/null 2>&1; then
-	rm -rf /tmp/overlay
-	mkdir -p /tmp/overlay
-	tar xzf /tmp/overlay.tar.gz -C /tmp/overlay
-	overlay_dirs=$(cd /tmp/overlay/overlay 2>/dev/null &&
-	               find . -mindepth 2 -maxdepth 2 -type d | sed 's|^\./||')
-	for d in $overlay_dirs; do
-		log "overlay: $d"
-		( cd /tmp/overlay/overlay/"$d" && tar cf - . ) |
-		    ( cd "$PKGSRCDIR/$d" && tar xpf - )
-	done
-	echo "$overlay_dirs" >/tmp/overlay-dirs
-	rm -rf /tmp/overlay /tmp/overlay.tar.gz
+if [ -f $PKGSRCDIR/.overlay-dirs ]; then
+	cp $PKGSRCDIR/.overlay-dirs /tmp/overlay-dirs
+	n=$(wc -l </tmp/overlay-dirs | tr -d ' ')
+	log "overlay が当たっているもの $n 件"
+	[ "$n" -gt 0 ] && sed 's/^/    /' /tmp/overlay-dirs
 else
 	: >/tmp/overlay-dirs
 	log "overlay はない"

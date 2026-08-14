@@ -30,9 +30,15 @@ sh
 # anthy-elisp が新しい Emacs で建つかを見るための実験。
 # overlay/inputmethod/anthy-elisp で EMACS_VERSIONS_ACCEPTED を広げてある。
 # 白黒ついたら (上流に取り込まれるか、諦めて入力方式を移すか) ここは消す。
-# emacs26-nox11 は anthy-elisp の依存として引かれるが、何を建てているか
-# ログで分かるように明示しておく。
-+editors/emacs26-nox11
+#
+# 2026-08-14: emacs26nox で建った (.elc が 6 本)。塞いでいたのは
+# EMACS_VERSIONS_ACCEPTED の一行だけで、anthy.el 自体は問題なかった。
+# 続けて emacs30nox で建つかを見る (ci/mk.conf.ci の EMACS_TYPE)。
+# 通れば EMACS_TYPE を上げられて audit が 2 件消える。
+#
+# emacs は anthy-elisp の依存として引かれるが、何を建てているかログで
+# 分かるように明示しておく。
++editors/emacs30-nox11
 +inputmethod/anthy-elisp
 
 # zakinko/meibo は外してある。リポジトリが private なので、GitHub の

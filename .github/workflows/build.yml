@@ -10,7 +10,6 @@ on:
       - 'roles'
       - 'sbin/**'
       - 'ci/**'
-      - 'overlay/**'
       - '.github/workflows/build.yml'
   schedule:
     # 毎週日曜 03:17 JST
@@ -135,12 +134,23 @@ jobs:
           echo "sha=$sha" >>"$GITHUB_OUTPUT"
           echo "pkgsrc: $sha"
 
+          # 固める tarball には zakinko カテゴリも入る。キャッシュの鍵に
+          # そちらの版を含めないと、pkgsrc-zakinko を直しても上流 pkgsrc が
+          # 動くまで古い写しを使い続けることになる。
+          zsha=none
+          if [ -n "${ZAKINKO_PKGSRC_URL:-}" ]; then
+            zsha=$(git ls-remote "$ZAKINKO_PKGSRC_URL" HEAD | cut -f1)
+            [ -n "$zsha" ] || zsha=none
+          fi
+          echo "zsha=$zsha" >>"$GITHUB_OUTPUT"
+          echo "zakinko: $zsha"
+
       - name: pkgsrc のキャッシュ
         id: tree
         uses: actions/cache@v6
         with:
           path: ${{ env.SEED_DIR }}/pkgsrc.tar.gz
-          key: pkgsrc-${{ steps.pkgsrc.outputs.sha }}
+          key: pkgsrc-${{ steps.pkgsrc.outputs.sha }}-zakinko-${{ steps.pkgsrc.outputs.zsha }}
 
       - name: pkgsrc を固める
         if: steps.tree.outputs.cache-hit != 'true'
@@ -180,11 +190,9 @@ jobs:
           mkdir -p "$VM_DIR" "$SEED_DIR"
           cp sbin/mk.conf ci/mk.conf.ci roles ci/guest-build.sh "$SEED_DIR/"
           tar_noxattr -czf "$SEED_DIR/sbin.tar.gz" sbin
-          if [ -d overlay ]; then
-            tar_noxattr -czf "$SEED_DIR/overlay.tar.gz" \
-                --exclude 'README.md' overlay
-            echo "overlay: $(tar tzf "$SEED_DIR/overlay.tar.gz" | wc -l) 個のファイル"
-          fi
+          # overlay は pkgsrc ツリーに焼き込まれて渡る。実体は
+          # pkgsrc-zakinko の overlay/。ここでは何もしない。
+          rm -f "$SEED_DIR/overlay.tar.gz"
           vm_make_key
           seed_start
           qemu-img create -q -f qcow2 -b "$VM_DIR/base.qcow2" -F qcow2 \

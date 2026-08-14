@@ -27,3 +27,24 @@ PKG_DEVELOPER=	no
 
 # 落ちてこないミラーで延々待たない。
 FETCH_TIMEOUT=	60
+
+##
+## ここから下は実験。終わったら消すこと。
+##
+## 本来この節に「何を作るか」を変える設定は書かない (書くと手元と CI で中身の
+## 違うバイナリができる)。EMACS_TYPE はまさにそれなので、恒久的に置くなら
+## techne の ~/etc/mk.conf を直すのが筋。
+##
+## 何を試しているか:
+##   inputmethod/anthy-elisp は EMACS_VERSIONS_ACCEPTED が emacs21 世代の
+##   ままで、これが ~/.emacs の (load-library "anthy") を塞いでいた。
+##   overlay で 26〜30 に広げたところ、emacs26nox では建った (.elc が 6 本)。
+##   emacs30nox でも建つなら EMACS_TYPE を上げられて、audit の
+##   CVE-2022-45939 と CVE-2024-39331 が消える。
+##
+## 注意: EMACS_PKGNAME_PREFIX は GNU Emacs では空なので、emacs26 で建てた
+## anthy-elisp と emacs30 で建てたものは PKGNAME が同じ
+## (anthy-elisp-9100hnb6)。リリースに既にある方が「もうある」と判定されて
+## 作り直されないので、試す前にリリースから消しておくこと。
+##
+EMACS_TYPE=	emacs30nox

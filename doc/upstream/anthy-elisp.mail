@@ -1,0 +1,46 @@
+To: taya@NetBSD.org
+Cc: pkgsrc-users@NetBSD.org
+Subject: [PATCH] inputmethod/anthy-elisp: accept emacs26 through emacs30
+
+inputmethod/anthy-elisp only accepts emacs21, emacs20 and XEmacs:
+
+  EMACS_VERSIONS_ACCEPTED= emacs21 emacs21nox emacs20 \
+                           xemacs215 xemacs215nox xemacs214 xemacs214nox
+
+so on a machine with a current Emacs it stops in can-be-built-here.mk:
+
+  ERROR: Accepted versions are: emacs21 emacs21nox emacs20 xemacs215 ...
+  ERROR: No valid Emacs version installed found
+
+That line has not changed since the package was last restructured, while the
+Makefile itself has been touched as recently as 2024, so it looks like nobody
+has tried a newer Emacs rather than a known incompatibility.
+
+This matters because anthy-elisp is the only package that installs anthy.el
+(apart from the tamago ones).  A ~/.emacs that does
+
+  (load-library "anthy")
+  (setq default-input-method 'japanese-anthy)
+
+therefore has no way to work on any Emacs newer than 21 through pkgsrc.
+
+The diff below adds emacs26 through emacs30 to EMACS_VERSIONS_ACCEPTED.
+PKGREVISION is left alone: the installed files do not change, only which
+Emacs the package will build against.
+
+Built and packaged on NetBSD 11.0/i386 with EMACS_TYPE=emacs26nox, against
+pkgsrc trunk fa7ad771c96929bf742033e6ccfd8bb45b9cab49.  Byte compilation of
+src-util/*.el completes and the package installs as anthy-elisp-9100hnb6.
+
+Note that anthy.el still refers to last-command-char, which was removed in
+Emacs 26; users work around it with
+
+  (define-obsolete-variable-alias 'last-command-char 'last-command-event ...)
+
+in their init file.  Byte compilation only warns about it, so the package
+builds, but it would be worth patching properly if you would rather carry
+the fix in pkgsrc.
+
+Thanks,
+
+--
