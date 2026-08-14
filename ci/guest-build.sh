@@ -234,9 +234,73 @@ done </tmp/wanted
 ##
 ## 8. ビルド
 ##
+## 煙試験。make test とは別で、こちらが書く。
+##
+## 「建った」では分からないことがある。anthy-elisp がまさにそれで、anthy.el
+## は Emacs 28 で読めなくなった旧式バッククォート (` (foo (, bar))) で
+## buffer local 変数を定義している。読めなくなったといっても構文エラーには
+## ならず、マクロの展開が nil になるだけなので、byte-compile はそれを自由
+## 変数への参照として警告するに留まる。.elc は全部そろい、PLIST とも食い違
+## わず、ビルドは緑になる。それでいて入力方式は on にした瞬間に
+## void-variable で死ぬ。
+##
+## 実際に変換させて中身を見るしかない。当て物を外すと落ちることまで手元で
+## 確かめてある (当て物なしの emacs30 は set-face-underline-p、emacs26 は
+## last-command-char で落ちる)。
+##
+smoke_anthy_elisp() {
+	smoke_dir=$PKGSRCDIR/inputmethod/anthy-elisp
+	smoke_emacs=$(cd "$smoke_dir" && make show-var VARNAME=EMACS_BIN 2>/dev/null)
+	smoke_lisp=$(cd "$smoke_dir" && make show-var VARNAME=EMACS_LISPPREFIX 2>/dev/null)
+	[ -n "$smoke_emacs" ] && [ -x "$smoke_emacs" ] ||
+	    { log "  smoke: emacs が無い ($smoke_emacs)"; return 1; }
+
+	## anthy-agent は anthy-agent-command-list の既定どおり PATH から引く。
+	cat >/tmp/anthy-smoke.el <<'ELISP'
+(set-language-environment "Japanese")
+(prefer-coding-system 'utf-8)
+(load-library "anthy")
+(set-buffer (get-buffer-create "*smoke*"))
+;; with-temp-buffer は undo を無効にする (buffer-undo-list が t)。
+;; anthy-update-preedit がそれを list として辿るので、実バッファで打つ。
+(buffer-enable-undo)
+(anthy-mode-on)
+(dolist (c (string-to-list "nihongo"))
+  (setq last-command-event c)
+  (anthy-insert))
+(setq last-command-event ?\s)			; 変換
+(anthy-insert)
+(setq last-command-event ?\C-m)			; 確定
+(anthy-insert)
+(let ((coding-system-for-write 'utf-8))
+  (write-region (point-min) (point-max) "/tmp/anthy-smoke.out"))
+ELISP
+
+	## -Q は site-lisp を load-path から外すので明示的に足す。
+	rm -f /tmp/anthy-smoke.out
+	if ! "$smoke_emacs" -Q --batch \
+	    --eval "(add-to-list 'load-path \"$smoke_lisp/anthy\")" \
+	    -l /tmp/anthy-smoke.el >/tmp/anthy-smoke.log 2>&1; then
+		log "  smoke: emacs が落ちた"
+		sed -n '1,10p' /tmp/anthy-smoke.log | sed 's/^/      /'
+		return 1
+	fi
+
+	## nihongo -> にほんご -> 日本語。辞書は anthy 同梱のものなので
+	## 第一候補は動かない。
+	smoke_out=$(cat /tmp/anthy-smoke.out 2>/dev/null)
+	if LC_ALL=C grep -q '日本語' /tmp/anthy-smoke.out 2>/dev/null; then
+		log "  smoke: 変換できた ($smoke_out)"
+		return 0
+	fi
+	log "  smoke: 変換結果が違う ($smoke_out)"
+	return 1
+}
+
 : >/tmp/failed
 : >/tmp/built
 : >/tmp/tested
+: >/tmp/smoked
 status=complete
 
 while read -r pkgpath pkgname; do
@@ -270,6 +334,20 @@ while read -r pkgpath pkgname; do
 			fi
 		fi
 
+		## 煙試験。make test と同じく落ちてもビルドは失敗にしない。
+		## clean より前に置く必要はないが、入れたてを試すのでここ。
+		case $pkgpath in
+		inputmethod/anthy-elisp)
+			if smoke_anthy_elisp; then
+				log "smoke ok $pkgpath"
+				echo "$pkgpath ok" >>/tmp/smoked
+			else
+				log "SMOKE FAILED $pkgpath"
+				echo "$pkgpath ng" >>/tmp/smoked
+			fi
+			;;
+		esac
+
 		( cd "$PKGSRCDIR/$pkgpath" && make clean ) >/dev/null 2>&1
 	else
 		log "FAILED $pkgpath"
@@ -301,6 +379,8 @@ failed=$(wc -l </tmp/failed | tr -d ' ')
 packages=$(ls | grep -c '\.tgz$')
 tested=$(LC_ALL=C grep -c ' ok$' /tmp/tested 2>/dev/null || true)
 test_failed=$(LC_ALL=C grep -c ' ng$' /tmp/tested 2>/dev/null || true)
+smoked=$(LC_ALL=C grep -c ' ok$' /tmp/smoked 2>/dev/null || true)
+smoke_failed=$(LC_ALL=C grep -c ' ng$' /tmp/smoked 2>/dev/null || true)
 EOF
 
 log "結果"
@@ -312,6 +392,10 @@ fi
 if [ -s /tmp/tested ]; then
 	log "当て物をしたものの make test"
 	sed 's/^/    /' /tmp/tested
+fi
+if [ -s /tmp/smoked ]; then
+	log "煙試験"
+	sed 's/^/    /' /tmp/smoked
 fi
 
 sync
