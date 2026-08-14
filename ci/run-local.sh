@@ -74,9 +74,11 @@ rm -rf packages && mkdir -p packages
 vm_ssh 'cd /usr/pkgsrc/packages && tar cf - All' | tar xf - -C packages
 vm_ssh 'cat /tmp/ci-report' | tee "$VM_DIR/report.txt"
 vm_ssh 'cat /tmp/failed' >"$VM_DIR/failed.txt" 2>/dev/null || true
+vm_ssh 'cat /tmp/tested' >"$VM_DIR/tested.txt" 2>/dev/null || true
 
 echo
 echo "=== できたもの"
 ls -lh packages/All | head -20
 [ -s "$VM_DIR/failed.txt" ] && { echo "=== 作れなかったもの"; cat "$VM_DIR/failed.txt"; }
+[ -s "$VM_DIR/tested.txt" ] && { echo "=== 当て物の make test"; cat "$VM_DIR/tested.txt"; }
 exit 0
