@@ -236,6 +236,7 @@ done </tmp/wanted
 ##
 : >/tmp/failed
 : >/tmp/built
+: >/tmp/tested
 status=complete
 
 while read -r pkgpath pkgname; do
@@ -250,6 +251,25 @@ while read -r pkgpath pkgname; do
 	log "build $pkgpath ($pkgname)"
 	if ( cd "$PKGSRCDIR/$pkgpath" && make package-install </dev/null ); then
 		echo "$pkgname" >>/tmp/built
+
+		## 当て物をしたものは make test まで見る。上流に送るとき
+		## 「このリリースで通った」と書けるようにするため。work が要る
+		## ので clean より前。TEST_TARGET の無い package では何もしない
+		## ので、当て物すべてを対象にしてよい。
+		##
+		## 落ちてもビルドは失敗にしない。当て物と関係のないところで
+		## 転ぶことがあり、それでパッケージの配布まで止めたくない。
+		## 結果は ci-report に出るので、そこで見る。
+		if grep -qx "$pkgpath" /tmp/overlay-dirs 2>/dev/null; then
+			if ( cd "$PKGSRCDIR/$pkgpath" && make test </dev/null ); then
+				log "test ok $pkgpath"
+				echo "$pkgpath ok" >>/tmp/tested
+			else
+				log "TEST FAILED $pkgpath"
+				echo "$pkgpath ng" >>/tmp/tested
+			fi
+		fi
+
 		( cd "$PKGSRCDIR/$pkgpath" && make clean ) >/dev/null 2>&1
 	else
 		log "FAILED $pkgpath"
@@ -279,6 +299,8 @@ wanted=$(wc -l </tmp/wanted | tr -d ' ')
 built=$(wc -l </tmp/built | tr -d ' ')
 failed=$(wc -l </tmp/failed | tr -d ' ')
 packages=$(ls | grep -c '\.tgz$')
+tested=$(LC_ALL=C grep -c ' ok$' /tmp/tested 2>/dev/null || true)
+test_failed=$(LC_ALL=C grep -c ' ng$' /tmp/tested 2>/dev/null || true)
 EOF
 
 log "結果"
@@ -286,6 +308,10 @@ sed 's/^/    /' /tmp/ci-report
 if [ -s /tmp/failed ]; then
 	log "作れなかったもの"
 	sed 's/^/    /' /tmp/failed
+fi
+if [ -s /tmp/tested ]; then
+	log "当て物をしたものの make test"
+	sed 's/^/    /' /tmp/tested
 fi
 
 sync
