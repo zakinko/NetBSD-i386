@@ -1,13 +1,20 @@
 # 作るパッケージの PKGPATH。ここを書き換えて push すると CI が回る。
 #
-# 最初はこの四つだけ入れてある。まず一度通してから、NetBSD の箱で
+# 今は種にしている数個だけ。NetBSD の箱で
 #
 #	bin/nb-pkglist > pkglist
 #
 # を走らせて、入っているもの全部に差し替えること。依存はここに書かなくても
 # pkgsrc が引いてきて .tgz にする (ci/mk.conf.ci の DEPENDS_TARGET)。
 
+# 新しい箱を立てるときの取っかかり。これが無いとリポジトリを見に行く道具が
+# 無いままになる。
+pkgtools/pkgin
+
 zakinko/github-keys
-zakinko/meibo
 zakinko/nss_stns
 zakinko/stnsd
+
+# zakinko/meibo は外してある。リポジトリが private なので、GitHub の
+# archive を匿名で引く pkgsrc からは distfile が取れない (404)。public に
+# するか、MASTER_SITES を別の置き場に向けるかしてから戻すこと。
