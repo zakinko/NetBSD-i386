@@ -39,6 +39,8 @@ VM_DISK=${VM_DISK:-40G}
 # 外せば既定 (全部) になる。
 VM_SETS=${VM_SETS:-kern-GENERIC,modules,base,etc,comp,man,misc,text,xbase,xcomp,xetc}
 
+vm_check_mkisofs || exit 1
+
 if [ "$(vm_accel)" = tcg ]; then
 	echo "!! 加速なし (TCG)。インストールだけで 1-2 時間かかる。" >&2
 	echo "   Apple Silicon の場合、i386 ゲストではこれが正常。" >&2
