@@ -1,5 +1,5 @@
 To: gnats-bugs@NetBSD.org
-Subject: inputmethod/anthy-elisp: accept emacs26 through emacs30
+Subject: inputmethod/anthy-elisp: accept emacs26 through emacs30, and fix last-command-char
 From: zakinko@snowrabbit.org
 Reply-To: zakinko@snowrabbit.org
 X-send-pr-version: 3.95
@@ -8,12 +8,12 @@ X-send-pr-version: 3.95
 >Originator:	Showta Ishizaki
 >Organization:
 >Confidential:	no
->Synopsis:	inputmethod/anthy-elisp: accept emacs26 through emacs30
+>Synopsis:	inputmethod/anthy-elisp: accept emacs26 through emacs30, and fix last-command-char
 >Severity:	non-critical
 >Priority:	low
 >Category:	pkg
 >Class:		change-request
->Release:	NetBSD 11.0, pkgsrc trunk fa7ad771c96929bf742033e6ccfd8bb45b9cab49
+>Release:	NetBSD 11.0, pkgsrc CVS as of 2026-08-14
 >Environment:
 System: NetBSD 11.0 i386
 Architecture: i386
@@ -24,59 +24,97 @@ Machine: i386
 	  EMACS_VERSIONS_ACCEPTED= emacs21 emacs21nox emacs20 \
 	                           xemacs215 xemacs215nox xemacs214 xemacs214nox
 
-	so on a machine with a current Emacs it stops in can-be-built-here.mk:
+	so on a machine with a current Emacs it stops in can-be-built-here.mk.
 
-	  ERROR: Accepted versions are: emacs21 emacs21nox emacs20 xemacs215 ...
-	  ERROR: No valid Emacs version installed found
+	That line is not old.  It was added in rev 1.14 (2024-05-08, wiz):
 
-	That line has not changed since the package was last restructured,
-	while the Makefile itself has been touched as recently as 2024, so it
-	looks like nobody has tried a newer Emacs rather than a known
-	incompatibility.
+	    anthy-elisp: restrict emacs versions
 
-	This matters because anthy-elisp is the only package that installs
-	anthy.el (apart from the tamago ones).  An init file that does
+	    Since I don't know better, restrict it to the versions that were
+	    available at the time of the packaged version of this software
+	    (2009).
+
+	Before 1.14 the package had no EMACS_VERSIONS_ACCEPTED at all and took
+	whatever was installed.  So the restriction was a guess made in the
+	absence of a test, and this PR is the test.
+
+	It matters because anthy-elisp is the only package that installs
+	anthy.el -- the other three in the tree that ship one are all tamago.
+	An init file that does
 
 	  (load-library "anthy")
 	  (setq default-input-method 'japanese-anthy)
 
-	therefore has no way to work on any Emacs newer than 21 through
-	pkgsrc.
+	has no other way to work through pkgsrc.
+
+	Widening the list is not enough on its own, though.  anthy.el uses two
+	names that Emacs has since removed.
+
+	The one that stops the build is at top level, anthy.el line 74:
+
+	  (set-face-underline-p 'anthy-highlight-face t)
+
+	set-face-underline-p became an alias for set-face-underline in Emacs
+	24.3 and was removed in Emacs 29 (NEWS.29 lists it among the obsolete
+	items removed).  Because the call is at top level, loading anthy.el on
+	Emacs 29 or 30 signals an error, so anthy-isearch.el and anthy-kyuri.el
+	fail to byte-compile -- both do nothing but (require 'anthy) at the
+	line the compiler names -- and the build ends with
+
+	  ERROR: The following files are in the PLIST but not in .../usr/pkg:
+	  ERROR:         .../share/emacs/site-lisp/anthy/anthy-isearch.elc
+	  ERROR:         .../share/emacs/site-lisp/anthy/anthy-kyuri.elc
+
+	Emacs 20, 21 and 23 have only the -p name, so the call is guarded with
+	fboundp rather than renamed.
+
+	The other one does not stop the build.  anthy.el's own compatibility
+	shim returns last-command-char on the GNU Emacs branch:
+
+	  (defun anthy-last-command-char ()
+	    (if anthy-xemacs
+	        (let ((event last-command-event))
+	          ...)
+	      last-command-char))
+
+	last-command-char was removed in Emacs 24 -- NEWS.24, under "Some
+	obsolete functions, variables, and faces have been removed", lists
+	'last-input-char', 'last-command-char' and 'unread-command-char'.  The
+	XEmacs branch already uses the right name; only the GNU Emacs branch
+	was left behind.  That reference is inside a function, so byte
+	compilation merely warns, and the package installs -- and then
+	japanese-anthy fails the moment a key is typed.
 
 >How-To-Repeat:
-	env EMACS_TYPE=emacs26nox make -C /usr/pkgsrc/inputmethod/anthy-elisp fetch
+	cd /usr/pkgsrc/inputmethod/anthy-elisp
+	make EMACS_TYPE=emacs26nox fetch
 
 	  ERROR: [can-be-built-here.mk] This package has PKG_FAIL_REASON set:
-	  ERROR: Accepted versions are: emacs21 emacs21nox emacs20 xemacs215 ...
+	  ERROR: Accepted versions are: emacs21 emacs21nox emacs20 xemacs215 xemacs215nox xemacs214 xemacs214nox
 	  ERROR: No valid Emacs version installed found
 
+	EMACS_TYPE has to go on the command line rather than in the
+	environment; if mk.conf sets it, the environment does not win.
+
 >Fix:
-	Add emacs26 through emacs30 to EMACS_VERSIONS_ACCEPTED.  PKGREVISION is
-	left alone: the installed files do not change, only which Emacs the
-	package will build against.
+	Two parts.
 
-	Built and packaged on NetBSD 11.0/i386 with EMACS_TYPE=emacs26nox.
-	Byte compilation of src-util/*.el completes and the package installs
-	as anthy-elisp-9100hnb6, with six .elc files.
+	EMACS_VERSIONS_ACCEPTED gains emacs26 through emacs30.  Together with
+	the emacs20, emacs21 and XEmacs entries already there, that is every
+	Emacs pkgsrc offers -- there is no emacs22 through emacs25 package.
 
-	Note that anthy.el still refers to last-command-char, which was removed
-	in Emacs 26; users work around it with
+	patch-src-util_anthy.el guards the set-face-underline-p call with
+	fboundp and changes last-command-char to last-command-event.  anthy has
+	not been released since 2009, so there is nowhere upstream to send
+	those.
 
-	  (define-obsolete-variable-alias 'last-command-char 'last-command-event ...)
+	The patch goes in inputmethod/anthy/patches because anthy-elisp shares
+	PATCHDIR and DISTINFO_FILE with inputmethod/anthy.  It sorts after the
+	existing patch-anthy.el and the two touch different parts of the file.
+	inputmethod/anthy installs no .el files of its own, so its PKGREVISION
+	is left alone; anthy-elisp's is bumped.
 
-	in their init file.  Byte compilation only warns about it, so the
-	package builds, but it would be worth patching properly if you would
-	rather carry the fix in pkgsrc.
-
-	I have not been able to confirm emacs30nox yet: editors/emacs30-nox11
-	builds emacs30-nox11-30.2, but editors/emacs/modules.mk asks for
-	emacs30-no-x11>=30.1<31, and the build stops with
-
-	  ERROR: [depends.mk] A package matching ``emacs30-no-x11>=30.1<31''
-	  ERROR:     should be installed, but one cannot be found.
-
-	That looks like a separate problem in the emacs30 packages, not in
-	this one.
+	XXX-CI: build result to be filled in before sending.
 
 	Index: inputmethod/anthy-elisp/Makefile
 	===================================================================
@@ -84,7 +122,16 @@ Machine: i386
 	retrieving revision 1.14
 	diff -u -r1.14 Makefile
 	--- inputmethod/anthy-elisp/Makefile	8 May 2024 12:20:52 -0000	1.14
-	+++ inputmethod/anthy-elisp/Makefile	14 Aug 2026 15:13:45 -0000
+	+++ inputmethod/anthy-elisp/Makefile	14 Aug 2026 19:27:02 -0000
+	@@ -2,7 +2,7 @@
+	 
+	 .include	"../../inputmethod/anthy/Makefile.common"
+	 PKGNAME=	${EMACS_PKGNAME_PREFIX}anthy-elisp-${ANTHY_VERSION}
+	-PKGREVISION=	6
+	+PKGREVISION=	7
+	 CATEGORIES=	inputmethod editors
+	 
+	 MAINTAINER=	taya@NetBSD.org
 	@@ -14,7 +14,13 @@
 	 CONFIGURE_ENV+=	EMACS=${EMACS_BIN:Q}
 	 EMACS_MODULES+=	base leim
@@ -100,3 +147,65 @@ Machine: i386
 	 
 	 .include "../../editors/emacs/modules.mk"
 	 
+	Index: inputmethod/anthy/distinfo
+	===================================================================
+	RCS file: /cvsroot/pkgsrc/inputmethod/anthy/distinfo,v
+	retrieving revision 1.16
+	diff -u -r1.16 distinfo
+	--- inputmethod/anthy/distinfo	7 Sep 2023 14:44:51 -0000	1.16
+	+++ inputmethod/anthy/distinfo	14 Aug 2026 19:27:02 -0000
+	@@ -10,3 +10,4 @@
+	 SHA512 (okinawa-20090801.t) = 03cd20ef12ea25bb462a94e77ee04825c5acd4e9281bfe9c33d390a0106d2e3113c51083389bb21996af9bcf9a74acde6fbcdc6006f737b8a74fc55abc7d6260
+	 Size (okinawa-20090801.t) = 165520 bytes
+	 SHA1 (patch-anthy.el) = 3464a065d4dd25f38cd2990e0796eba53e69876a
+	+SHA1 (patch-src-util_anthy.el) = cf21e3021f14f4e691b926f8a93c0137c9c336f8
+	Index: inputmethod/anthy/patches/patch-src-util_anthy.el
+	===================================================================
+	RCS file: inputmethod/anthy/patches/patch-src-util_anthy.el
+	diff -N inputmethod/anthy/patches/patch-src-util_anthy.el
+	--- /dev/null	1 Jan 1970 00:00:00 -0000
+	+++ inputmethod/anthy/patches/patch-src-util_anthy.el	15 Aug 2026 00:00:00 -0000
+	@@ -0,0 +1,43 @@
+	+$NetBSD$
+	+
+	+Make anthy.el work on current Emacs.  Two obsolete names that were later
+	+removed:
+	+
+	+set-face-underline-p became an alias for set-face-underline in Emacs 24.3
+	+and was removed in Emacs 29.  The call is at top level, so on Emacs 29 and
+	+30 merely loading anthy.el signals an error, and anthy-isearch.el and
+	+anthy-kyuri.el then fail to byte-compile because they (require 'anthy) --
+	+their .elc files end up missing from what PLIST expects.  Emacs 20, 21 and
+	+23 have only the -p name, so the call is guarded rather than renamed.
+	+
+	+last-command-char was an obsolete alias for last-command-event and was
+	+removed in Emacs 24.  The XEmacs branch of this function already uses
+	+last-command-event; only the GNU Emacs branch was left behind.  That
+	+reference is inside a function, so byte compilation only warns, but
+	+japanese-anthy fails at run time as soon as a key is typed.
+	+
+	+anthy has not been released since 2009, so there is nowhere upstream to
+	+send this.
+	+
+	+--- src-util/anthy.el.orig
+	++++ src-util/anthy.el
+	+@@ -71,7 +71,9 @@
+	+ (defvar anthy-highlight-face nil)
+	+ (defvar anthy-underline-face nil)
+	+ (copy-face 'highlight 'anthy-highlight-face)
+	+-(set-face-underline-p 'anthy-highlight-face t)
+	++(if (fboundp 'set-face-underline)
+	++    (set-face-underline 'anthy-highlight-face t)
+	++  (set-face-underline-p 'anthy-highlight-face t))
+	+ (copy-face 'underline 'anthy-underline-face)
+	+ 
+	+ ;;
+	+@@ -892,7 +894,7 @@
+	+ 	 ((event-matches-key-specifier-p event 'backspace) 8)
+	+ 	 (t
+	+ 	  (char-to-int (event-to-character event)))))
+	+-    last-command-char))
+	++    last-command-event))
+	+ 
+	+ ;;
+	+ ;;

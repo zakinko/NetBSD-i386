@@ -27,8 +27,18 @@ Machine: i386
 	carries the fix.
 
 	CVE-2025-69720 is the stack buffer overflow in analyze_string() in
-	progs/infocmp.c.  Upstream fixed it in the ncurses 6.5 20251213 patch,
-	and ncurses 6.6 was released on 2025-12-30, so the release includes it.
+	progs/infocmp.c.  Upstream fixed it in the ncurses 6.5 20251213 patch;
+	NEWS records it as
+
+	  20251213
+	          + add a limit-check in infocmp -i option (report/example by
+	            Yixuan Cao).
+
+	and 6.6 was cut seventeen days later:
+
+	  20251230 6.6 release for upload to ftp.gnu.org
+
+	so the release includes it.
 
 	In the 6.6 tarball, progs/infocmp.c is rev 1.177 (2025-12-27) and
 	analyze_string() now clamps the length:
@@ -51,4 +61,7 @@ Machine: i386
 
 >Fix:
 	ncurses-[0-9]*	->	ncurses<6.6
+
+	No diff, since pkg-vulnerabilities is not in the pkgsrc CVS tree I can
+	check out.  There is nothing to change in devel/ncurses itself.
 

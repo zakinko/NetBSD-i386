@@ -13,9 +13,9 @@ X-send-pr-version: 3.95
 >Priority:	medium
 >Category:	pkg
 >Class:		sw-bug
->Release:	NetBSD 9.4, pkgsrc CVS as of 2026-08-14
+>Release:	NetBSD 11.0, pkgsrc CVS as of 2026-08-14
 >Environment:
-System: NetBSD 9.4 i386
+System: NetBSD 11.0 i386
 Architecture: i386
 Machine: i386
 >Description:
@@ -61,12 +61,18 @@ Machine: i386
 	clears it.
 
 	For the crash itself, apply the patch below with its src/fa.c hunk
-	dropped, so that only the regression test goes in, and run
+	dropped, so that only the regression test goes in, then build and run
+	that one test:
 
-	  cd /usr/pkgsrc/sysutils/augeas && make test
+	  cd tests && make fatest && ./fatest
 
-	tests/fatest dies with SIGSEGV (exit 139) and prints nothing.  With
-	the whole patch applied it reports "OK (21 tests)".
+	It prints nothing and dies with SIGSEGV (exit 139).  With the whole
+	patch applied it reports "OK (21 tests)".  (Observed on NetBSD
+	9.4/i386; nothing in this path is OS specific.)
+
+	"make test" shows it too, but augeas 1.14.1 already fails 7 of its 263
+	tests without this patch, so fatest on its own is the clearer signal.
+	See below.
 
 >Fix:
 	The patch is upstream commit af2aa88 applied verbatim -- the fix in
@@ -84,7 +90,20 @@ Machine: i386
 	than assumed it; the preprocessor resolves <regex.h> from src/fa.c to
 	../gnulib/lib/regex.h, which defines _REG_ENOSYS.
 
-	PKGREVISION bumped.  Built, tested and packaged on NetBSD 9.4/i386.
+	PKGREVISION bumped.  Built and packaged on NetBSD 9.4, 10.1 and
+	11.0/i386.
+
+	fatest, which is where the CVE lives, passes on all three.  The rest of
+	the suite does not, but that is not this patch: 1.14.1 fails these
+	seven either way --
+
+	  lens-sip_conf.sh   test-augprint.sh    test-idempotent.sh
+	  lens-sudoers.sh    test-augtool.sh     test-interpreter.sh
+	                     test-createfile.sh
+
+	Reverting src/fa.c, src/fa.h and tests/fatest.c and running the suite
+	again gives the same totals (263 run, 252 passed, 7 failed) and the
+	same seven names.
 
 	Please also narrow the pkg-vulnerabilities entry when this goes in.
 	It currently reads
