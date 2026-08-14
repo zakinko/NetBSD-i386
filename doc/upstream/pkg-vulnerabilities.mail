@@ -1,0 +1,55 @@
+To: pkgsrc-security@NetBSD.org
+Subject: pkg-vulnerabilities: two entries that can be narrowed (ncurses, libxml2)
+
+Two sets of entries in pkg-vulnerabilities (rev 1.775) are written as
+"every version", but the versions in question are fixed.  They make
+pkg_admin audit report six issues on an up to date system.
+
+1. ncurses, CVE-2025-69720
+
+  ncurses-[0-9]*	buffer-overflow	https://nvd.nist.gov/vuln/detail/CVE-2025-69720
+
+  This is the stack buffer overflow in analyze_string() in
+  progs/infocmp.c.  Upstream fixed it in the ncurses 6.5 20251213 patch,
+  and ncurses 6.6 was released on 2025-12-30, so the release carries the
+  fix.  In the 6.6 tarball, progs/infocmp.c is rev 1.177 (2025-12-27)
+  and analyze_string() now clamps the length:
+
+	if ((len = strlen(cp)) > MAX_TERMINFO_LENGTH)
+	    len = MAX_TERMINFO_LENGTH;
+
+  along with (len < sizeof(buf3)) guards on the CSI parameter paths.
+
+  devel/ncurses in pkgsrc is at 6.6, so the entry could read
+
+	ncurses<6.6	buffer-overflow	https://nvd.nist.gov/vuln/detail/CVE-2025-69720
+
+2. libxml2, five entries
+
+  libxml2-[0-9]*	denial-of-service	https://nvd.nist.gov/vuln/detail/CVE-2025-8732
+  libxml2-[0-9]*	denial-of-service	https://nvd.nist.gov/vuln/detail/CVE-2026-0989
+  libxml2-[0-9]*	denial-of-service	https://nvd.nist.gov/vuln/detail/CVE-2026-0990
+  libxml2-[0-9]*	denial-of-service	https://nvd.nist.gov/vuln/detail/CVE-2026-0992
+  libxml2-[0-9]*	denial-of-service	https://nvd.nist.gov/vuln/detail/CVE-2026-1757
+
+  All five are named as fixed in the libxml2 2.15.2 NEWS (2026-03-03);
+  CVE-2025-8732 appears there as "catalog: fix stack overflow from
+  self-referencing SGML CATALOG entries".  So these can become
+
+	libxml2<2.15.2	...
+
+  textproc/libxml2 in pkgsrc is still at 2.15.1; I have sent an update to
+  2.15.3 to pkgsrc-users@ separately.
+
+  The sixth entry for this package, CVE-2025-12863, is not named in the
+  2.15.2 or 2.15.3 NEWS and I could not determine whether it is fixed, so
+  I am not asking for that one to be changed.
+
+  (As background for the "every version" entries: upstream declared
+  libxml2 unmaintained in September 2025 and the GitLab page still says
+  so, but releases resumed -- 2.15.2 and 2.15.3 were made by a different
+  set of contributors.)
+
+Thanks,
+
+--

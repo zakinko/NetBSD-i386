@@ -1,0 +1,34 @@
+To: bsiegert@NetBSD.org
+Cc: pkgsrc-users@NetBSD.org
+Subject: [PATCH] sysutils/augeas: fix NULL dereference (CVE-2025-2588)
+
+pkg_admin audit reports CVE-2025-2588 against every version of
+sysutils/augeas, and there is no release to update to: 1.14.1 (2023) is
+still the last one upstream made.
+
+parse_regexp() in src/fa.c can return NULL without recording a reason in
+parse->error.  Three of its callers -- fa_expand_nocase(),
+fa_restrict_alphabet() and fa_expand_char_ranges() -- only test
+parse->error before dereferencing what came back, so they walk into the
+NULL.  (A fourth caller, fa_compile(), tests the pointer and is fine.)
+
+Upstream fixed this on master by filling in parse->error at the error
+label rather than adding a NULL check to each caller, which closes all
+three at once:
+
+  https://github.com/hercules-team/augeas/issues/852
+
+That commit uses _REG_ENOSYS, which is a glibc extension and is not in
+NetBSD's <regex.h>.  The patch below uses REG_BADPAT instead; it is
+POSIX and conveys the same thing to the caller.
+
+Fedora ships the upstream fix as a git snapshot
+(1.14.2-0.4.20250324git4dffa3d); Debian, SUSE and Mageia carry
+equivalent patches.
+
+PKGREVISION bumped.  Built and packaged on NetBSD 11.0/i386 against
+pkgsrc trunk fa7ad771c96929bf742033e6ccfd8bb45b9cab49.
+
+Thanks,
+
+--

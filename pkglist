@@ -1,0 +1,13 @@
+# 作るパッケージの PKGPATH。ここを書き換えて push すると CI が回る。
+#
+# 最初はこの四つだけ入れてある。まず一度通してから、NetBSD の箱で
+#
+#	bin/nb-pkglist > pkglist
+#
+# を走らせて、入っているもの全部に差し替えること。依存はここに書かなくても
+# pkgsrc が引いてきて .tgz にする (ci/mk.conf.ci の DEPENDS_TARGET)。
+
+zakinko/github-keys
+zakinko/meibo
+zakinko/nss_stns
+zakinko/stnsd

@@ -1,0 +1,65 @@
+Index: sysutils/augeas/Makefile
+===================================================================
+RCS file: /cvsroot/pkgsrc/sysutils/augeas/Makefile,v
+retrieving revision 1.20
+diff -u -r1.20 Makefile
+--- sysutils/augeas/Makefile	7 Jan 2026 08:48:48 -0000	1.20
++++ sysutils/augeas/Makefile	13 Aug 2026 22:40:52 -0000
+@@ -1,7 +1,7 @@
+ # $NetBSD: Makefile,v 1.20 2026/01/07 08:48:48 wiz Exp $
+ 
+ DISTNAME=	augeas-1.14.1
+-PKGREVISION=	1
++PKGREVISION=	2
+ CATEGORIES=	sysutils
+ MASTER_SITES=	${MASTER_SITE_GITHUB:=hercules-team/}
+ GITHUB_RELEASE=	release-${PKGVERSION_NOREV}
+Index: sysutils/augeas/distinfo
+===================================================================
+RCS file: /cvsroot/pkgsrc/sysutils/augeas/distinfo,v
+retrieving revision 1.8
+diff -u -r1.8 distinfo
+--- sysutils/augeas/distinfo	28 Apr 2025 19:31:33 -0000	1.8
++++ sysutils/augeas/distinfo	13 Aug 2026 22:40:52 -0000
+@@ -3,3 +3,4 @@
+ BLAKE2s (augeas-1.14.1.tar.gz) = c16626c6d440ab43be0b705f4aef01ebbb109544a23478a780fd563ec27c1004
+ SHA512 (augeas-1.14.1.tar.gz) = fddb2e243f979e71fc09f9d45d569d6307b35485b2d885bf7bcbc032ba5617fe7ab2071a041422c3efe2dd62eda74aba41016d248c0636e947d4f1c9144375aa
+ Size (augeas-1.14.1.tar.gz) = 2653776 bytes
++SHA1 (patch-src_fa.c) = dc0347c5ead3c629d88abc2c8e6b00362865e121
+Index: sysutils/augeas/patches/patch-src_fa.c
+===================================================================
+RCS file: sysutils/augeas/patches/patch-src_fa.c
+diff -N sysutils/augeas/patches/patch-src_fa.c
+--- /dev/null	1 Jan 1970 00:00:00 -0000
++++ sysutils/augeas/patches/patch-src_fa.c	14 Aug 2026 00:00:00 -0000
+@@ -0,0 +1,30 @@
++$NetBSD$
++
++Fix a NULL dereference in the regexp parser.  CVE-2025-2588.
++
++parse_regexp() can return NULL without recording a reason in parse->error,
++and three of its callers -- fa_expand_nocase(), fa_restrict_alphabet() and
++fa_expand_char_ranges() -- only look at parse->error before dereferencing
++what came back.  Upstream fixed this at the source rather than adding a NULL
++check to each caller:
++
++  https://github.com/hercules-team/augeas/issues/852
++
++The upstream commit is on master and has not been released; 1.14.1 (2023) is
++still the last release.  It uses _REG_ENOSYS, which is a glibc extension and
++is not in NetBSD's <regex.h>, so REG_BADPAT is used here instead.  It is
++POSIX and says the same thing to the caller: the pattern was no good.
++
++--- src/fa.c.orig	2023-07-14 11:07:23.000000000 +0000
+++++ src/fa.c
++@@ -3550,6 +3550,10 @@
++     return re;
++ 
++  error:
+++    /* CVE-2025-2588: do not hand a NULL back with parse->error unset;
+++     * the callers below only test parse->error. */
+++    if (re == NULL && parse->error == REG_NOERROR)
+++        parse->error = REG_BADPAT;
++     re_unref(re);
++     return NULL;
++ }

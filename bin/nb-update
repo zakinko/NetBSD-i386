@@ -1,0 +1,114 @@
+#!/bin/sh
+#
+# CI が作ったバイナリパッケージで、この箱を更新する。NetBSD 側で走らせる。
+#
+#	nb-update setup    pkgin のリポジトリ設定と /etc/mk.conf を入れる (初回)
+#	nb-update check    何が上がるかだけ見る。何も変えない。
+#	nb-update          更新して audit まで通す
+#	nb-update audit    audit だけ
+#
+# pkgsrc ツリーは要らない。この箱でソースを引くことはもうない。
+
+set -eu
+
+: "${REPO_OWNER:=zakinko}"
+: "${REPO_NAME:=NetBSD-i386}"
+# .github/workflows/build.yml の RELEASE_TAG と揃えること。
+: "${RELEASE_TAG:=pkgsrc-11.0-i386}"
+REPO_URL=${REPO_URL:-https://github.com/$REPO_OWNER/$REPO_NAME/releases/download/$RELEASE_TAG}
+
+PKG_DBDIR=${PKG_DBDIR:-/var/db/pkg}
+PKG_PREFIX=${PKG_PREFIX:-/usr/pkg}
+PKGIN_CONF=$PKG_PREFIX/etc/pkgin/repositories.conf
+MKCONF=${MKCONF:-/etc/mk.conf}
+
+export PKG_DBDIR
+
+# このスクリプトが置かれているリポジトリの根。setup で mk.conf を配るのに使う。
+here=$(cd "$(dirname "$0")/.." && pwd)
+
+warn() { echo "nb-update: $*" >&2; }
+die()  { warn "$*"; exit 1; }
+
+need_root() {
+	[ "$(id -u)" = 0 ] || die "root で走らせること (sudo nb-update ...)"
+}
+
+do_setup() {
+	need_root
+
+	[ -d "$PKG_PREFIX/etc/pkgin" ] || mkdir -p "$PKG_PREFIX/etc/pkgin"
+
+	if grep -q "^$REPO_URL\$" "$PKGIN_CONF" 2>/dev/null; then
+		echo "repositories.conf は既に $REPO_URL を見ている"
+	else
+		if [ -f "$PKGIN_CONF" ]; then
+			cp "$PKGIN_CONF" "$PKGIN_CONF.bak.$(date +%Y%m%d%H%M%S)"
+			# 公式のリポジトリと混ぜると、mk.conf のオプションが効いて
+			# いない方のバイナリを掴むことがある。既存行は畳んでおく。
+			# sed -i の方言に踏み込まないよう一時ファイルを経由する。
+			sed 's/^\([^#]\)/#\1/' "$PKGIN_CONF" >"$PKGIN_CONF.new"
+			mv "$PKGIN_CONF.new" "$PKGIN_CONF"
+		fi
+		echo "$REPO_URL" >>"$PKGIN_CONF"
+		echo "repositories.conf に $REPO_URL を足した"
+	fi
+
+	if [ -f "$here/mk.conf" ]; then
+		if cmp -s "$here/mk.conf" "$MKCONF"; then
+			echo "$MKCONF は最新"
+		else
+			[ -f "$MKCONF" ] && cp "$MKCONF" "$MKCONF.bak.$(date +%Y%m%d%H%M%S)"
+			cp "$here/mk.conf" "$MKCONF"
+			echo "$MKCONF を更新した (前のものは .bak に残した)"
+		fi
+		# git チェックアウトの umask を持ち込まないよう、明示的に揃える。
+		# 600 にすると一般ユーザが pkgsrc の make を叩けなくなる。
+		# 中身は public な repo にあるので、ここは秘密の境界ではない。
+		chown root:wheel "$MKCONF"
+		chmod 644 "$MKCONF"
+	fi
+
+	echo
+	echo "この後は 'nb-update check' で様子を見てから 'nb-update' を叩く。"
+}
+
+do_audit() {
+	pkg_admin -K "$PKG_DBDIR" fetch-pkg-vulnerabilities
+	echo
+	echo "--- pkg_admin audit"
+	# 該当なしでも 0 以外を返すことがあるので、ここでは落とさない。
+	pkg_admin -K "$PKG_DBDIR" audit || true
+	echo
+	echo "何が上流待ちで何が設定で消せるかは doc/audit.md にまとめてある。"
+	echo "見飽きたものは $PKG_PREFIX/etc/pkg_install.conf に"
+	echo "IGNORE_URL=<CVE の URL> を書けば黙る。"
+}
+
+do_check() {
+	pkgin update
+	echo
+	echo "--- 上がるもの"
+	pkgin -n full-upgrade || true
+}
+
+do_update() {
+	need_root
+	pkgin -y update
+	pkgin -y full-upgrade
+	echo
+	do_audit
+}
+
+case "${1:-update}" in
+setup)		do_setup ;;
+check)		do_check ;;
+audit)		need_root; do_audit ;;
+update|'')	do_update ;;
+-h|--help|help)
+	sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+	;;
+*)
+	die "知らない指定: $1  (setup / check / update / audit)"
+	;;
+esac

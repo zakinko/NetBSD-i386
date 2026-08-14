@@ -1,0 +1,40 @@
+To: pkgsrc-users@NetBSD.org
+Subject: [PATCH] textproc/libxml2: update to 2.15.3
+
+pkgsrc has libxml2 2.15.1 (Makefile.common rev 1.31, 2026-02-19).
+Upstream released 2.15.2 on 2026-03-03 and 2.15.3 on 2026-04-15.
+
+2.15.2 fixes five issues that pkg-vulnerabilities currently lists against
+every version of the package:
+
+  CVE-2025-8732   uncontrolled recursion in xmlParseSGMLCatalog
+                  (NEWS: "catalog: fix stack overflow from
+                  self-referencing SGML CATALOG entries")
+  CVE-2026-0989   RelaxNG include limit added
+  CVE-2026-0990   infinite recursion in xmlCatalogListXMLResolve
+  CVE-2026-0992   exponential behaviour in entity handling
+  CVE-2026-1757   memory leak in the xmllint shell
+
+2.15.3 adds a type confusion fix in xmlParseReference and in
+xmlC14NProcessAttrsAxis, a double free in the Python bindings, and
+several memory leak fixes.
+
+The one patch pkgsrc carries for this package, patch-configure, still
+applies unchanged against 2.15.3.  distinfo regenerated.
+
+textproc/py-libxml2 shares Makefile.common and is updated by the same
+change.
+
+Built and packaged on NetBSD 11.0/i386 against pkgsrc trunk
+fa7ad771c96929bf742033e6ccfd8bb45b9cab49, together with
+sysutils/augeas which links against it.
+
+The remaining pkg-vulnerabilities entry for this package,
+CVE-2025-12863 (use after free via xmlSetTreeDoc not updating the
+namespace pointer), is not named in the 2.15.2 or 2.15.3 NEWS, so I do
+not know whether it is fixed.  I am sending the entry narrowing for the
+five above to pkgsrc-security@ separately.
+
+Thanks,
+
+--

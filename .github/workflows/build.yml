@@ -1,0 +1,311 @@
+name: build
+
+# NetBSD/i386 のバイナリパッケージを作って Releases に置く。
+# 手元の箱は pkgin でそこを見るだけ。ディスクを食う作業は全部こっち側。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pkglist'
+      - 'mk.conf'
+      - 'ci/**'
+      - 'overlay/**'
+      - '.github/workflows/build.yml'
+  schedule:
+    # 毎週日曜 03:17 JST
+    - cron: '17 18 * * 6'
+  workflow_dispatch:
+    inputs:
+      pkgsrc_ref:
+        description: 'pkgsrc の ref (既定: trunk の先端)'
+        default: 'trunk'
+      scratch:
+        description: '前回のパッケージを使わず最初から作り直す'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# 同じリリースを二つのジョブが書きに行くと壊れる。前のを止めずに待たせる。
+concurrency:
+  group: build
+  cancel-in-progress: false
+
+env:
+  # ここと RELEASE_TAG と bin/nb-update の RELEASE_TAG は一緒に変えること。
+  # リリースが変わると libc のメジャーが変わるので、作ったバイナリは他の
+  # リリースでは動かない。
+  NETBSD_RELEASE: '11.0'
+  NETBSD_ARCH: i386
+  RELEASE_TAG: pkgsrc-11.0-i386
+  # ゲストはこの分だけ回したら自分から降りて、作れたところまでを持ち帰る。
+  # runner の 360 分より十分手前にしておくこと。
+  BUILD_DEADLINE_MIN: '260'
+  # 上流の pkgsrc に自作カテゴリを重ねる。空にすれば黙って飛ばす。
+  ZAKINKO_PKGSRC_URL: https://github.com/zakinko/pkgsrc-zakinko
+  # NetBSD を qemu に自動で入れる道具。PyPI に同名の別物があるので直リンク。
+  ANITA_URL: https://www.gson.org/netbsd/anita/download/anita-2.18.tar.gz
+  # VM のディスクは広い方の /mnt に置く。workspace 側は 20GB 前後しかない。
+  VM_DIR: /mnt/vm
+  SEED_DIR: ${{ github.workspace }}/seed
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ディスクを空ける
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost || true
+          sudo mkdir -p "$VM_DIR"
+          sudo chown "$USER" "$VM_DIR"
+          mkdir -p "$SEED_DIR"
+          df -h / "$VM_DIR"
+
+      - name: qemu と anita を入れる
+        run: |
+          sudo apt-get update -qq
+          # genisoimage は anita が install 用 ISO を焼くのに要る。無いと
+          # "could not run mkisofs" で落ちる。
+          sudo apt-get install -y -qq qemu-system-x86 qemu-utils genisoimage
+          # PyPI の "anita" は同名の別物 (ポルトガル語の論理学ツール) なので、
+          # 本家の配布物を直接指す。pexpect は setup.py が宣言していない。
+          python3 -m pip install --break-system-packages --quiet \
+            pexpect "$ANITA_URL"
+          command -v anita
+          anita 2>&1 | head -3 || true
+
+      - name: KVM を使えるようにする
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+          if [ -w /dev/kvm ]; then
+            echo "KVM あり。i386 のゲストはほぼ素の速さで回る。"
+          else
+            echo "::warning::/dev/kvm がない。TCG になるので 10 倍以上遅い。larger runner を検討。"
+          fi
+
+      # ---- ベースイメージ ---------------------------------------------------
+      # anita で NetBSD を入れるのは 20 分ほどかかるので、入れ終えた状態を
+      # キャッシュして使い回す。guest-bootstrap.sh を触ると作り直しになる。
+
+      - name: ベースイメージのキャッシュ
+        id: base
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VM_DIR }}/base.qcow2
+          key: netbsd-${{ env.NETBSD_RELEASE }}-${{ env.NETBSD_ARCH }}-base-v1-${{ hashFiles('ci/guest-bootstrap.sh') }}
+
+      - name: ベースイメージを作る
+        if: steps.base.outputs.cache-hit != 'true'
+        run: ci/make-base-image.sh
+
+      # ---- pkgsrc ツリー ----------------------------------------------------
+
+      - name: pkgsrc の ref を決める
+        id: pkgsrc
+        run: |
+          ref='${{ inputs.pkgsrc_ref }}'
+          [ -n "$ref" ] || ref=trunk
+          if [ "$ref" = trunk ]; then
+            sha=$(git ls-remote https://github.com/NetBSD/pkgsrc trunk | cut -f1)
+          else
+            sha=$ref
+          fi
+          echo "sha=$sha" >>"$GITHUB_OUTPUT"
+          echo "pkgsrc: $sha"
+
+      - name: pkgsrc のキャッシュ
+        id: tree
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SEED_DIR }}/pkgsrc.tar.gz
+          key: pkgsrc-${{ steps.pkgsrc.outputs.sha }}
+
+      - name: pkgsrc を固める
+        if: steps.tree.outputs.cache-hit != 'true'
+        env:
+          PKGSRC_SHA: ${{ steps.pkgsrc.outputs.sha }}
+        run: ci/make-pkgsrc-tarball.sh
+
+      # ---- 前回のパッケージ -------------------------------------------------
+      # 差分ビルドの種。リリースそのものがキャッシュを兼ねる。
+
+      - name: 前回のパッケージを持ってくる
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$SEED_DIR"
+          if [ '${{ inputs.scratch }}' = 'true' ]; then
+            echo "scratch 指定。前回分は使わない。"
+            exit 0
+          fi
+          rm -rf /tmp/prev && mkdir -p /tmp/prev/All
+          if gh release download "$RELEASE_TAG" --dir /tmp/prev/All --pattern '*.tgz' 2>/dev/null; then
+            echo "前回の $(ls /tmp/prev/All | grep -c '\.tgz$' || true) 個を持ってきた"
+            tar cf "$SEED_DIR/prev-packages.tar" -C /tmp/prev All
+            ls -lh "$SEED_DIR/prev-packages.tar"
+          else
+            echo "リリース $RELEASE_TAG がまだない。全部作る。"
+          fi
+          rm -rf /tmp/prev
+
+      # ---- ビルド -----------------------------------------------------------
+
+      - name: VM を起動する
+        run: |
+          set -euo pipefail
+          . ci/vm.sh
+          mkdir -p "$VM_DIR" "$SEED_DIR"
+          cp mk.conf ci/mk.conf.ci pkglist ci/guest-build.sh "$SEED_DIR/"
+          if [ -d overlay ]; then
+            tar_noxattr -czf "$SEED_DIR/overlay.tar.gz" \
+                --exclude 'README.md' overlay
+            echo "overlay: $(tar tzf "$SEED_DIR/overlay.tar.gz" | wc -l) 個のファイル"
+          fi
+          vm_make_key
+          seed_start
+          qemu-img create -q -f qcow2 -b "$VM_DIR/base.qcow2" -F qcow2 \
+                          "$VM_DIR/run.qcow2" 40G
+          vm_start
+          vm_wait_ssh 900
+          vm_ssh 'uname -a; df -h /'
+
+      - name: パッケージを作る
+        run: |
+          set -euo pipefail
+          . ci/vm.sh
+          vm_ssh 'ftp -o /root/guest-build.sh http://10.0.2.2:8123/guest-build.sh'
+
+          # ssh を張りっぱなしにして数時間持たせるのは分が悪い。ゲスト側で
+          # 切り離して走らせ、ログだけ追う。接続が切れてもビルドは続く。
+          vm_ssh "nohup env BUILD_DEADLINE_MIN=$BUILD_DEADLINE_MIN \
+                  sh /root/guest-build.sh >/root/build.log 2>&1 </dev/null &
+                  sleep 1; echo started"
+
+          line=1
+          while :; do
+            if new=$(vm_ssh "tail -n +$line /root/build.log" 2>/dev/null); then
+              if [ -n "$new" ]; then
+                printf '%s\n' "$new"
+                line=$((line + $(printf '%s\n' "$new" | wc -l)))
+              fi
+              if vm_ssh 'test -f /tmp/ci-report' 2>/dev/null; then
+                echo "--- ビルド終了"
+                break
+              fi
+              if ! vm_ssh 'pgrep -f guest-build.sh >/dev/null' 2>/dev/null; then
+                echo "::error::guest-build.sh が報告を残さずに終わった"
+                exit 1
+              fi
+            fi
+            sleep 20
+          done
+
+      - name: 結果を取り出す
+        run: |
+          set -euo pipefail
+          . ci/vm.sh
+          rm -rf packages && mkdir -p packages
+          vm_ssh 'cd /usr/pkgsrc/packages && tar cf - All' | tar xf - -C packages
+          vm_ssh 'cat /tmp/ci-report' >report.txt
+          vm_ssh 'cat /tmp/failed' >failed.txt || true
+          vm_ssh 'cat /root/build.log' >build.log || true
+          cat report.txt
+
+      - name: VM を止める
+        if: always()
+        run: |
+          . ci/vm.sh
+          vm_stop || true
+          seed_stop || true
+
+      - name: ログを残す
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: console
+          path: |
+            ${{ env.VM_DIR }}/console.log
+            build.log
+            failed.txt
+            report.txt
+          if-no-files-found: ignore
+
+      # ---- 公開 -------------------------------------------------------------
+
+      - name: リリース資産にできる名前か確かめる
+        run: |
+          set -euo pipefail
+          bad=$(ls packages/All | grep -vE '^[A-Za-z0-9._-]+$' || true)
+          if [ -n "$bad" ]; then
+            echo "GitHub は資産名の [A-Za-z0-9._-] 以外を '.' に潰すので、"
+            echo "この名前のままだと pkgin が組み立てる URL と一致しない:"
+            echo "$bad"
+            exit 1
+          fi
+          test -f packages/All/pkg_summary.xz
+
+      - name: Releases に上げる
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PKGSRC_SHA: ${{ steps.pkgsrc.outputs.sha }}
+        run: |
+          set -euo pipefail
+          repo_url="https://github.com/${{ github.repository }}/releases/download/$RELEASE_TAG"
+          {
+            printf 'NetBSD %s/%s 向けのバイナリパッケージ。\n\n' \
+                   "$NETBSD_RELEASE" "$NETBSD_ARCH"
+            printf -- '- pkgsrc: %s\n' "$PKGSRC_SHA"
+            printf -- '- mk.conf: このリポジトリの mk.conf\n'
+            printf -- '- run: %s\n\n' "${{ github.run_id }}"
+            printf 'pkgin から使うには /usr/pkg/etc/pkgin/repositories.conf に\n\n'
+            printf '    %s\n\n' "$repo_url"
+            printf 'の一行を書く。\n'
+          } >notes.md
+
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 \
+            || gh release create "$RELEASE_TAG" \
+                 --title "pkgsrc for NetBSD $NETBSD_RELEASE/$NETBSD_ARCH" \
+                 --notes-file notes.md
+          gh release edit "$RELEASE_TAG" --notes-file notes.md
+
+          # pkg_summary は最後。先に上げると、まだ無い .tgz を指した索引を
+          # pkgin に見せてしまう瞬間ができる。
+          gh release upload "$RELEASE_TAG" packages/All/*.tgz --clobber
+          gh release upload "$RELEASE_TAG" packages/All/pkg_summary.xz --clobber
+
+          # 消えたパッケージの資産を掃除する。
+          gh release view "$RELEASE_TAG" --json assets -q '.assets[].name' | sort >/tmp/remote
+          ls packages/All | sort >/tmp/local
+          comm -23 /tmp/remote /tmp/local | while read -r a; do
+            echo "古い資産 $a を消す"
+            gh release delete-asset "$RELEASE_TAG" "$a" -y
+          done
+
+      - name: まとめ
+        if: always()
+        run: |
+          {
+            echo "## ビルド結果"
+            echo
+            sed 's/^/- /' report.txt 2>/dev/null || echo "- 取れなかった"
+            echo
+            if [ -s failed.txt ]; then
+              echo "### 作れなかったもの"
+              echo
+              sed 's/^/- /' failed.txt
+              echo
+            fi
+            echo "pkgsrc: \`${{ steps.pkgsrc.outputs.sha }}\`"
+          } >>"$GITHUB_STEP_SUMMARY"

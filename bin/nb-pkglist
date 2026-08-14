@@ -1,0 +1,34 @@
+#!/bin/sh
+#
+# 今この箱に入っているものから pkglist を作る。NetBSD 側で走らせる。
+#
+#	nb-pkglist > pkglist
+#	git diff pkglist
+#
+# 出てくるのは PKGPATH の一覧。実際に何という版を作るかは pkgsrc の側が
+# 決めるので、ここには版を書かない。
+
+set -eu
+
+PKG_DBDIR=${PKG_DBDIR:-/var/db/pkg}
+export PKG_DBDIR
+
+command -v pkg_info >/dev/null 2>&1 || {
+	echo "nb-pkglist: pkg_info がない。NetBSD の箱で走らせること。" >&2
+	exit 1
+}
+
+printf '# この箱に入っているパッケージの PKGPATH。bin/nb-pkglist が作る。\n'
+printf '# %s %s\n' "$(uname -srm)" "$(date '+%Y-%m-%d')"
+printf '#\n'
+printf '# 消したいものは行ごと消す。増やしたいものは PKGPATH を足す。\n'
+printf '# 依存はここに書かなくても pkgsrc が引いてくる。\n'
+printf '\n'
+
+pkg_info -K "$PKG_DBDIR" -a 2>/dev/null | awk 'NF {print $1}' | while read -r pkg; do
+	path=$(pkg_info -K "$PKG_DBDIR" -Q PKGPATH "$pkg" 2>/dev/null) || continue
+	case "$path" in
+	*/*) echo "$path" ;;
+	*)   echo "nb-pkglist: $pkg に PKGPATH がない。手で足すこと。" >&2 ;;
+	esac
+done | sort -u

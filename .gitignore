@@ -1,0 +1,8 @@
+vm
+seed
+packages
+*.log
+report.txt
+failed.txt
+notes.md
+.DS_Store
