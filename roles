@@ -23,7 +23,6 @@ base
 sh
 
 # 役割の一覧に無いもの (自作パッケージ) はここに直接書く。
-+zakinko/github-keys
 +zakinko/nss_stns
 +zakinko/stnsd
 
