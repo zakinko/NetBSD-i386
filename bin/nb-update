@@ -11,6 +11,11 @@
 
 set -eu
 
+# pkgin も pkg_admin も対話シェル以外の PATH には入っていない。cron から
+# 呼ぶことも考えて、ここで揃えておく。
+PATH=/usr/pkg/sbin:/usr/pkg/bin:/sbin:/usr/sbin:/bin:/usr/bin
+export PATH
+
 : "${REPO_OWNER:=zakinko}"
 : "${REPO_NAME:=NetBSD-i386}"
 # .github/workflows/build.yml の RELEASE_TAG と揃えること。

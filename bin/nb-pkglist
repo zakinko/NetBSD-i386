@@ -10,6 +10,13 @@
 
 set -eu
 
+# NetBSD 11 では base の pkg_info は /usr/sbin にあり、pkgsrc の
+# pkgtools/pkg_install を入れていると /usr/pkg/sbin にも来る。どちらも
+# 対話シェル以外の PATH には入っていないので、ここで揃える。pkgsrc 側が
+# あればそちらを先に見る。
+PATH=/usr/pkg/sbin:/usr/pkg/bin:/sbin:/usr/sbin:/bin:/usr/bin
+export PATH
+
 PKG_DBDIR=${PKG_DBDIR:-/var/db/pkg}
 export PKG_DBDIR
 
