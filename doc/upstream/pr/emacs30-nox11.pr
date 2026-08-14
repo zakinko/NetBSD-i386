@@ -1,0 +1,106 @@
+To: gnats-bugs@NetBSD.org
+Subject: editors/emacs30-nox11: _EMACS_REQD names a package that is never built
+From: zakinko@snowrabbit.org
+Reply-To: zakinko@snowrabbit.org
+X-send-pr-version: 3.95
+
+>Submitter-Id:	net
+>Originator:	Showta Ishizaki
+>Organization:
+>Confidential:	no
+>Synopsis:	editors/emacs30-nox11: _EMACS_REQD names a package that is never built
+>Severity:	serious
+>Priority:	medium
+>Category:	pkg
+>Class:		sw-bug
+>Release:	NetBSD 11.0, pkgsrc CVS as of 2026-08-14
+>Environment:
+System: NetBSD 11.0 i386
+Architecture: i386
+Machine: i386
+>Description:
+	I went to build inputmethod/anthy-elisp against emacs30nox.
+	editors/emacs30-nox11 built and installed, and then anthy-elisp
+	stopped in depends.mk on a dependency that can never be satisfied.
+
+	editors/emacs30-nox11/version.mk asks for a package that pkgsrc does
+	not build:
+
+	  _EMACS_REQD=	emacs30-no-x11>=30.1<31
+
+	while the package itself is named emacs30-nox11:
+
+	  PKGNAME=	${DISTNAME:S/emacs/emacs30/:S/-/-nox11-/}
+	  -> emacs30-nox11-30.2
+
+	Every other generation spells it without the second hyphen:
+
+	  emacs26-nox11   emacs26-nox11>=26.1<27
+	  emacs27-nox11   emacs27-nox11>=27.1<28
+	  emacs28-nox11   emacs28-nox11>=28.1<29
+	  emacs29-nox11   emacs29-nox11>=29.1<30
+	  emacs30-nox11   emacs30-no-x11>=30.1<31   <- this one
+
+	The string emacs30-no-x11 occurs exactly once in the whole tree, in
+	this file.  Nothing builds a package by that name.
+
+	The package itself is fine.  What breaks is everything that depends on
+	it: editors/emacs/modules.mk turns _EMACS_REQD into the DEPENDS line,
+	so with EMACS_TYPE=emacs30nox no Emacs Lisp package can be built at
+	all.  anthy-elisp is just the one I happened to try.
+
+	version.mk is still at revision 1.1, so this has been the case since
+	emacs30-nox11 was added on 2025-12-16.
+
+>How-To-Repeat:
+	No build is needed; the wrong name is visible in the variable.  Any
+	package that uses editors/emacs/modules.mk will do:
+
+	  $ cd /usr/pkgsrc/devel/cmake-mode
+	  $ make EMACS_TYPE=emacs29nox show-var VARNAME=DEPENDS
+	  emacs29-nox11>=29.1<30:../../editors/emacs29-nox11
+	  $ make EMACS_TYPE=emacs30nox show-var VARNAME=DEPENDS
+	  emacs30-no-x11>=30.1<31:../../editors/emacs30-nox11
+
+	The pattern and the directory it points at disagree:
+
+	  $ cd /usr/pkgsrc/editors/emacs30-nox11
+	  $ make show-var VARNAME=PKGNAME
+	  emacs30-nox11-30.2
+
+	Building instead of asking says both things in a row, on NetBSD
+	11.0/i386:
+
+	  ===> Installing binary package of emacs30-nox11-30.2
+	  pkg_add: package `emacs30-nox11-30.2' already recorded as installed
+	  ERROR: [depends.mk] A package matching ``emacs30-no-x11>=30.1<31''
+	  ERROR:     should be installed, but one cannot be found.  Perhaps
+	  ERROR:     there is a stale work directory for
+	  ERROR:     ../../editors/emacs30-nox11?
+
+	It installs the dependency, notices it is already there, and then
+	reports that nothing matching it can be found.  The suggestion about a
+	stale work directory is a red herring.
+
+>Fix:
+	Spell it the way the package is named, as the other generations do.
+
+	No PKGREVISION bump: version.mk changes what dependent packages ask
+	for, not anything editors/emacs30-nox11 installs.
+
+	Index: editors/emacs30-nox11/version.mk
+	===================================================================
+	RCS file: /cvsroot/pkgsrc/editors/emacs30-nox11/version.mk,v
+	retrieving revision 1.1
+	diff -u -r1.1 version.mk
+	--- editors/emacs30-nox11/version.mk	16 Dec 2025 20:33:22 -0000	1.1
+	+++ editors/emacs30-nox11/version.mk	14 Aug 2026 18:06:24 -0000
+	@@ -1,7 +1,7 @@
+	 # $NetBSD: version.mk,v 1.1 2025/12/16 20:33:22 gdt Exp $
+	 
+	 _EMACS_FLAVOR=	emacs
+	-_EMACS_REQD=	emacs30-no-x11>=30.1<31
+	+_EMACS_REQD=	emacs30-nox11>=30.1<31
+	 
+	 _EMACS_VERSION_MAJOR=	30
+	 _EMACS_VERSION_MINOR=	2

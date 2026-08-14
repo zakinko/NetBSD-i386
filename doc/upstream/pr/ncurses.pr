@@ -1,0 +1,54 @@
+To: gnats-bugs@NetBSD.org
+Subject: pkg-vulnerabilities: ncurses CVE-2025-69720 is fixed in 6.6
+From: zakinko@snowrabbit.org
+Reply-To: zakinko@snowrabbit.org
+X-send-pr-version: 3.95
+
+>Submitter-Id:	net
+>Originator:	Showta Ishizaki
+>Organization:
+>Confidential:	no
+>Synopsis:	pkg-vulnerabilities: ncurses CVE-2025-69720 is fixed in 6.6
+>Severity:	non-critical
+>Priority:	low
+>Category:	pkg
+>Class:		change-request
+>Release:	NetBSD 11.0, pkgsrc trunk fa7ad771c96929bf742033e6ccfd8bb45b9cab49
+>Environment:
+System: NetBSD 11.0 i386
+Architecture: i386
+Machine: i386
+>Description:
+	pkg-vulnerabilities (rev 1.775) has
+
+	  ncurses-[0-9]*	buffer-overflow	https://nvd.nist.gov/vuln/detail/CVE-2025-69720
+
+	written as "every version", but the release pkgsrc ships already
+	carries the fix.
+
+	CVE-2025-69720 is the stack buffer overflow in analyze_string() in
+	progs/infocmp.c.  Upstream fixed it in the ncurses 6.5 20251213 patch,
+	and ncurses 6.6 was released on 2025-12-30, so the release includes it.
+
+	In the 6.6 tarball, progs/infocmp.c is rev 1.177 (2025-12-27) and
+	analyze_string() now clamps the length:
+
+	    if ((len = strlen(cp)) > MAX_TERMINFO_LENGTH)
+	        len = MAX_TERMINFO_LENGTH;
+
+	along with (len < sizeof(buf3)) guards on the CSI parameter paths.
+
+	devel/ncurses in pkgsrc is at 6.6 (Makefile rev 1.124), so no package
+	change is needed; only the entry is stale.
+
+>How-To-Repeat:
+	pkg_admin fetch-pkg-vulnerabilities && pkg_admin audit
+
+	on a system with ncurses 6.6 installed reports
+
+	  Package ncurses-6.6 has a buffer-overflow vulnerability,
+	  see https://nvd.nist.gov/vuln/detail/CVE-2025-69720
+
+>Fix:
+	ncurses-[0-9]*	->	ncurses<6.6
+

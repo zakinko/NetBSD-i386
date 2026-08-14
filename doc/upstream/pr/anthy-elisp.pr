@@ -1,0 +1,102 @@
+To: gnats-bugs@NetBSD.org
+Subject: inputmethod/anthy-elisp: accept emacs26 through emacs30
+From: zakinko@snowrabbit.org
+Reply-To: zakinko@snowrabbit.org
+X-send-pr-version: 3.95
+
+>Submitter-Id:	net
+>Originator:	Showta Ishizaki
+>Organization:
+>Confidential:	no
+>Synopsis:	inputmethod/anthy-elisp: accept emacs26 through emacs30
+>Severity:	non-critical
+>Priority:	low
+>Category:	pkg
+>Class:		change-request
+>Release:	NetBSD 11.0, pkgsrc trunk fa7ad771c96929bf742033e6ccfd8bb45b9cab49
+>Environment:
+System: NetBSD 11.0 i386
+Architecture: i386
+Machine: i386
+>Description:
+	inputmethod/anthy-elisp only accepts emacs21, emacs20 and XEmacs:
+
+	  EMACS_VERSIONS_ACCEPTED= emacs21 emacs21nox emacs20 \
+	                           xemacs215 xemacs215nox xemacs214 xemacs214nox
+
+	so on a machine with a current Emacs it stops in can-be-built-here.mk:
+
+	  ERROR: Accepted versions are: emacs21 emacs21nox emacs20 xemacs215 ...
+	  ERROR: No valid Emacs version installed found
+
+	That line has not changed since the package was last restructured,
+	while the Makefile itself has been touched as recently as 2024, so it
+	looks like nobody has tried a newer Emacs rather than a known
+	incompatibility.
+
+	This matters because anthy-elisp is the only package that installs
+	anthy.el (apart from the tamago ones).  An init file that does
+
+	  (load-library "anthy")
+	  (setq default-input-method 'japanese-anthy)
+
+	therefore has no way to work on any Emacs newer than 21 through
+	pkgsrc.
+
+>How-To-Repeat:
+	env EMACS_TYPE=emacs26nox make -C /usr/pkgsrc/inputmethod/anthy-elisp fetch
+
+	  ERROR: [can-be-built-here.mk] This package has PKG_FAIL_REASON set:
+	  ERROR: Accepted versions are: emacs21 emacs21nox emacs20 xemacs215 ...
+	  ERROR: No valid Emacs version installed found
+
+>Fix:
+	Add emacs26 through emacs30 to EMACS_VERSIONS_ACCEPTED.  PKGREVISION is
+	left alone: the installed files do not change, only which Emacs the
+	package will build against.
+
+	Built and packaged on NetBSD 11.0/i386 with EMACS_TYPE=emacs26nox.
+	Byte compilation of src-util/*.el completes and the package installs
+	as anthy-elisp-9100hnb6, with six .elc files.
+
+	Note that anthy.el still refers to last-command-char, which was removed
+	in Emacs 26; users work around it with
+
+	  (define-obsolete-variable-alias 'last-command-char 'last-command-event ...)
+
+	in their init file.  Byte compilation only warns about it, so the
+	package builds, but it would be worth patching properly if you would
+	rather carry the fix in pkgsrc.
+
+	I have not been able to confirm emacs30nox yet: editors/emacs30-nox11
+	builds emacs30-nox11-30.2, but editors/emacs/modules.mk asks for
+	emacs30-no-x11>=30.1<31, and the build stops with
+
+	  ERROR: [depends.mk] A package matching ``emacs30-no-x11>=30.1<31''
+	  ERROR:     should be installed, but one cannot be found.
+
+	That looks like a separate problem in the emacs30 packages, not in
+	this one.
+
+	Index: inputmethod/anthy-elisp/Makefile
+	===================================================================
+	RCS file: /cvsroot/pkgsrc/inputmethod/anthy-elisp/Makefile,v
+	retrieving revision 1.14
+	diff -u -r1.14 Makefile
+	--- inputmethod/anthy-elisp/Makefile	8 May 2024 12:20:52 -0000	1.14
+	+++ inputmethod/anthy-elisp/Makefile	14 Aug 2026 15:13:45 -0000
+	@@ -14,7 +14,13 @@
+	 CONFIGURE_ENV+=	EMACS=${EMACS_BIN:Q}
+	 EMACS_MODULES+=	base leim
+	 
+	-EMACS_VERSIONS_ACCEPTED=	emacs21 emacs21nox emacs20 xemacs215 xemacs215nox xemacs214 xemacs214nox
+	+EMACS_VERSIONS_ACCEPTED=	emacs21 emacs21nox emacs20
+	+EMACS_VERSIONS_ACCEPTED+=	xemacs215 xemacs215nox xemacs214 xemacs214nox
+	+EMACS_VERSIONS_ACCEPTED+=	emacs26 emacs26nox
+	+EMACS_VERSIONS_ACCEPTED+=	emacs27 emacs27nox
+	+EMACS_VERSIONS_ACCEPTED+=	emacs28 emacs28nox
+	+EMACS_VERSIONS_ACCEPTED+=	emacs29 emacs29nox
+	+EMACS_VERSIONS_ACCEPTED+=	emacs30 emacs30nox
+	 
+	 .include "../../editors/emacs/modules.mk"
+	 

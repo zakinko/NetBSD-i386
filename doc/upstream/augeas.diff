@@ -4,7 +4,7 @@ RCS file: /cvsroot/pkgsrc/sysutils/augeas/Makefile,v
 retrieving revision 1.20
 diff -u -r1.20 Makefile
 --- sysutils/augeas/Makefile	7 Jan 2026 08:48:48 -0000	1.20
-+++ sysutils/augeas/Makefile	13 Aug 2026 22:40:52 -0000
++++ sysutils/augeas/Makefile	14 Aug 2026 17:42:15 -0000
 @@ -1,7 +1,7 @@
  # $NetBSD: Makefile,v 1.20 2026/01/07 08:48:48 wiz Exp $
  
@@ -20,46 +20,84 @@ RCS file: /cvsroot/pkgsrc/sysutils/augeas/distinfo,v
 retrieving revision 1.8
 diff -u -r1.8 distinfo
 --- sysutils/augeas/distinfo	28 Apr 2025 19:31:33 -0000	1.8
-+++ sysutils/augeas/distinfo	13 Aug 2026 22:40:52 -0000
++++ sysutils/augeas/distinfo	14 Aug 2026 17:42:15 -0000
 @@ -3,3 +3,4 @@
  BLAKE2s (augeas-1.14.1.tar.gz) = c16626c6d440ab43be0b705f4aef01ebbb109544a23478a780fd563ec27c1004
  SHA512 (augeas-1.14.1.tar.gz) = fddb2e243f979e71fc09f9d45d569d6307b35485b2d885bf7bcbc032ba5617fe7ab2071a041422c3efe2dd62eda74aba41016d248c0636e947d4f1c9144375aa
  Size (augeas-1.14.1.tar.gz) = 2653776 bytes
-+SHA1 (patch-src_fa.c) = dc0347c5ead3c629d88abc2c8e6b00362865e121
-Index: sysutils/augeas/patches/patch-src_fa.c
++SHA1 (patch-CVE-2025-2588) = 64f6fc558930a890b68592b1e41d6f2fffd1a928
+Index: sysutils/augeas/patches/patch-CVE-2025-2588
 ===================================================================
-RCS file: sysutils/augeas/patches/patch-src_fa.c
-diff -N sysutils/augeas/patches/patch-src_fa.c
+RCS file: sysutils/augeas/patches/patch-CVE-2025-2588
+diff -N sysutils/augeas/patches/patch-CVE-2025-2588
 --- /dev/null	1 Jan 1970 00:00:00 -0000
-+++ sysutils/augeas/patches/patch-src_fa.c	14 Aug 2026 00:00:00 -0000
-@@ -0,0 +1,30 @@
++++ sysutils/augeas/patches/patch-CVE-2025-2588	15 Aug 2026 00:00:00 -0000
+@@ -0,0 +1,68 @@
 +$NetBSD$
 +
 +Fix a NULL dereference in the regexp parser.  CVE-2025-2588.
 +
-+parse_regexp() can return NULL without recording a reason in parse->error,
-+and three of its callers -- fa_expand_nocase(), fa_restrict_alphabet() and
-+fa_expand_char_ranges() -- only look at parse->error before dereferencing
-+what came back.  Upstream fixed this at the source rather than adding a NULL
-+check to each caller:
++parse_regexp() could return NULL while leaving parse->error at REG_NOERROR.
++fa_expand_nocase(), fa_restrict_alphabet() and fa_expand_char_ranges() only
++test parse->error before dereferencing what came back, so they walk into the
++NULL and the process dies.  Upstream fixed this at the error label rather
++than adding a check to each of the three callers.
 +
-+  https://github.com/hercules-team/augeas/issues/852
++Upstream commit af2aa88ab37fc48167d8c5e43b1770a4ba2ff403 applied verbatim:
++the fix itself, the fa.h comment that documents the new return value, and
++the regression test.  It has not been released; 1.14.1 (2023) is still the
++last release.
 +
-+The upstream commit is on master and has not been released; 1.14.1 (2023) is
-+still the last release.  It uses _REG_ENOSYS, which is a glibc extension and
-+is not in NetBSD's <regex.h>, so REG_BADPAT is used here instead.  It is
-+POSIX and says the same thing to the caller: the pattern was no good.
++_REG_ENOSYS is not in NetBSD's <regex.h>, but augeas is built with
++-I ../gnulib/lib and takes <regex.h> from the bundled gnulib copy, which
++defines it.  Without the src/fa.c hunk below, tests/fatest dies with SIGSEGV.
 +
-+--- src/fa.c.orig	2023-07-14 11:07:23.000000000 +0000
++https://github.com/hercules-team/augeas/issues/852
++
++--- src/fa.c.orig
 ++++ src/fa.c
-+@@ -3550,6 +3550,10 @@
++@@ -3550,6 +3550,8 @@
 +     return re;
 + 
 +  error:
-++    /* CVE-2025-2588: do not hand a NULL back with parse->error unset;
-++     * the callers below only test parse->error. */
 ++    if (re == NULL && parse->error == REG_NOERROR)
-++        parse->error = REG_BADPAT;
+++        parse->error = _REG_ENOSYS;
 +     re_unref(re);
 +     return NULL;
 + }
++
++--- src/fa.h.orig
+++++ src/fa.h
++@@ -81,7 +81,8 @@
++  *
++  * On success, FA points to the newly allocated automaton constructed for
++  * RE, and the function returns REG_NOERROR. Otherwise, FA is NULL, and the
++- * return value indicates the error.
+++ * return value indicates the error. Special value _REG_ENOSYS indicates
+++ * fa_compile() couldn't identify the syntax issue with regexp.
++  *
++  * The FA is case sensitive. Call FA_NOCASE to switch it to
++  * case-insensitive.
++
++--- tests/fatest.c.orig
+++++ tests/fatest.c
++@@ -589,6 +589,7 @@
++     const char *p1 = "aB";
++     const char *p2 = "[a-cUV]";
++     const char *p3 = "[^a-z]";
+++    const char *wrong_regexp = "{&.{";
++     char *s;
++     size_t len;
++     int r;
++@@ -607,6 +608,11 @@
++     CuAssertIntEquals(tc, 0, r);
++     CuAssertStrEquals(tc, "[^A-Za-z]", s);
++     free(s);
+++
+++    /* Test that fa_expand_nocase does return _REG_ENOSYS */
+++    r = fa_expand_nocase(wrong_regexp, strlen(wrong_regexp), &s, &len);
+++    CuAssertIntEquals(tc, _REG_ENOSYS, r);
+++    free(s);
++ }
++ 
++ static void testNoCaseComplement(CuTest *tc) {

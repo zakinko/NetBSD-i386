@@ -1,0 +1,203 @@
+To: gnats-bugs@NetBSD.org
+Subject: sysutils/augeas: fix NULL dereference (CVE-2025-2588)
+From: zakinko@snowrabbit.org
+Reply-To: zakinko@snowrabbit.org
+X-send-pr-version: 3.95
+
+>Submitter-Id:	net
+>Originator:	Showta Ishizaki
+>Organization:
+>Confidential:	no
+>Synopsis:	sysutils/augeas: fix NULL dereference (CVE-2025-2588)
+>Severity:	non-critical
+>Priority:	medium
+>Category:	pkg
+>Class:		sw-bug
+>Release:	NetBSD 9.4, pkgsrc CVS as of 2026-08-14
+>Environment:
+System: NetBSD 9.4 i386
+Architecture: i386
+Machine: i386
+>Description:
+	pkg_admin audit reports CVE-2025-2588 against every version of
+	sysutils/augeas, and there is no release to update to.
+
+	parse_regexp() in src/fa.c can return NULL without recording a reason
+	in parse->error.  Three of its callers -- fa_expand_nocase(),
+	fa_restrict_alphabet() and fa_expand_char_ranges() -- only test
+	parse->error before dereferencing what came back, so they walk into
+	the NULL.  (A fourth caller, fa_compile(), tests the pointer and is
+	fine.)
+
+	Upstream fixed this by filling in parse->error at the error label
+	rather than adding a NULL check to each caller, which closes all three
+	at once:
+
+	  https://github.com/hercules-team/augeas/issues/852
+	  commit af2aa88ab37fc48167d8c5e43b1770a4ba2ff403, 2025-03-30
+
+	That commit has never been released.  1.14.1 (2023-07-15) is still the
+	last release, seventeen months after the fix landed, so waiting for
+	upstream is not a plan.  Nor is moving to a snapshot worth it here:
+	master is only 19 commits ahead of 1.14.1, and once the new Deb822
+	apt sources lens and its tests are set aside, the C code differs by
+	about 80 lines, nearly all of it -Wdiscarded-qualifiers cleanup for
+	GCC 16.
+
+	Other distributions already carry the fix.  Fedora ships it as a git
+	snapshot (1.14.2-0.4.20250324git4dffa3d); Debian has it in bookworm,
+	trixie and sid, naming the same commit; SUSE record it as resolved in
+	bsc#1239909.  No BSD carries it yet -- FreeBSD textproc/augeas and
+	OpenBSD sysutils/augeas both have patches, but none of them touch
+	src/fa.c.
+
+>How-To-Repeat:
+	pkg_admin audit on a system with augeas installed reports
+
+	  Package augeas-1.14.1nb1 has a denial-of-service vulnerability,
+	  see https://nvd.nist.gov/vuln/detail/CVE-2025-2588
+
+	and the pkg-vulnerabilities entry is augeas-[0-9]*, so no version
+	clears it.
+
+	For the crash itself, apply the patch below with its src/fa.c hunk
+	dropped, so that only the regression test goes in, and run
+
+	  cd /usr/pkgsrc/sysutils/augeas && make test
+
+	tests/fatest dies with SIGSEGV (exit 139) and prints nothing.  With
+	the whole patch applied it reports "OK (21 tests)".
+
+>Fix:
+	The patch is upstream commit af2aa88 applied verbatim -- the fix in
+	src/fa.c, the fa.h comment that documents the new return value, and
+	the regression test.  Nothing is adapted.
+
+	It is one patch covering three files and named after the CVE rather
+	than after a source file, following editors/emacs21 and net/avahi.
+	Splitting it three ways would separate the fix from the test that
+	demonstrates it.
+
+	_REG_ENOSYS resolves even though NetBSD's <regex.h> does not have it,
+	because augeas is built with -I ../gnulib/lib and its <regex.h> is the
+	bundled gnulib copy, not the system header.  I checked this rather
+	than assumed it; the preprocessor resolves <regex.h> from src/fa.c to
+	../gnulib/lib/regex.h, which defines _REG_ENOSYS.
+
+	PKGREVISION bumped.  Built, tested and packaged on NetBSD 9.4/i386.
+
+	Please also narrow the pkg-vulnerabilities entry when this goes in.
+	It currently reads
+
+	  augeas-[0-9]*		denial-of-service	.../CVE-2025-2588
+
+	and should become
+
+	  augeas<1.14.1nb2	denial-of-service	.../CVE-2025-2588
+
+	Without that, pkg_admin audit keeps reporting the CVE against the
+	fixed package, because the entry matches every version.
+
+	Index: sysutils/augeas/Makefile
+	===================================================================
+	RCS file: /cvsroot/pkgsrc/sysutils/augeas/Makefile,v
+	retrieving revision 1.20
+	diff -u -r1.20 Makefile
+	--- sysutils/augeas/Makefile	7 Jan 2026 08:48:48 -0000	1.20
+	+++ sysutils/augeas/Makefile	14 Aug 2026 17:42:15 -0000
+	@@ -1,7 +1,7 @@
+	 # $NetBSD: Makefile,v 1.20 2026/01/07 08:48:48 wiz Exp $
+	 
+	 DISTNAME=	augeas-1.14.1
+	-PKGREVISION=	1
+	+PKGREVISION=	2
+	 CATEGORIES=	sysutils
+	 MASTER_SITES=	${MASTER_SITE_GITHUB:=hercules-team/}
+	 GITHUB_RELEASE=	release-${PKGVERSION_NOREV}
+	Index: sysutils/augeas/distinfo
+	===================================================================
+	RCS file: /cvsroot/pkgsrc/sysutils/augeas/distinfo,v
+	retrieving revision 1.8
+	diff -u -r1.8 distinfo
+	--- sysutils/augeas/distinfo	28 Apr 2025 19:31:33 -0000	1.8
+	+++ sysutils/augeas/distinfo	14 Aug 2026 17:42:15 -0000
+	@@ -3,3 +3,4 @@
+	 BLAKE2s (augeas-1.14.1.tar.gz) = c16626c6d440ab43be0b705f4aef01ebbb109544a23478a780fd563ec27c1004
+	 SHA512 (augeas-1.14.1.tar.gz) = fddb2e243f979e71fc09f9d45d569d6307b35485b2d885bf7bcbc032ba5617fe7ab2071a041422c3efe2dd62eda74aba41016d248c0636e947d4f1c9144375aa
+	 Size (augeas-1.14.1.tar.gz) = 2653776 bytes
+	+SHA1 (patch-CVE-2025-2588) = 64f6fc558930a890b68592b1e41d6f2fffd1a928
+	Index: sysutils/augeas/patches/patch-CVE-2025-2588
+	===================================================================
+	RCS file: sysutils/augeas/patches/patch-CVE-2025-2588
+	diff -N sysutils/augeas/patches/patch-CVE-2025-2588
+	--- /dev/null	1 Jan 1970 00:00:00 -0000
+	+++ sysutils/augeas/patches/patch-CVE-2025-2588	15 Aug 2026 00:00:00 -0000
+	@@ -0,0 +1,68 @@
+	+$NetBSD$
+	+
+	+Fix a NULL dereference in the regexp parser.  CVE-2025-2588.
+	+
+	+parse_regexp() could return NULL while leaving parse->error at REG_NOERROR.
+	+fa_expand_nocase(), fa_restrict_alphabet() and fa_expand_char_ranges() only
+	+test parse->error before dereferencing what came back, so they walk into the
+	+NULL and the process dies.  Upstream fixed this at the error label rather
+	+than adding a check to each of the three callers.
+	+
+	+Upstream commit af2aa88ab37fc48167d8c5e43b1770a4ba2ff403 applied verbatim:
+	+the fix itself, the fa.h comment that documents the new return value, and
+	+the regression test.  It has not been released; 1.14.1 (2023) is still the
+	+last release.
+	+
+	+_REG_ENOSYS is not in NetBSD's <regex.h>, but augeas is built with
+	+-I ../gnulib/lib and takes <regex.h> from the bundled gnulib copy, which
+	+defines it.  Without the src/fa.c hunk below, tests/fatest dies with SIGSEGV.
+	+
+	+https://github.com/hercules-team/augeas/issues/852
+	+
+	+--- src/fa.c.orig
+	++++ src/fa.c
+	+@@ -3550,6 +3550,8 @@
+	+     return re;
+	+ 
+	+  error:
+	++    if (re == NULL && parse->error == REG_NOERROR)
+	++        parse->error = _REG_ENOSYS;
+	+     re_unref(re);
+	+     return NULL;
+	+ }
+	+
+	+--- src/fa.h.orig
+	++++ src/fa.h
+	+@@ -81,7 +81,8 @@
+	+  *
+	+  * On success, FA points to the newly allocated automaton constructed for
+	+  * RE, and the function returns REG_NOERROR. Otherwise, FA is NULL, and the
+	+- * return value indicates the error.
+	++ * return value indicates the error. Special value _REG_ENOSYS indicates
+	++ * fa_compile() couldn't identify the syntax issue with regexp.
+	+  *
+	+  * The FA is case sensitive. Call FA_NOCASE to switch it to
+	+  * case-insensitive.
+	+
+	+--- tests/fatest.c.orig
+	++++ tests/fatest.c
+	+@@ -589,6 +589,7 @@
+	+     const char *p1 = "aB";
+	+     const char *p2 = "[a-cUV]";
+	+     const char *p3 = "[^a-z]";
+	++    const char *wrong_regexp = "{&.{";
+	+     char *s;
+	+     size_t len;
+	+     int r;
+	+@@ -607,6 +608,11 @@
+	+     CuAssertIntEquals(tc, 0, r);
+	+     CuAssertStrEquals(tc, "[^A-Za-z]", s);
+	+     free(s);
+	++
+	++    /* Test that fa_expand_nocase does return _REG_ENOSYS */
+	++    r = fa_expand_nocase(wrong_regexp, strlen(wrong_regexp), &s, &len);
+	++    CuAssertIntEquals(tc, _REG_ENOSYS, r);
+	++    free(s);
+	+ }
+	+ 
+	+ static void testNoCaseComplement(CuTest *tc) {
