@@ -293,6 +293,20 @@ jobs:
             gh release delete-asset "$RELEASE_TAG" "$a" -y
           done
 
+      # 作れなかったものがあっても、作れた分は上で公開してある。その上で
+      # ジョブは赤くする。緑のまま「4 個中 3 個失敗」を見逃すのが一番まずい。
+      - name: 失敗があれば赤くする
+        if: always()
+        run: |
+          [ -f report.txt ] || exit 0
+          n=$(sed -n 's/^failed=//p' report.txt)
+          [ -n "$n" ] && [ "$n" -gt 0 ] || exit 0
+          while read -r pkgpath pkgname; do
+            echo "::error title=ビルド失敗::$pkgpath ($pkgname)"
+          done <failed.txt
+          echo "$n 個が作れなかった。作れた分は公開済み。"
+          exit 1
+
       - name: まとめ
         if: always()
         run: |
