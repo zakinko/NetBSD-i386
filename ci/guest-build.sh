@@ -4,12 +4,16 @@
 #
 # 前提: ホストが http://10.0.2.2:8123/ に
 #   pkgsrc.tar.gz     展開すると /usr/pkgsrc になる pkgsrc ツリー (zakinko 入り)
-#   mk.conf           このリポジトリの mk.conf
+#   mk.conf           sbin/mk.conf (techne の /etc/mk.conf の写し)
 #   mk.conf.ci        CI でだけ効かせる追加分
-#   pkglist           作るパッケージの PKGPATH 一覧
+#   roles             作る役割の一覧
+#   sbin.tar.gz       ~/.sbin の写し (list.pkg.*)
 #   overlay.tar.gz    pkgsrc に被せる自前の patch (なくてもよい)
 #   prev-packages.tar 前回作った All/*.tgz (なくてもよい)
 # を置いている。
+#
+# 作るものは roles と sbin/list.pkg.* から決まる。一覧の正は techne の
+# ~/.sbin で、ここにあるのはその写し。
 
 set -u
 
@@ -96,7 +100,41 @@ fetch mk.conf.ci /tmp/mk.conf.ci || die "mk.conf.ci を取れない"
 } >/etc/mk.conf
 chmod 644 /etc/mk.conf
 
-fetch pkglist /tmp/pkglist || die "pkglist を取れない"
+##
+## 作るものを決める。roles に書いた役割ぶんの sbin/list.pkg.<役割> を
+## 順に連結する。行頭 + で始まる行は役割ではなく PKGPATH の直書き。
+##
+## list.pkg.* の書式は ~/.sbin/pkgsrc-bootstrap.sh に合わせてある:
+##   PKGPATH [make のオプション] [post_action]
+## 先頭の空白・空行・# 始まりは無視。#! で始まる行は向こうの
+## PKG_WORK_AROUND 用なので、ここでは読み飛ばす。
+##
+fetch roles /tmp/roles || die "roles を取れない"
+fetch sbin.tar.gz /tmp/sbin.tar.gz || die "sbin.tar.gz を取れない"
+rm -rf /tmp/sbin && mkdir -p /tmp/sbin
+tar xzf /tmp/sbin.tar.gz -C /tmp/sbin 2>/dev/null
+[ -d /tmp/sbin/sbin ] || die "sbin.tar.gz の中身が想定と違う"
+
+: >/tmp/pkglist
+while read -r name _rest; do
+	case "$name" in ''|\#*) continue ;; esac
+	case "$name" in
+	+*)
+		echo "${name#+}" >>/tmp/pkglist
+		continue
+		;;
+	esac
+	l=/tmp/sbin/sbin/list.pkg.$name
+	[ -f "$l" ] || die "役割 $name に対応する list.pkg.$name が無い"
+	n=$(LC_ALL=C grep -cvE '^[[:space:]]*(#|$)' "$l" || true)
+	log "役割 $name ($n 行)"
+	LC_ALL=C sed -e 's/#.*//' -e 's/[[:space:]].*//' "$l" |
+	    LC_ALL=C grep -v '^$' >>/tmp/pkglist
+done </tmp/roles
+
+## 同じものが複数の役割に出てくる (sudo が sh と local の両方など)。
+sort -u /tmp/pkglist >/tmp/pkglist.u && mv /tmp/pkglist.u /tmp/pkglist
+log "作る対象 $(wc -l </tmp/pkglist | tr -d ' ') 件"
 
 mkdir -p "$PACKAGES/All" "$DISTDIR" /var/tmp/pkgsrc.work
 

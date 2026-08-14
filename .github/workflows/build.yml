@@ -7,8 +7,8 @@ on:
   push:
     branches: [main]
     paths:
-      - 'pkglist'
-      - 'mk.conf'
+      - 'roles'
+      - 'sbin/**'
       - 'ci/**'
       - 'overlay/**'
       - '.github/workflows/build.yml'
@@ -28,18 +28,8 @@ on:
 permissions:
   contents: write
 
-# 同じリリースを二つのジョブが書きに行くと壊れる。前のを止めずに待たせる。
-concurrency:
-  group: build
-  cancel-in-progress: false
-
 env:
-  # ここと RELEASE_TAG と bin/nb-update の RELEASE_TAG は一緒に変えること。
-  # リリースが変わると libc のメジャーが変わるので、作ったバイナリは他の
-  # リリースでは動かない。
-  NETBSD_RELEASE: '11.0'
   NETBSD_ARCH: i386
-  RELEASE_TAG: pkgsrc-11.0-i386
   # ゲストはこの分だけ回したら自分から降りて、作れたところまでを持ち帰る。
   # runner の 360 分より十分手前にしておくこと。
   BUILD_DEADLINE_MIN: '260'
@@ -55,6 +45,27 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 350
+
+    # 箱ごとに OS のリリースが違う。リリースが変われば libc のメジャーが
+    # 変わるので、作ったバイナリは他のリリースでは動かない。リリースごとに
+    # 別のイメージで作り、別のリリースタグに置く。
+    #
+    # 箱を増やす/減らすときはここを変える。fail-fast は切ってあるので、
+    # 片方が落ちてももう片方は最後まで走る。
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ['9.4', '10.1', '11.0']
+
+    # 同じタグを二つのジョブが書きに行くと壊れる。リリースごとに分けて、
+    # 前のを止めずに待たせる。
+    concurrency:
+      group: build-${{ matrix.release }}
+      cancel-in-progress: false
+
+    env:
+      NETBSD_RELEASE: ${{ matrix.release }}
+      RELEASE_TAG: pkgsrc-${{ matrix.release }}-i386
 
     steps:
       - uses: actions/checkout@v7
@@ -103,7 +114,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ env.VM_DIR }}/base.qcow2
-          key: netbsd-${{ env.NETBSD_RELEASE }}-${{ env.NETBSD_ARCH }}-base-v1-${{ hashFiles('ci/guest-bootstrap.sh') }}
+          key: netbsd-${{ matrix.release }}-i386-base-v1-${{ hashFiles('ci/guest-bootstrap.sh') }}
 
       - name: ベースイメージを作る
         if: steps.base.outputs.cache-hit != 'true'
@@ -167,7 +178,8 @@ jobs:
           set -euo pipefail
           . ci/vm.sh
           mkdir -p "$VM_DIR" "$SEED_DIR"
-          cp mk.conf ci/mk.conf.ci pkglist ci/guest-build.sh "$SEED_DIR/"
+          cp sbin/mk.conf ci/mk.conf.ci roles ci/guest-build.sh "$SEED_DIR/"
+          tar_noxattr -czf "$SEED_DIR/sbin.tar.gz" sbin
           if [ -d overlay ]; then
             tar_noxattr -czf "$SEED_DIR/overlay.tar.gz" \
                 --exclude 'README.md' overlay

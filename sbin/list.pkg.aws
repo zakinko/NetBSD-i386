@@ -1,0 +1,9 @@
+#BIND to Amazon Route 53 Conversion Tool
+nsrg/p5-Net-DNS-Zonefile
+net/p5-NetAddr-IP
+net/p5-Net-DNS
+net/p5-Net-IP
+security/p5-Digest-HMAC
+security/p5-Digest-MD5-File
+security/p5-Digest-SHA1
+converters/p5-MIME-Base64

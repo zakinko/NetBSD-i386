@@ -1,0 +1,21 @@
+#
+# build machine
+#
+
+# editors
+editors/nano
+
+# lang/llvm is required for lang/rust.
+lang/rust
+
+# git extention
+devel/git-lfs
+
+# service host
+net/bind918
+net/tnftpd
+net/chrony
+security/sudo
+security/py-certbot-apache
+converters/py-charset-normalizer
+

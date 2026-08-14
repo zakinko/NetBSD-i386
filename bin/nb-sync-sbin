@@ -1,0 +1,59 @@
+#!/bin/sh
+#
+# techne の ~/.sbin から、この repo が使う写しを取り直す。
+#
+#	bin/nb-sync-sbin [ホスト]
+#	git diff sbin/
+#
+# 正は techne の ~/.sbin (CVS: elena.sh.fml.org:/cvsroot の
+# ahodori/hostconf/home/.sbin)。GitHub Actions からはその CVS にも
+# ~fukachan/etc/mk.conf にも届かないので、CI が読めるように写しをこの repo に
+# 置いている。**写しを直接編集しないこと。** 直すのは .sbin の側で、ここは
+# このスクリプトで追従させる。
+#
+# mk.conf だけは事情が違う。本来の正は ~fukachan/etc/mk.conf だが 600 で
+# 読めないので、それが配られた結果である techne の /etc/mk.conf を写している。
+
+set -eu
+
+HOST=${1:-techne.fml.org}
+USER_AT=${SBIN_USER:+$SBIN_USER@}
+REMOTE=${USER_AT:-}$HOST
+
+cd "$(dirname "$0")/.."
+mkdir -p sbin
+
+echo "=== $REMOTE から取る"
+
+# 向こうのログインシェルは csh なので、リダイレクトを含む命令は素で渡せない。
+# /bin/sh に食わせる。
+files=$(ssh -o BatchMode=yes "$REMOTE" /bin/sh <<'EOS'
+cd ~/.sbin && ls list.pkg.* Makefile 2>/dev/null
+EOS
+)
+
+for f in $files; do
+	ssh -o BatchMode=yes "$REMOTE" "cat ~/.sbin/$f" >"sbin/$f"
+	echo "    $f"
+done
+
+ssh -o BatchMode=yes "$REMOTE" 'cat /etc/mk.conf' >sbin/mk.conf
+echo "    mk.conf (/etc/mk.conf)"
+
+{
+	echo "# bin/nb-sync-sbin が書く。手で触らない。"
+	echo "#"
+	echo "# 正   : $REMOTE の ~/.sbin"
+	echo "# CVS  : elena.sh.fml.org:/cvsroot  ahodori/hostconf/home/.sbin"
+	echo "# 取得 : $(date '+%Y-%m-%d %H:%M:%S %z')"
+	echo
+	for f in sbin/*; do
+		case "$f" in sbin/SOURCE) continue ;; esac
+		id=$(LC_ALL=C sed -n 's/.*\$\(FML: [^$]*\)\$.*/\1/p' "$f" | head -1)
+		printf '%-24s %s\n' "${f##*/}" "${id:-(版の記載なし)}"
+	done
+} >sbin/SOURCE
+
+echo
+echo "=== 取れたもの"
+cat sbin/SOURCE

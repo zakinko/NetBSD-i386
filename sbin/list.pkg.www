@@ -1,0 +1,26 @@
+# WWW (for GUI)
+# www/apache22
+www/apache24
+www/cronolog
+
+# *** obsolete ***
+# www/cvsweb
+
+# https (encryption)
+security/py-certbot-apache
+
+# misc (required by ?)
+converters/py-charset-normalizer
+
+# build all candidates
+www/nginx
+www/thttpd
+
+
+
+# 
+# *** obsolete ***
+#
+# # WWW (for CUI)
+# devel/p5-Date-Calc
+# www/p5-CGI
