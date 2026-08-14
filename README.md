@@ -156,7 +156,7 @@ audit は `~/.sbin` の `make audit` (`pkgsrc-audit.sh`) を使う。
 | `roles` | この CI がどの役割ぶんを作るか。`sbin/list.pkg.<名前>` を選ぶ |
 | `bin/nb-sync-sbin` | `.sbin` から `sbin/` を取り直す |
 | `ci/mk.conf.ci` | CI でだけ効かせる分 (置き場所、並列度)。中身は変えない設定だけ |
-| `overlay/` | 上流 pkgsrc に被せる自前の patch。[overlay/README.md](overlay/README.md) |
+| `doc/upstream/` | 上流 pkgsrc へ送る diff とメール |
 | `ci/make-base-image.sh` | anita で NetBSD/i386 のベースイメージを作る |
 | `ci/guest-bootstrap.sh` | 入れたばかりの VM を ssh で叩ける状態にする |
 | `ci/vm.sh` | ホスト側から VM を扱う小道具 |
@@ -177,6 +177,8 @@ audit は `~/.sbin` の `make audit` (`pkgsrc-audit.sh`) を使う。
 | 何を作るか (`list.pkg.*`) | **`~/.sbin`**。ここは写しを読むだけ |
 | `/etc/mk.conf` の中身と配布 | **`~/.sbin`** (`pkgsrc-fix-mkconf.sh`) |
 | audit | **`~/.sbin`** (`pkgsrc-audit.sh`) |
+| 上流 pkgsrc への当て物 | **[pkgsrc-zakinko](https://github.com/zakinko/pkgsrc-zakinko) の `overlay/`**。CI が clone して当てる |
+| 上流へ送る diff とメール | ここ (`doc/upstream/`) |
 | ソースから建てる | **`~/.sbin`** (`pkgsrc-bootstrap.sh`) |
 | 外でバイナリを作る | ここ |
 | `pkgin` のリポジトリ設定と更新 | ここ (`bin/nb-update`) |

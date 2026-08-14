@@ -58,6 +58,16 @@ SEED_DIR=${SEED_DIR:-seed}
 
 seed_start() {
 	mkdir -p "$SEED_DIR" "$VM_DIR"
+	# SEED_PORT はゲストの /etc/rc.d/ci_seed に焼き込んであって動かせない。
+	# 同じ機械で二つ並行させると取り合いになり、後から来た方が黙って
+	# 繋がらないまま進む。先に見て止める。
+	if command -v lsof >/dev/null 2>&1 &&
+	   lsof -nP -iTCP:"$SEED_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+		echo "!! ポート $SEED_PORT が既に使われている。" >&2
+		echo "   別の VM 作業が走っていないか確認すること" >&2
+		echo "   (SEED_PORT はゲストに焼き込んであるので変えられない)。" >&2
+		return 1
+	fi
 	# GitHub Actions は run ごとに別のシェルなので、切り離しておかないと
 	# 次のステップに入る前に道連れにされることがある。setsid は Linux に
 	# しかないので、無ければ nohup だけで済ませる。
@@ -124,16 +134,31 @@ vm_wait_ssh() {
 	return 1
 }
 
+# 止めるのは自分が起こしたものだけ。pkill でパターンに当てると、同じ機械で
+# 動いている別の qemu を巻き込む。$VM_DIR/qemu.pid だけを見る。
+#
+# ssh が通るなら shutdown -p で落とす。通らない (インストーラの途中など)
+# ときは SIGTERM を送り、それでも駄目なら最後に SIGKILL。
 vm_stop() {
 	[ -f "$VM_DIR/qemu.pid" ] || return 0
-	vm_ssh 'sync; sync; /sbin/shutdown -p now' >/dev/null 2>&1 || true
 	local pid deadline
 	pid=$(cat "$VM_DIR/qemu.pid")
+
+	if vm_ssh 'sync; sync; /sbin/shutdown -p now' >/dev/null 2>&1; then
+		echo "vm: shutdown -p を送った"
+	else
+		echo "vm: ssh が通らないので SIGTERM で落とす"
+		kill "$pid" 2>/dev/null || true
+	fi
+
 	deadline=$((SECONDS + 120))
 	while [ "$SECONDS" -lt "$deadline" ] && kill -0 "$pid" 2>/dev/null; do
 		sleep 2
 	done
-	kill -0 "$pid" 2>/dev/null && kill "$pid" 2>/dev/null
+	if kill -0 "$pid" 2>/dev/null; then
+		echo "vm: 落ちないので SIGKILL"
+		kill -9 "$pid" 2>/dev/null || true
+	fi
 	rm -f "$VM_DIR/qemu.pid"
 }
 
