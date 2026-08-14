@@ -26,6 +26,12 @@ sh
 +zakinko/nss_stns
 +zakinko/stnsd
 
+# 上流へ送る当て物の検証用。augeas はどの役割にも入っておらず、libxml2 は
+# 依存としてしか建たないのでビルドループを通らない。どちらもここに書かないと
+# make test が走らない。送って取り込まれたら overlay ごと消す。
++sysutils/augeas
++textproc/libxml2
+
 # anthy-elisp が新しい Emacs で建つかを見るための実験。
 # overlay/inputmethod/anthy-elisp で EMACS_VERSIONS_ACCEPTED を広げてある。
 # 白黒ついたら (上流に取り込まれるか、諦めて入力方式を移すか) ここは消す。
