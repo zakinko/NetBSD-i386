@@ -57,7 +57,7 @@ jobs:
     timeout-minutes: 350
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: ディスクを空ける
         run: |
@@ -100,7 +100,7 @@ jobs:
 
       - name: ベースイメージのキャッシュ
         id: base
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.VM_DIR }}/base.qcow2
           key: netbsd-${{ env.NETBSD_RELEASE }}-${{ env.NETBSD_ARCH }}-base-v1-${{ hashFiles('ci/guest-bootstrap.sh') }}
@@ -126,7 +126,7 @@ jobs:
 
       - name: pkgsrc のキャッシュ
         id: tree
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.SEED_DIR }}/pkgsrc.tar.gz
           key: pkgsrc-${{ steps.pkgsrc.outputs.sha }}
@@ -232,7 +232,7 @@ jobs:
 
       - name: ログを残す
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: console
           path: |
