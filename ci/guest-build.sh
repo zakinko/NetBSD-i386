@@ -237,16 +237,16 @@ done </tmp/wanted
 ## 煙試験。make test とは別で、こちらが書く。
 ##
 ## 「建った」では分からないことがある。anthy-elisp がまさにそれで、anthy.el
-## は Emacs 28 で読めなくなった旧式バッククォート (` (foo (, bar))) で
-## buffer local 変数を定義している。読めなくなったといっても構文エラーには
-## ならず、マクロの展開が nil になるだけなので、byte-compile はそれを自由
-## 変数への参照として警告するに留まる。.elc は全部そろい、PLIST とも食い違
-## わず、ビルドは緑になる。それでいて入力方式は on にした瞬間に
-## void-variable で死ぬ。
+## は Emacs 30 で消えた process-kill-without-query を anthy-check-agent の
+## 中で呼んでいる。関数の中なので byte-compile は「知らない関数」の警告で
+## 済ませ、.elc は全部そろい PLIST とも食い違わず、ビルドは緑になる。
+## それでいて最初の変換要求で void-function に落ちる。
 ##
-## 実際に変換させて中身を見るしかない。当て物を外すと落ちることまで手元で
-## 確かめてある (当て物なしの emacs30 は set-face-underline-p、emacs26 は
-## last-command-char で落ちる)。
+## トップレベルにある set-face-underline-p の方は .elc が二本欠けるので
+## PLIST との食い違いとして build が捕まえてくれる。捕まえられないのは
+## こちらの型。実際に変換させて中身を見るしかない。
+##
+## 試験そのものが当て物を外すと落ちることは手元で確かめてある。
 ##
 smoke_anthy_elisp() {
 	smoke_dir=$PKGSRCDIR/inputmethod/anthy-elisp
