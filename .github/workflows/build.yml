@@ -241,9 +241,11 @@ jobs:
           vm_ssh 'cat /tmp/ci-report' >report.txt
           vm_ssh 'cat /tmp/failed' >failed.txt || true
           vm_ssh 'cat /tmp/tested' >tested.txt || true
+          vm_ssh 'cat /tmp/smoked' >smoked.txt || true
           vm_ssh 'cat /root/build.log' >build.log || true
           cat report.txt
           [ -s tested.txt ] && { echo "--- 当て物の make test ---"; cat tested.txt; } || true
+          [ -s smoked.txt ] && { echo "--- 煙試験 ---"; cat smoked.txt; } || true
 
       - name: VM を止める
         if: always()
@@ -262,6 +264,7 @@ jobs:
             build.log
             failed.txt
             tested.txt
+            smoked.txt
             report.txt
           if-no-files-found: ignore
 
@@ -333,6 +336,17 @@ jobs:
             done <tested.txt
           fi
 
+          # 煙試験はこちらが書いたものなので、落ちたら当て物が効いていない
+          # ということ。make test と違って外的要因で転ぶ余地が無い。
+          # それでもジョブは赤くしない。理由は上と同じで、配布まで止めたく
+          # ないため。上流に送る前に人が見て判断する。
+          if [ -s smoked.txt ]; then
+            while read -r pkgpath result; do
+              [ "$result" = ng ] || continue
+              echo "::warning title=煙試験 失敗::$pkgpath 建ったが動かない"
+            done <smoked.txt
+          fi
+
           n=$(sed -n 's/^failed=//p' report.txt)
           [ -n "$n" ] && [ "$n" -gt 0 ] || exit 0
           while read -r pkgpath pkgname; do
@@ -359,6 +373,12 @@ jobs:
               echo "### 当て物をしたものの make test"
               echo
               sed 's/^/- /' tested.txt
+              echo
+            fi
+            if [ -s smoked.txt ]; then
+              echo "### 煙試験"
+              echo
+              sed 's/^/- /' smoked.txt
               echo
             fi
             echo "pkgsrc: \`${{ steps.pkgsrc.outputs.sha }}\`"
