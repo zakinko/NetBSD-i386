@@ -1,0 +1,40 @@
+# この CI がどの役割ぶんのパッケージを作るか。
+#
+# 名前は sbin/list.pkg.<名前> に対応する。~/.sbin/Makefile がホスト名から
+# 役割を決めているのと同じ考え方で、ここでは「どの箱向けに作るか」を書く。
+#
+#	base    pkg_install, digest, tcsh, ng, perl5, git, lv, rsync,
+#	        pkgin, pkg_rolling-replace, sysupgrade など土台
+#	sh      socket, tnftpd, chrony, sudo
+#	www     apache24, cronolog, certbot-apache, nginx, thttpd
+#	mail    ja-mh, fetchmail, procmail, emacs26-nox11, anthy-elisp
+#	client  X 関係、フォント、印刷、画像など
+#	local   その箱固有 (sudo, tnftpd, chrony, certbot-apache, bind918,
+#	        git-lfs)
+#	doc / fml / tex / aws / build / go
+#
+# 一覧そのものは sbin/ の写しであって、正は techne の ~/.sbin。
+# 中身を変えたいときは .sbin を直してから bin/nb-sync-sbin で追従させる。
+#
+# 自作パッケージは pkgsrc-zakinko の zakinko カテゴリにあり、~/.sbin の
+# list.pkg.* には載っていないので、下の zakinko/ 行でここに足している。
+
+base
+sh
+
+# 役割の一覧に無いもの (自作パッケージ) はここに直接書く。
++zakinko/github-keys
++zakinko/nss_stns
++zakinko/stnsd
+
+# anthy-elisp が新しい Emacs で建つかを見るための実験。
+# overlay/inputmethod/anthy-elisp で EMACS_VERSIONS_ACCEPTED を広げてある。
+# 白黒ついたら (上流に取り込まれるか、諦めて入力方式を移すか) ここは消す。
+# emacs26-nox11 は anthy-elisp の依存として引かれるが、何を建てているか
+# ログで分かるように明示しておく。
++editors/emacs26-nox11
++inputmethod/anthy-elisp
+
+# zakinko/meibo は外してある。リポジトリが private なので、GitHub の
+# archive を匿名で引く pkgsrc からは distfile が取れない (404)。public に
+# するか、MASTER_SITES を別の置き場に向けるかしてから戻すこと。

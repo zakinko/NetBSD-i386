@@ -1,0 +1,15 @@
+# for fml8 test.
+graphics/p5-GD
+databases/p5-DBI
+databases/p5-DBD-mysql
+databases/p5-DBD-postgresql
+databases/p5-perl-ldap
+archivers/unzip
+archivers/zip
+security/pgp2
+security/pgp5
+security/gnupg2
+net/inadyn
+
+# fml test env.
+devel/p5-Date-Calc

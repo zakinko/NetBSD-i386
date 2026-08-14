@@ -23,13 +23,14 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 . ci/vm.sh
 
-PKGLIST=${1:-pkglist}
+ROLES=${1:-roles}
 BUILD_DEADLINE_MIN=${BUILD_DEADLINE_MIN:-600}
 
 die() { echo "!! $*" >&2; exit 1; }
 
 [ -f "$VM_DIR/base.qcow2" ] || die "$VM_DIR/base.qcow2 がない。先に ci/make-base-image.sh を回すこと。"
-[ -f "$PKGLIST" ] || die "$PKGLIST がない"
+[ -f "$ROLES" ] || die "$ROLES がない"
+[ -d sbin ] || die "sbin/ がない。bin/nb-sync-sbin で写しを取ること。"
 command -v qemu-system-i386 >/dev/null || die "qemu-system-i386 がない"
 
 cleanup() { vm_stop || true; seed_stop || true; }
@@ -37,9 +38,10 @@ trap cleanup EXIT
 
 echo "=== 種を並べる ($SEED_DIR)"
 mkdir -p "$SEED_DIR"
-cp mk.conf ci/mk.conf.ci ci/guest-build.sh "$SEED_DIR/"
-cp "$PKGLIST" "$SEED_DIR/pkglist"
-echo "    pkglist: $(grep -cvE '^[[:space:]]*(#|$)' "$PKGLIST") 個"
+cp sbin/mk.conf ci/mk.conf.ci ci/guest-build.sh "$SEED_DIR/"
+cp "$ROLES" "$SEED_DIR/roles"
+tar_noxattr -czf "$SEED_DIR/sbin.tar.gz" sbin
+echo "    roles: $(grep -cvE '^[[:space:]]*(#|$)' "$ROLES") 行"
 
 if [ -d overlay ]; then
 	tar_noxattr -czf "$SEED_DIR/overlay.tar.gz" --exclude 'README.md' overlay

@@ -1,0 +1,52 @@
+# client common
+devel/git-docs
+devel/git-contrib
+devel/gettext-asprintf
+devel/gettext-lib
+devel/gettext-m4
+devel/gettext-tools
+devel/gettext
+converters/nkf
+converters/base64
+misc/ja-less
+# net/rdist6
+www/w3m
+mail/mailsend
+net/wget
+net/wol
+converters/p5-Jcode
+textproc/kbanner
+
+
+# X11 must
+x11/xlockmore-lite
+x11/kterm
+fonts/font-cursor-misc
+fonts/font-daewoo-misc
+fonts/font-dec-misc
+fonts/font-isas-misc
+fonts/font-jis-misc
+fonts/font-misc-misc
+fonts/font-mutt-misc
+fonts/font-sony-misc
+
+# print
+fonts/ghostscript-fonts
+fonts/ja-sazanami-ttf
+print/ghostscript-gpl
+print/gv
+print/psutils
+print/ja-a2ps
+
+# graphics
+graphics/netpbm
+graphics/jasper
+graphics/xv
+graphics/xli
+graphics/tgif
+
+# security
+security/sudo
+
+# audio basic
+audio/splay

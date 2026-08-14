@@ -1,0 +1,37 @@
+pkgtools/pkg_install
+pkgtools/digest
+# devel/ncurses
+shells/static-tcsh
+editors/ng
+lang/perl5
+# devel/scmcvs
+devel/git-base
+# devel/git-lfs
+misc/lv
+net/rsync
+# security/openssl
+# security/openssh
+
+# sysutils
+sysutils/pstree
+sysutils/smartmontools
+
+# X11
+# x11/xauth
+
+## for compare and diff
+#security/p5-Digest
+#devel/p5-Algorithm-Diff
+#textproc/p5-Text-Diff
+
+# TLS/SSL
+security/mozilla-rootcerts-openssl
+
+### system maintainance ###
+# NetBSD base system maintainance
+devel/shtk
+sysutils/sysupgrade
+
+## pkgsrc: do it later since pkgin depends a lot of packages
+pkgtools/pkg_rolling-replace
+pkgtools/pkgin

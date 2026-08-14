@@ -2,12 +2,17 @@
 #
 # CI が作ったバイナリパッケージで、この箱を更新する。NetBSD 側で走らせる。
 #
-#	nb-update setup    pkgin のリポジトリ設定と /etc/mk.conf を入れる (初回)
+#	nb-update setup    pkgin のリポジトリ設定を入れる (初回)
 #	nb-update check    何が上がるかだけ見る。何も変えない。
-#	nb-update          更新して audit まで通す
-#	nb-update audit    audit だけ
+#	nb-update          更新する
 #
 # pkgsrc ツリーは要らない。この箱でソースを引くことはもうない。
+#
+# ここでやらないこと:
+#   /etc/mk.conf の配布   ~/.sbin/pkgsrc-fix-mkconf.sh の仕事
+#   audit                 ~/.sbin/pkgsrc-audit.sh の仕事 (make audit)
+# 正は ~/.sbin。二つの道具が同じファイルを書きに行くと、どちらが正か
+# 分からなくなるので、こちらは pkgin まわりだけに絞ってある。
 
 set -eu
 
@@ -18,19 +23,22 @@ export PATH
 
 : "${REPO_OWNER:=zakinko}"
 : "${REPO_NAME:=NetBSD-i386}"
-# .github/workflows/build.yml の RELEASE_TAG と揃えること。
-: "${RELEASE_TAG:=pkgsrc-11.0-i386}"
+
+# 箱ごとに OS のリリースが違う (9.4 / 10.1 / 11.0)。リリースが変われば
+# libc のメジャーが変わるので、他のリリース向けのバイナリは動かない。
+# この箱のリリースとアーキから、見に行くタグを自分で決める。
+#
+# uname -r は 11.0_STABLE のような形になることがあるので、頭の x.y だけ取る。
+: "${NETBSD_RELEASE:=$(uname -r | sed -e 's/[^0-9.].*$//' -e 's/\.$//')}"
+: "${NETBSD_ARCH:=$(uname -m)}"
+: "${RELEASE_TAG:=pkgsrc-${NETBSD_RELEASE}-${NETBSD_ARCH}}"
 REPO_URL=${REPO_URL:-https://github.com/$REPO_OWNER/$REPO_NAME/releases/download/$RELEASE_TAG}
 
 PKG_DBDIR=${PKG_DBDIR:-/var/db/pkg}
 PKG_PREFIX=${PKG_PREFIX:-/usr/pkg}
 PKGIN_CONF=$PKG_PREFIX/etc/pkgin/repositories.conf
-MKCONF=${MKCONF:-/etc/mk.conf}
 
 export PKG_DBDIR
-
-# このスクリプトが置かれているリポジトリの根。setup で mk.conf を配るのに使う。
-here=$(cd "$(dirname "$0")/.." && pwd)
 
 warn() { echo "nb-update: $*" >&2; }
 die()  { warn "$*"; exit 1; }
@@ -41,6 +49,17 @@ need_root() {
 
 do_setup() {
 	need_root
+
+	echo "この箱: NetBSD $NETBSD_RELEASE/$NETBSD_ARCH → $RELEASE_TAG"
+
+	# 向こうにそのリリースのタグが無いのに設定だけ入れると、pkgin が
+	# 空のリポジトリを見て黙って何もしなくなる。先に確かめる。
+	if ! ftp -o /dev/null "$REPO_URL/pkg_summary.xz" 2>/dev/null; then
+		warn "$REPO_URL に pkg_summary.xz が無い"
+		warn "そのリリース向けが CI で作られていない見込み。"
+		warn ".github/workflows/build.yml の matrix に $NETBSD_RELEASE があるか確認すること。"
+		die "設定を入れずに止める"
+	fi
 
 	[ -d "$PKG_PREFIX/etc/pkgin" ] || mkdir -p "$PKG_PREFIX/etc/pkgin"
 
@@ -59,35 +78,9 @@ do_setup() {
 		echo "repositories.conf に $REPO_URL を足した"
 	fi
 
-	if [ -f "$here/mk.conf" ]; then
-		if cmp -s "$here/mk.conf" "$MKCONF"; then
-			echo "$MKCONF は最新"
-		else
-			[ -f "$MKCONF" ] && cp "$MKCONF" "$MKCONF.bak.$(date +%Y%m%d%H%M%S)"
-			cp "$here/mk.conf" "$MKCONF"
-			echo "$MKCONF を更新した (前のものは .bak に残した)"
-		fi
-		# git チェックアウトの umask を持ち込まないよう、明示的に揃える。
-		# 600 にすると一般ユーザが pkgsrc の make を叩けなくなる。
-		# 中身は public な repo にあるので、ここは秘密の境界ではない。
-		chown root:wheel "$MKCONF"
-		chmod 644 "$MKCONF"
-	fi
-
 	echo
+	echo "/etc/mk.conf は ~/.sbin/pkgsrc-fix-mkconf.sh が配る。こちらでは触らない。"
 	echo "この後は 'nb-update check' で様子を見てから 'nb-update' を叩く。"
-}
-
-do_audit() {
-	pkg_admin -K "$PKG_DBDIR" fetch-pkg-vulnerabilities
-	echo
-	echo "--- pkg_admin audit"
-	# 該当なしでも 0 以外を返すことがあるので、ここでは落とさない。
-	pkg_admin -K "$PKG_DBDIR" audit || true
-	echo
-	echo "何が上流待ちで何が設定で消せるかは doc/audit.md にまとめてある。"
-	echo "見飽きたものは $PKG_PREFIX/etc/pkg_install.conf に"
-	echo "IGNORE_URL=<CVE の URL> を書けば黙る。"
 }
 
 do_check() {
@@ -102,18 +95,18 @@ do_update() {
 	pkgin -y update
 	pkgin -y full-upgrade
 	echo
-	do_audit
+	echo "audit は ~/.sbin で 'make audit' (pkgsrc-audit.sh)。"
+	echo "何が上流待ちで何が設定で消せるかは doc/audit.md にある。"
 }
 
 case "${1:-update}" in
 setup)		do_setup ;;
 check)		do_check ;;
-audit)		need_root; do_audit ;;
 update|'')	do_update ;;
 -h|--help|help)
-	sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
 	;;
 *)
-	die "知らない指定: $1  (setup / check / update / audit)"
+	die "知らない指定: $1  (setup / check / update)"
 	;;
 esac

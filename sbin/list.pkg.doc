@@ -1,0 +1,15 @@
+#
+# document generators
+#
+www/lynx
+textproc/openjade
+textproc/jade
+textproc/iso8879
+textproc/iso12083
+textproc/docbook
+textproc/dsssl-docbook-modular
+textproc/html
+
+# Excel handlings
+math/p5-Spreadsheet-ParseExcel
+converters/p5-Unicode-Map

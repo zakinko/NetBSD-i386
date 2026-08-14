@@ -1,0 +1,13 @@
+# mail
+mail/ja-mh
+mail/fetchmail
+mail/procmail
+# mail/msmtp
+
+# editors and documentations
+editors/emacs26-nox11
+inputmethod/anthy-elisp
+
+# 199x-2016, thank you over 20 years! 
+# editors/mule
+# inputmethod/ja-freewnn-server
