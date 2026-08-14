@@ -38,6 +38,39 @@ vm_ncpu() {
 	fi
 }
 
+# i386 ゲストを動かす qemu を探す。
+#
+# Debian 系は qemu-system-i386 を置くが、RHEL 系 (AlmaLinux, Rocky) には
+# その名前が無く、qemu-kvm という名前で qemu-system-x86_64 が入る。
+# x86_64 の qemu は 32bit ゲストをそのまま動かせるので、あるものを使う。
+vm_qemu() {
+	if [ -n "${VM_QEMU:-}" ]; then
+		echo "$VM_QEMU"
+		return
+	fi
+	for q in qemu-system-i386 qemu-system-x86_64 \
+	         /usr/libexec/qemu-kvm /usr/bin/qemu-kvm; do
+		if command -v "$q" >/dev/null 2>&1; then
+			echo "$q"
+			return
+		fi
+	done
+	echo "!! i386 ゲストを動かせる qemu が見つからない" >&2
+	echo "   Debian 系: qemu-system-x86  RHEL 系: qemu-kvm" >&2
+	return 1
+}
+
+# install 用 ISO を焼く道具があるか見る。anita は genisoimage があれば
+# それを、無ければ mkisofs を呼ぶ。RHEL 系は EL8.10 以降 genisoimage を
+# 廃止していて、代わりに xorriso が mkisofs という名前も提供する。
+vm_check_mkisofs() {
+	command -v genisoimage >/dev/null 2>&1 && return 0
+	command -v mkisofs >/dev/null 2>&1 && return 0
+	echo "!! ISO を焼く道具が無い。anita が \"could not run mkisofs\" で落ちる。" >&2
+	echo "   Debian 系: genisoimage  RHEL 系: xorriso  macOS: brew install cdrtools" >&2
+	return 1
+}
+
 VM_DIR=${VM_DIR:-vm}
 VM_IMAGE=${VM_IMAGE:-$VM_DIR/run.qcow2}
 VM_FORMAT=${VM_FORMAT:-qcow2}
@@ -90,10 +123,11 @@ seed_stop() {
 }
 
 vm_start() {
-	local accel
+	local accel qemu
 	accel=$(vm_accel)
-	echo "vm: qemu-system-i386 accel=$accel cpus=$VM_CPUS mem=${VM_MEM}M"
-	qemu-system-i386 \
+	qemu=$(vm_qemu) || return 1
+	echo "vm: $qemu accel=$accel cpus=$VM_CPUS mem=${VM_MEM}M"
+	"$qemu" \
 		-machine pc,accel="$accel" \
 		-smp "$VM_CPUS" -m "$VM_MEM" \
 		-drive file="$VM_IMAGE",format="$VM_FORMAT",if=ide,index=0,cache=unsafe \

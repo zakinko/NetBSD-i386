@@ -31,7 +31,7 @@ die() { echo "!! $*" >&2; exit 1; }
 [ -f "$VM_DIR/base.qcow2" ] || die "$VM_DIR/base.qcow2 がない。先に ci/make-base-image.sh を回すこと。"
 [ -f "$ROLES" ] || die "$ROLES がない"
 [ -d sbin ] || die "sbin/ がない。bin/nb-sync-sbin で写しを取ること。"
-command -v qemu-system-i386 >/dev/null || die "qemu-system-i386 がない"
+vm_qemu >/dev/null || die "i386 ゲストを動かせる qemu が無い"
 
 cleanup() { vm_stop || true; seed_stop || true; }
 trap cleanup EXIT
