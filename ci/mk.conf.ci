@@ -1,0 +1,29 @@
+# CI の VM の中でだけ効かせる設定。ci/guest-build.sh が mk.conf の後ろに
+# 連結する。ここに書くのは「どこに置くか」「どう回すか」だけで、
+# 「何を作るか」を変える設定は書かない。それを書くと手元と CI で中身の
+# 違うバイナリができてしまう。
+
+# 置き場所。VM の中は使い捨てなので pkgsrc ツリーの下にまとめる。
+DISTDIR=	/usr/pkgsrc/distfiles
+PACKAGES=	/usr/pkgsrc/packages
+
+# 依存も必ず .tgz にする。これがないと依存はインストールされるだけで
+# パッケージが残らず、pkgin に食わせるリポジトリが穴だらけになる。
+DEPENDS_TARGET=	package-install
+
+# audit で引っかかるものを作れないと何も進まない。上流に修正がない
+# libxml2 や python313 が依存に入っているため。何が該当するかは
+# doc/audit.md にまとめてある。
+ALLOW_VULNERABLE_PACKAGES=	yes
+
+# 対話しない。CI には答える人がいない。
+BATCH=		yes
+
+# ビルド並列度は ci/guest-build.sh が実際の CPU 数で置き換える。
+MAKE_JOBS=	@MAKE_JOBS@
+
+# 開発者向けの追加チェックは CI では邪魔なだけ。
+PKG_DEVELOPER=	no
+
+# 落ちてこないミラーで延々待たない。
+FETCH_TIMEOUT=	60
