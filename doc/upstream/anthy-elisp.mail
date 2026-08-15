@@ -1,6 +1,6 @@
 To: taya@NetBSD.org
 Cc: pkgsrc-users@NetBSD.org
-Subject: [PATCH] inputmethod/anthy-elisp: accept emacs26 through emacs30
+Subject: [PATCH] inputmethod/anthy-elisp: accept emacs26 through emacs30, and fix five removed Emacs names
 
 inputmethod/anthy-elisp only accepts emacs21, emacs20 and XEmacs:
 
@@ -12,34 +12,63 @@ so on a machine with a current Emacs it stops in can-be-built-here.mk:
   ERROR: Accepted versions are: emacs21 emacs21nox emacs20 xemacs215 ...
   ERROR: No valid Emacs version installed found
 
-That line has not changed since the package was last restructured, while the
-Makefile itself has been touched as recently as 2024, so it looks like nobody
-has tried a newer Emacs rather than a known incompatibility.
+That line was added in rev 1.14 (2024-05-08, wiz), whose commit message says
+"Since I don't know better, restrict it to the versions that were available
+at the time of the packaged version of this software (2009)."  Before 1.14
+there was no restriction at all.  So it was a guess made without a test, and
+this is the test.
 
-This matters because anthy-elisp is the only package that installs anthy.el
-(apart from the tamago ones).  A ~/.emacs that does
+It matters because anthy-elisp is the only package that installs anthy.el
+(apart from the tamago ones).  An init file that does
 
   (load-library "anthy")
   (setq default-input-method 'japanese-anthy)
 
-therefore has no way to work on any Emacs newer than 21 through pkgsrc.
+has no other way to work through pkgsrc.
 
-The diff below adds emacs26 through emacs30 to EMACS_VERSIONS_ACCEPTED.
-PKGREVISION is left alone: the installed files do not change, only which
-Emacs the package will build against.
+Widening the list is not enough on its own.  anthy.el and anthy-dic.el use
+five names Emacs has since removed.  Only set-face-underline-p (anthy.el:74,
+removed in Emacs 29) stops the build -- it is at top level, so anthy-isearch.el
+and anthy-kyuri.el fail to byte-compile and their .elc files go missing from
+the PLIST.
 
-Built and packaged on NetBSD 11.0/i386 with EMACS_TYPE=emacs26nox, against
-pkgsrc trunk fa7ad771c96929bf742033e6ccfd8bb45b9cab49.  Byte compilation of
-src-util/*.el completes and the package installs as anthy-elisp-9100hnb6.
+The other four are inside functions, so byte compilation only warns and the
+package installs looking healthy:
 
-Note that anthy.el still refers to last-command-char, which was removed in
-Emacs 26; users work around it with
+  anthy.el:748         process-kill-without-query   removed in Emacs 30
+  anthy.el:877         inactivate-input-method      removed in Emacs 30
+  anthy.el:895         last-command-char            removed in Emacs 24
+  anthy-dic.el:73,116  string-to-int                removed in Emacs 26
 
-  (define-obsolete-variable-alias 'last-command-char 'last-command-event ...)
+process-kill-without-query is the one that matters.  It sits in
+anthy-check-agent, which anthy-do-send-recv-command calls to start
+anthy-agent, so on Emacs 30 the package builds cleanly and then dies on the
+first conversion request.
 
-in their init file.  Byte compilation only warns about it, so the package
-builds, but it would be worth patching properly if you would rather carry
-the fix in pkgsrc.
+The diff below adds emacs26 through emacs30, guards the four calls in
+anthy.el with fboundp or boundp, and renames string-to-int in anthy-dic.el.
+Guards rather than renames, since emacs20, emacs21 and XEmacs stay in the
+accepted list and do not have the new names; string-to-number is the
+exception, being available since Emacs 20.  anthy has not been released since
+2009, so there is nowhere upstream to send these.
+
+The patches go in inputmethod/anthy/patches, since anthy-elisp shares
+PATCHDIR and DISTINFO_FILE with inputmethod/anthy.  They sort after your
+patch-anthy.el and touch different parts of the file -- the old backquote
+syntax it fixes is not touched here.  inputmethod/anthy installs no .el files
+of its own, so its PKGREVISION is left alone; anthy-elisp's goes to 8.
+
+Built on NetBSD 9.4, 10.1 and 11.0 (i386, under qemu) against pkgsrc trunk
+fa7ad771c96929bf742033e6ccfd8bb45b9cab49 with EMACS_TYPE=emacs30nox.
+anthy-elisp-9100hnb8 builds on all three with all six .elc files present.
+
+Conversion was checked rather than assumed: on each release emacs is started,
+"nihongo" is typed through anthy-insert, converted and committed, and the
+buffer written out and grepped -- it contains 日本語.  The same check against
+an unpatched tree fails, on emacs30 at set-face-underline-p and on emacs26 at
+last-command-char.
+
+I have also sent this as a PR to gnats-bugs@ so it does not get lost.
 
 Thanks,
 

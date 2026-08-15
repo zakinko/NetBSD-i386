@@ -1,5 +1,5 @@
 To: gnats-bugs@NetBSD.org
-Subject: inputmethod/anthy-elisp: accept emacs26 through emacs30, and fix last-command-char
+Subject: inputmethod/anthy-elisp: accept emacs26 through emacs30, and fix five removed Emacs names
 From: zakinko@snowrabbit.org
 Reply-To: zakinko@snowrabbit.org
 X-send-pr-version: 3.95
@@ -8,12 +8,12 @@ X-send-pr-version: 3.95
 >Originator:	Showta Ishizaki
 >Organization:
 >Confidential:	no
->Synopsis:	inputmethod/anthy-elisp: accept emacs26 through emacs30, and fix last-command-char
+>Synopsis:	inputmethod/anthy-elisp: accept emacs26 through emacs30, and fix five removed Emacs names
 >Severity:	non-critical
 >Priority:	low
 >Category:	pkg
 >Class:		change-request
->Release:	NetBSD 11.0, pkgsrc CVS as of 2026-08-14
+>Release:	NetBSD 11.0, pkgsrc CVS as of 2026-08-15
 >Environment:
 System: NetBSD 11.0 i386
 Architecture: i386
@@ -47,47 +47,75 @@ Machine: i386
 
 	has no other way to work through pkgsrc.
 
-	Widening the list is not enough on its own, though.  anthy.el uses two
-	names that Emacs has since removed.
+	Widening the list is not enough on its own.  anthy.el and anthy-dic.el
+	use five names that Emacs has since removed.  Only one of them stops
+	the build.  The others let the package install and then fail in use,
+	which is the more troublesome kind.
 
 	The one that stops the build is at top level, anthy.el line 74:
 
 	  (set-face-underline-p 'anthy-highlight-face t)
 
 	set-face-underline-p became an alias for set-face-underline in Emacs
-	24.3 and was removed in Emacs 29 (NEWS.29 lists it among the obsolete
-	items removed).  Because the call is at top level, loading anthy.el on
-	Emacs 29 or 30 signals an error, so anthy-isearch.el and anthy-kyuri.el
-	fail to byte-compile -- both do nothing but (require 'anthy) at the
-	line the compiler names -- and the build ends with
+	24.3 and was removed in Emacs 29.  Because the call is at top level,
+	loading anthy.el on Emacs 29 or 30 signals an error, so
+	anthy-isearch.el and anthy-kyuri.el fail to byte-compile -- both do
+	nothing but (require 'anthy) at the line the compiler names -- and the
+	build ends with
 
 	  ERROR: The following files are in the PLIST but not in .../usr/pkg:
 	  ERROR:         .../share/emacs/site-lisp/anthy/anthy-isearch.elc
 	  ERROR:         .../share/emacs/site-lisp/anthy/anthy-kyuri.elc
 
-	Emacs 20, 21 and 23 have only the -p name, so the call is guarded with
-	fboundp rather than renamed.
+	The remaining four are inside functions, so byte compilation only
+	warns about an unknown function or a free variable, every .elc is
+	produced, and the PLIST matches:
 
-	The other one does not stop the build.  anthy.el's own compatibility
-	shim returns last-command-char on the GNU Emacs branch:
+	  anthy.el:748       process-kill-without-query
+	  anthy.el:877       inactivate-input-method
+	  anthy.el:895       last-command-char
+	  anthy-dic.el:73,116  string-to-int
 
-	  (defun anthy-last-command-char ()
-	    (if anthy-xemacs
-	        (let ((event last-command-event))
-	          ...)
-	      last-command-char))
+	process-kill-without-query is the one that matters most.  It was
+	obsoleted by set-process-query-on-exit-flag in Emacs 22.1 and removed
+	in Emacs 30.  It sits in anthy-check-agent, which is what
+	anthy-do-send-recv-command calls to start anthy-agent.  So on Emacs 30
+	the package builds cleanly and then dies on the first conversion
+	request -- that is, the first time the input method is used at all.
+
+	inactivate-input-method was renamed deactivate-input-method in Emacs
+	24.3 and the old name was removed in Emacs 30.  It is called from
+	anthy-leim-exit-from-minibuffer, which goes on minibuffer-exit-hook
+	while anthy is active in the minibuffer.
 
 	last-command-char was removed in Emacs 24 -- NEWS.24, under "Some
 	obsolete functions, variables, and faces have been removed", lists
-	'last-input-char', 'last-command-char' and 'unread-command-char'.  The
-	XEmacs branch already uses the right name; only the GNU Emacs branch
-	was left behind.  That reference is inside a function, so byte
-	compilation merely warns, and the package installs -- and then
-	japanese-anthy fails the moment a key is typed.
+	'last-input-char', 'last-command-char' and 'unread-command-char'.
+	anthy.el has its own compatibility shim for this, anthy-last-command-char,
+	and it already uses last-command-event on the XEmacs branch; only the
+	GNU Emacs branch was left behind.
+
+	string-to-int was removed in Emacs 26.  It is only reached from the
+	dictionary-registration commands, so it is the least urgent of the
+	five, but it is the same kind of thing.
+
+	There is a sixth name, inactivate-current-input-method-function, which
+	anthy-leim-activate still assigns to (anthy.el line 867).  It was
+	renamed to deactivate-current-input-method-function in Emacs 24.3 too.
+	Assigning to a name that nothing reads is silent, so this one does not
+	fail -- it has simply had no effect since Emacs 24.3, and deactivating
+	the input method through the LEIM hook has not worked.  The patch
+	fixes it while it is there.
+
+	The old backquote syntax anthy.el also used is not part of this.
+	patch-anthy.el (rev 1.1, 2023-09-06, msaitoh) already deals with it,
+	and the patch here is written against the tree with that applied.
 
 >How-To-Repeat:
-	cd /usr/pkgsrc/inputmethod/anthy-elisp
-	make EMACS_TYPE=emacs26nox fetch
+	The build stopping in can-be-built-here.mk:
+
+	  cd /usr/pkgsrc/inputmethod/anthy-elisp
+	  make EMACS_TYPE=emacs30nox
 
 	  ERROR: [can-be-built-here.mk] This package has PKG_FAIL_REASON set:
 	  ERROR: Accepted versions are: emacs21 emacs21nox emacs20 xemacs215 xemacs215nox xemacs214 xemacs214nox
@@ -96,25 +124,51 @@ Machine: i386
 	EMACS_TYPE has to go on the command line rather than in the
 	environment; if mk.conf sets it, the environment does not win.
 
->Fix:
-	Two parts.
+	With EMACS_VERSIONS_ACCEPTED widened but no patch, the build gets
+	further and stops on the two missing .elc files quoted above.
 
+	With set-face-underline-p guarded but nothing else, the package builds
+	and installs.  Then, with anthy-agent on PATH:
+
+	  emacs -Q --batch \
+	    --eval '(add-to-list (quote load-path) "/usr/pkg/share/emacs/site-lisp/anthy")' \
+	    --eval '(load-library "anthy")' \
+	    --eval '(progn (anthy-mode-on) (anthy-check-agent))'
+
+	  Symbol's function definition is void: process-kill-without-query
+
+>Fix:
 	EMACS_VERSIONS_ACCEPTED gains emacs26 through emacs30.  Together with
 	the emacs20, emacs21 and XEmacs entries already there, that is every
 	Emacs pkgsrc offers -- there is no emacs22 through emacs25 package.
 
-	patch-src-util_anthy.el guards the set-face-underline-p call with
-	fboundp and changes last-command-char to last-command-event.  anthy has
-	not been released since 2009, so there is nowhere upstream to send
-	those.
+	patch-src-util_anthy.el guards the four calls in anthy.el with fboundp
+	or boundp, and patch-src-util_anthy-dic.el renames string-to-int.
+	Guards rather than plain renames, because emacs20, emacs21 and the
+	XEmacs versions that stay in EMACS_VERSIONS_ACCEPTED do not have the
+	new names.  string-to-number is the exception -- it has existed since
+	Emacs 20 and in XEmacs 20 -- so that one is renamed outright.  anthy
+	has not been released since 2009, so there is nowhere upstream to send
+	any of this.
 
-	The patch goes in inputmethod/anthy/patches because anthy-elisp shares
-	PATCHDIR and DISTINFO_FILE with inputmethod/anthy.  It sorts after the
-	existing patch-anthy.el and the two touch different parts of the file.
+	The patches go in inputmethod/anthy/patches because anthy-elisp shares
+	PATCHDIR and DISTINFO_FILE with inputmethod/anthy.  They sort after the
+	existing patch-anthy.el and touch different parts of the file.
 	inputmethod/anthy installs no .el files of its own, so its PKGREVISION
-	is left alone; anthy-elisp's is bumped.
+	is left alone; anthy-elisp's goes to 8.
 
-	XXX-CI: build result to be filled in before sending.
+	Built on NetBSD 9.4, 10.1 and 11.0 (i386, under qemu) against pkgsrc
+	trunk fa7ad771c96929bf742033e6ccfd8bb45b9cab49 with
+	EMACS_TYPE=emacs30nox.  anthy-elisp-9100hnb8 builds on all three, with
+	all six .elc files present.
+
+	Conversion was checked rather than assumed.  On each of the three
+	releases, emacs is started, "nihongo" is typed through anthy-insert,
+	converted with space and committed with return, and the buffer is
+	written out and grepped: it contains 日本語.  The same check against an
+	unpatched tree fails -- on emacs30 at set-face-underline-p, and on
+	emacs26 at last-command-char, since without the patch anthy.el depends
+	on the user's init file supplying an alias for it.
 
 	Index: inputmethod/anthy-elisp/Makefile
 	===================================================================
@@ -122,13 +176,13 @@ Machine: i386
 	retrieving revision 1.14
 	diff -u -r1.14 Makefile
 	--- inputmethod/anthy-elisp/Makefile	8 May 2024 12:20:52 -0000	1.14
-	+++ inputmethod/anthy-elisp/Makefile	14 Aug 2026 19:27:02 -0000
+	+++ inputmethod/anthy-elisp/Makefile	15 Aug 2026 14:14:50 -0000
 	@@ -2,7 +2,7 @@
 	 
 	 .include	"../../inputmethod/anthy/Makefile.common"
 	 PKGNAME=	${EMACS_PKGNAME_PREFIX}anthy-elisp-${ANTHY_VERSION}
 	-PKGREVISION=	6
-	+PKGREVISION=	7
+	+PKGREVISION=	8
 	 CATEGORIES=	inputmethod editors
 	 
 	 MAINTAINER=	taya@NetBSD.org
@@ -153,36 +207,89 @@ Machine: i386
 	retrieving revision 1.16
 	diff -u -r1.16 distinfo
 	--- inputmethod/anthy/distinfo	7 Sep 2023 14:44:51 -0000	1.16
-	+++ inputmethod/anthy/distinfo	14 Aug 2026 19:27:02 -0000
-	@@ -10,3 +10,4 @@
+	+++ inputmethod/anthy/distinfo	15 Aug 2026 14:14:50 -0000
+	@@ -10,3 +10,5 @@
 	 SHA512 (okinawa-20090801.t) = 03cd20ef12ea25bb462a94e77ee04825c5acd4e9281bfe9c33d390a0106d2e3113c51083389bb21996af9bcf9a74acde6fbcdc6006f737b8a74fc55abc7d6260
 	 Size (okinawa-20090801.t) = 165520 bytes
 	 SHA1 (patch-anthy.el) = 3464a065d4dd25f38cd2990e0796eba53e69876a
-	+SHA1 (patch-src-util_anthy.el) = cf21e3021f14f4e691b926f8a93c0137c9c336f8
+	+SHA1 (patch-src-util_anthy-dic.el) = 34c7f6ab82452b59cc1f62a7e7141bde858d602b
+	+SHA1 (patch-src-util_anthy.el) = d44c88284c9fcd50dbd1441b48e9c0b0f942cb13
+	Index: inputmethod/anthy/patches/patch-src-util_anthy-dic.el
+	===================================================================
+	RCS file: inputmethod/anthy/patches/patch-src-util_anthy-dic.el
+	diff -N inputmethod/anthy/patches/patch-src-util_anthy-dic.el
+	--- /dev/null
+	+++ inputmethod/anthy/patches/patch-src-util_anthy-dic.el
+	@@ -0,0 +1,28 @@
+	+$NetBSD$
+	+
+	+string-to-int was an obsolete alias for string-to-number and was removed in
+	+Emacs 26.  string-to-number has existed since Emacs 20 and in XEmacs 20, so
+	+the calls are renamed rather than guarded.
+	+
+	+See patch-src-util_anthy.el for the rest of this.
+	+
+	+--- src-util/anthy-dic.el.orig
+	++++ src-util/anthy-dic.el
+	+@@ -70,7 +70,7 @@
+	+ (defun anthy-dic-get-special-noun-category (word)
+	+   (let 
+	+       ((res '())
+	+-       (cat (string-to-int
+	++       (cat (string-to-number
+	+ 	     (read-from-minibuffer "1:$B?ML>(B 2:$BCOL>(B: "))))
+	+     (cond ((= cat 1)
+	+ 	   (setq res '(("$BIJ;l(B" "$B?ML>(B"))))
+	+@@ -113,7 +113,7 @@
+	+     (and (string= word "")
+	+ 	 (setq word (read-from-minibuffer "$BC18l(B($B8l44$N$_(B): ")))
+	+     (setq yomi (read-from-minibuffer (concat "$BFI$_(B (" word "): ")))
+	+-    (setq cat (string-to-int
+	++    (setq cat (string-to-number
+	+ 	       (read-from-minibuffer
+	+ 		"$B%+%F%4%j!<(B 1:$B0lHLL>;l(B 2:$B$=$NB>$NL>;l(B 3:$B7AMF;l(B 4:$BI{;l(B: ")))
+	+     (cond ((= cat 1)
 	Index: inputmethod/anthy/patches/patch-src-util_anthy.el
 	===================================================================
 	RCS file: inputmethod/anthy/patches/patch-src-util_anthy.el
 	diff -N inputmethod/anthy/patches/patch-src-util_anthy.el
-	--- /dev/null	1 Jan 1970 00:00:00 -0000
-	+++ inputmethod/anthy/patches/patch-src-util_anthy.el	15 Aug 2026 00:00:00 -0000
-	@@ -0,0 +1,43 @@
+	--- /dev/null
+	+++ inputmethod/anthy/patches/patch-src-util_anthy.el
+	@@ -0,0 +1,93 @@
 	+$NetBSD$
 	+
-	+Make anthy.el work on current Emacs.  Two obsolete names that were later
-	+removed:
+	+Make anthy.el work on current Emacs.  Four names it uses were made obsolete
+	+and later removed.  (The old backquote syntax it also used is already dealt
+	+with by patch-anthy.el.)
 	+
 	+set-face-underline-p became an alias for set-face-underline in Emacs 24.3
 	+and was removed in Emacs 29.  The call is at top level, so on Emacs 29 and
 	+30 merely loading anthy.el signals an error, and anthy-isearch.el and
 	+anthy-kyuri.el then fail to byte-compile because they (require 'anthy) --
-	+their .elc files end up missing from what PLIST expects.  Emacs 20, 21 and
-	+23 have only the -p name, so the call is guarded rather than renamed.
+	+their .elc files end up missing from what PLIST expects.
+	+
+	+process-kill-without-query was obsoleted by set-process-query-on-exit-flag
+	+in Emacs 22.1 and removed in Emacs 30.  It is called from anthy-check-agent,
+	+which anthy-do-send-recv-command calls to start anthy-agent.  This one does
+	+not break the build -- byte compilation only warns about an unknown function
+	+and every .elc is still produced -- but japanese-anthy fails on the first
+	+conversion request, that is, as soon as the input method is used at all.
+	+
+	+inactivate-input-method was renamed deactivate-input-method in Emacs 24.3
+	+and the old name was removed in Emacs 30.  It is called from
+	+anthy-leim-exit-from-minibuffer, which is put on minibuffer-exit-hook while
+	+anthy is active in the minibuffer.
+	+
+	+inactivate-current-input-method-function was likewise renamed in Emacs 24.3.
+	+anthy-leim-activate still assigns to the old name, so on any Emacs since
+	+24.3 the input method has never been deactivated through the LEIM hook.
 	+
 	+last-command-char was an obsolete alias for last-command-event and was
 	+removed in Emacs 24.  The XEmacs branch of this function already uses
-	+last-command-event; only the GNU Emacs branch was left behind.  That
-	+reference is inside a function, so byte compilation only warns, but
-	+japanese-anthy fails at run time as soon as a key is typed.
+	+last-command-event; only the GNU Emacs branch was left behind.
+	+
+	+emacs20, emacs21 and the XEmacs versions in EMACS_VERSIONS_ACCEPTED do not
+	+have the new names, so the calls are guarded rather than renamed.
 	+
 	+anthy has not been released since 2009, so there is nowhere upstream to
 	+send this.
@@ -200,7 +307,40 @@ Machine: i386
 	+ (copy-face 'underline 'anthy-underline-face)
 	+ 
 	+ ;;
-	+@@ -892,7 +894,7 @@
+	+@@ -745,7 +747,9 @@
+	+ 	(if anthy-agent-process
+	+ 	    (kill-process anthy-agent-process))
+	+ 	(setq anthy-agent-process proc)
+	+-	(process-kill-without-query proc)
+	++	(if (fboundp 'set-process-query-on-exit-flag)
+	++	    (set-process-query-on-exit-flag proc nil)
+	++	  (process-kill-without-query proc))
+	+ 	(if anthy-xemacs
+	+ 	    (if (coding-system-p (find-coding-system 'euc-japan))
+	+ 		(set-process-coding-system proc 'euc-japan 'euc-japan))
+	+@@ -864,7 +868,9 @@
+	+ ;; leim $B$N(B activate
+	+ ;;
+	+ (defun anthy-leim-activate (&optional name)
+	+-  (setq inactivate-current-input-method-function 'anthy-leim-inactivate)
+	++  (if (boundp 'deactivate-current-input-method-function)
+	++      (setq deactivate-current-input-method-function 'anthy-leim-inactivate)
+	++    (setq inactivate-current-input-method-function 'anthy-leim-inactivate))
+	+   (setq anthy-leim-active-p t)
+	+   (anthy-update-mode)
+	+   (when (eq (selected-window) (minibuffer-window))
+	+@@ -874,7 +880,9 @@
+	+ ;; emacs$B$N%P%0Hr$1$i$7$$$G$9(B
+	+ ;;
+	+ (defun anthy-leim-exit-from-minibuffer ()
+	+-  (inactivate-input-method)
+	++  (if (fboundp 'deactivate-input-method)
+	++      (deactivate-input-method)
+	++    (inactivate-input-method))
+	+   (when (<= (minibuffer-depth) 1)
+	+     (remove-hook 'minibuffer-exit-hook 'anthy-leim-exit-from-minibuffer)))
+	+ 
+	+@@ -892,7 +900,7 @@
 	+ 	 ((event-matches-key-specifier-p event 'backspace) 8)
 	+ 	 (t
 	+ 	  (char-to-int (event-to-character event)))))
