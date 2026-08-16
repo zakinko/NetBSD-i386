@@ -37,7 +37,7 @@ on:
       target:
         description: 'どちらを回すか'
         type: choice
-        options: [both, openbsd, freebsd, openbsd-tarball]
+        options: [both, openbsd, freebsd, openbsd-tarball, openbsd-probe]
         default: both
       pkgsrc:
         description: 'pkgsrc の配布物 (current か stable)'
@@ -332,3 +332,63 @@ jobs:
             echo '##### 3. 結論 #####'
             echo 'A が落ちて B が通れば patch はいまも要る。'
             echo 'A が通れば、2018 年の状況は再現しない。'
+
+
+  # -fexceptions の検査をどう書けば本当に落ちるかを測る job。
+  #
+  # 上流の AUGEAS_COMPILE_WARNINGS は、フラグごとに main(){} だけの
+  # プログラムを compile+link して受理を決めている。-fexceptions を付けても
+  # その main は例外表を作らないので __gcc_personality_v0 を引かず、検査は
+  # 通ってしまう。本体をリンクする段になって初めて libcompiler_rt.a の
+  # __gcc_personality_v0 が _Unwind_* を引けずに落ちる。OpenBSD 7.9 で
+  # 再現済み。
+  #
+  # 検査を直すには、-fexceptions を付けたときに実際に personality を引く
+  # プログラムで試すしかない。どの書き方なら引くのかをここで見る。
+  openbsd-probe:
+    if: inputs.target == 'openbsd-probe'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: OpenBSD で検査の書き方を測る
+        uses: vmactions/openbsd-vm@v1
+        with:
+          release: ${{ inputs.openbsd_release }}
+          mem: 2048
+          cpu: 2
+          sync: 'no'
+          copyback: false
+          run: |
+            set -x
+            cc --version | head -2
+            cd /tmp
+
+            # 候補 0: 上流がいま使っているもの
+            printf 'int main(void) { return 0; }\n' > p0.c
+
+            # 候補 1: cleanup 属性。-fexceptions があると landing pad が出る
+            printf '%s\n' \
+              'static void f(int *p) { (void) p; }' \
+              'extern int g(void);' \
+              'int g(void) { return 0; }' \
+              'int main(void) { int x __attribute__((cleanup(f))) = 0; return g() + x; }' \
+              > p1.c
+
+            # 候補 2: personality を名指しで引く
+            printf '%s\n' \
+              'extern int __gcc_personality_v0(void);' \
+              'int main(void) { return __gcc_personality_v0() != 0; }' \
+              > p2.c
+
+            for f in p0 p1 p2; do
+              for opt in "" "-fexceptions -fasynchronous-unwind-tables"; do
+                if cc $opt -o /tmp/$f.bin /tmp/$f.c >/tmp/$f.log 2>&1; then
+                  r="通った"
+                else
+                  r="落ちた (未定義 $(grep -c 'undefined symbol' /tmp/$f.log) 個)"
+                fi
+                printf 'PROBE %-3s flags=[%s] -> %s\n' "$f" "$opt" "$r"
+              done
+            done
+            echo '--- 望ましいのは flags 無しで通り、flags 有りで落ちる候補 ---'
