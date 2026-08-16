@@ -251,3 +251,76 @@ jobs:
             echo '##### 5. この箱で解釈に失敗する設定ファイル #####'
             $AUG -e 'match /augeas/files//error' 2>&1 |
               sed -e 's|^/augeas/files||' -e 's|/error.*||' | sort -u
+
+  # -fexceptions だけを見るための job。pkgsrc を通さず tarball を直に組む。
+  # bootstrap 版は OpenBSD 7.9 で pkgsrc の devel/pkgconf が segfault して
+  # configure まで届かなかった。ここは base の clang と OpenBSD の package
+  # だけで組むので、その段を踏まずに済む。
+  #
+  # 分かるのは「この作りでリンクが通るか」までである。ports は自前の
+  # LDFLAGS で組むので、これが通っても ports の patch が不要と断定は
+  # できない。断定するには ports で patch を外して組む必要がある。
+  openbsd-tarball:
+    if: inputs.target == 'both' || inputs.target == 'openbsd'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: OpenBSD で augeas を tarball から組む
+        uses: vmactions/openbsd-vm@v1
+        with:
+          release: ${{ inputs.openbsd_release }}
+          mem: 4096
+          cpu: 4
+          sync: 'no'
+          copyback: false
+          prepare: |
+            pkg_add -I libxml2 readline pkgconf gmake
+          run: |
+            set -x
+            uname -a
+            cc --version | head -2
+
+            echo '##### 0. _Unwind_* は今どこにあるか #####'
+            # 2018 年の patch に添えられたログは libcompiler_rt の
+            # __gcc_personality_v0 が _Unwind_* を引けない、というもの。
+            # いま何が持っているかを先に見ておく。
+            for l in /usr/lib/libc.so.* /usr/lib/libc++abi.so.* /usr/lib/libpthread.so.*; do
+              [ -e "$l" ] || continue
+              n=$(nm -D "$l" 2>/dev/null | grep -c '_Unwind_' || true)
+              echo "  $l  _Unwind_* を $n 個"
+            done
+            ls -l /usr/lib/libcompiler_rt.a /usr/lib/libunwind* 2>/dev/null || echo '  (libcompiler_rt.a / libunwind は見当たらない)'
+
+            cd /root
+            ftp -o augeas.tar.gz https://github.com/hercules-team/augeas/releases/download/release-1.14.1/augeas-1.14.1.tar.gz
+            tar xzf augeas.tar.gz
+
+            echo '##### 1. 素のまま (-fexceptions あり) #####'
+            cd /root/augeas-1.14.1
+            grep -n 'common_flags=' configure | head -2
+            ./configure --prefix=/tmp/a1 >c1.log 2>&1 || { tail -20 c1.log; exit 1; }
+            grep -i 'understands -fexceptions\|fexceptions' c1.log | head -3
+            if gmake >b1.log 2>&1; then
+              echo 'RESULT A (-fexceptions あり): 通った'
+            else
+              echo 'RESULT A (-fexceptions あり): 落ちた'
+              grep -iE '_Unwind_|personality|undefined' b1.log | head -12
+              tail -20 b1.log
+            fi
+
+            echo '##### 2. OpenBSD の ports と同じく外す #####'
+            gmake distclean >/dev/null 2>&1 || true
+            sed -i 's|common_flags="-fexceptions -fasynchronous-unwind-tables"|common_flags=""|' configure
+            ./configure --prefix=/tmp/a2 >c2.log 2>&1
+            if gmake >b2.log 2>&1; then
+              echo 'RESULT B (-fexceptions なし): 通った'
+            else
+              echo 'RESULT B (-fexceptions なし): 落ちた'
+              tail -20 b2.log
+            fi
+
+            echo '##### 3. 結論 #####'
+            echo 'A が落ちて B が通れば patch はいまも要る。'
+            echo 'A が通れば、2018 年の状況は再現しない。'
