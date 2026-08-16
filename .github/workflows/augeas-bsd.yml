@@ -365,6 +365,40 @@ jobs:
             echo 'CHECK linux/glibc: リンクできない -> flags は落ちる'; head -5 /tmp/p.log
           fi
 
+      - name: time_t が long より広い環境で %ld を試す
+        run: |
+          # NetBSD/i386 や OpenBSD/i386 は long が 32bit で time_t が 64bit。
+          # vmactions にその image が無いので、glibc の 64bit time_t を
+          # -m32 で使って同じ形を作る。
+          sudo apt-get update -qq && sudo apt-get install -y -qq gcc-multilib
+          cat > /tmp/t.c <<'CEOF'
+          #include <stdio.h>
+          #include <sys/time.h>
+          void f(const struct timeval *a, const struct timeval *b) {
+              time_t elapsed = (b->tv_sec - a->tv_sec)*1000
+                             + (b->tv_usec - a->tv_usec)/1000;
+              printf("Time: %ld ms\n", elapsed);
+          }
+          CEOF
+          echo '--- 幅の確認 ---'
+          cat > /tmp/w.c <<'CEOF'
+          #include <stdio.h>
+          #include <time.h>
+          int main(void) { printf("long=%zu time_t=%zu\n",
+                                  sizeof(long), sizeof(time_t)); return 0; }
+          CEOF
+          gcc -m32 -D_FILE_OFFSET_BITS=64 -D_TIME_BITS=64 -o /tmp/w /tmp/w.c \
+            && /tmp/w
+          echo '--- いまのコード (%ld) ---'
+          gcc -m32 -D_FILE_OFFSET_BITS=64 -D_TIME_BITS=64 -Wall -Wformat \
+              -c -o /tmp/t.o /tmp/t.c 2>&1 | head -8
+          echo '--- 直したあと ((long long) つき) ---'
+          sed -e 's|%ld ms|%lld ms|' -e 's|, elapsed)|, (long long) elapsed)|' \
+              /tmp/t.c > /tmp/t2.c
+          gcc -m32 -D_FILE_OFFSET_BITS=64 -D_TIME_BITS=64 -Wall -Wformat \
+              -c -o /tmp/t2.o /tmp/t2.c 2>&1 | head -8
+          echo '  (直したあとに何も出なければ警告なし)'
+
       - name: OpenBSD で検査の書き方を測る
         uses: vmactions/openbsd-vm@v1
         with:
