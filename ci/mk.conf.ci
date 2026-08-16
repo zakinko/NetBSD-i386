@@ -28,6 +28,18 @@ PKG_DEVELOPER=	no
 # 落ちてこないミラーで延々待たない。
 FETCH_TIMEOUT=	60
 
+# lang/rust は建てず lang/rust-bin を使う。
+#
+# security/py-cryptography が引くので、certbot を持つ役割はどれも通り道に
+# 入る。rustc の bootstrap は何段階も建て直すため、3GB のゲストでは Actions の
+# 六時間に収まらない -- 実際 ns と www を足した回はそれで打ち切られた。
+#
+# rust-bin は上流のビルド済みを取ってくるだけで、i386 にも対応している
+# (rust-1.96.1-i586-unknown-netbsd.tar.xz)。rust はビルド時依存なので、
+# 出来上がる py-cryptography の中身は変わらない。手元の箱の mk.conf と
+# 同じ判断。
+RUST_TYPE=	bin
+
 ##
 ## ここから下は実験。終わったら消すこと。
 ##
