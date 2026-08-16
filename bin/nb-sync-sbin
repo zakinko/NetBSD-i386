@@ -1,51 +1,71 @@
 #!/bin/sh
 #
-# techne の ~/.sbin から、この repo が使う写しを取り直す。
+# zakinko/home の .sbin から、この repo が使う写しを取り直す。
 #
-#	bin/nb-sync-sbin [ホスト]
+#	bin/nb-sync-sbin [home の作業ツリー]
 #	git diff sbin/
 #
-# 正は techne の ~/.sbin (CVS: elena.sh.fml.org:/cvsroot の
-# ahodori/hostconf/home/.sbin)。GitHub Actions からはその CVS にも
-# ~fukachan/etc/mk.conf にも届かないので、CI が読めるように写しをこの repo に
-# 置いている。**写しを直接編集しないこと。** 直すのは .sbin の側で、ここは
-# このスクリプトで追従させる。
+# 正は zakinko/home の .sbin。以前は techne の ~/.sbin を ssh で読んでいた。
+# あれは .sbin が CVS (elena.sh.fml.org:/cvsroot) にしか無く、GitHub Actions
+# からその CVS に届かなかったからで、写しがこの repo にある理由もそれだった。
+# .sbin が git に移った時点でその前提は消えたので、取得元を git にしてある。
 #
-# mk.conf だけは事情が違う。本来の正は ~fukachan/etc/mk.conf だが 600 で
-# 読めないので、それが配られた結果である techne の /etc/mk.conf を写している。
+# 写しをやめて CI から zakinko/home を直接引く手もあるが、private なので
+# Actions に token を持たせることになる。写しなら CI は何も持たなくてよく、
+# 何を作ったかが commit として残るので、写しは残す。
+# **写しを直接編集しないこと。** 直すのは zakinko/home の側。
+#
+# mk.conf だけは今も事情が違う。本来の正は ~fukachan/etc/mk.conf だが 600 で
+# 読めない。それが配られた結果である techne の /etc/mk.conf を写している。
+# ここだけ ssh が残る。
 
 set -eu
 
-HOST=${1:-techne.fml.org}
+HOME_TREE=${1:-$HOME/git/home}
+MKCONF_HOST=${MKCONF_HOST:-techne.fml.org}
 USER_AT=${SBIN_USER:+$SBIN_USER@}
-REMOTE=${USER_AT:-}$HOST
+REMOTE=${USER_AT:-}$MKCONF_HOST
+
+[ -d "$HOME_TREE/.sbin" ] || { echo "$0: $HOME_TREE/.sbin が無い"; exit 1; }
+
+# 作業ツリーの途中の状態を写すと、CI が「まだ誰も見ていないもの」を作る。
+# origin に出ているものだけを正とする。
+echo "=== $HOME_TREE を確かめる"
+git -C "$HOME_TREE" fetch -q origin
+if [ -n "$(git -C "$HOME_TREE" status --porcelain -- .sbin)" ]; then
+	echo "$0: .sbin に未コミットの変更がある。先に commit すること"
+	git -C "$HOME_TREE" status --short -- .sbin
+	exit 1
+fi
+if [ -n "$(git -C "$HOME_TREE" rev-list origin/main..HEAD -- .sbin)" ]; then
+	echo "$0: .sbin に push していない commit がある。先に push すること"
+	exit 1
+fi
+REF=$(git -C "$HOME_TREE" rev-parse --short origin/main)
 
 cd "$(dirname "$0")/.."
 mkdir -p sbin
 
-echo "=== $REMOTE から取る"
+echo "=== zakinko/home $REF の .sbin から取る"
 
-# 向こうのログインシェルは csh なので、リダイレクトを含む命令は素で渡せない。
-# /bin/sh に食わせる。
-files=$(ssh -o BatchMode=yes "$REMOTE" /bin/sh <<'EOS'
-cd ~/.sbin && ls list.pkg.* Makefile 2>/dev/null
-EOS
-)
-
-for f in $files; do
-	ssh -o BatchMode=yes "$REMOTE" "cat ~/.sbin/$f" >"sbin/$f"
+# origin/main の中身をそのまま出す。作業ツリーの状態には依らない。
+for f in $(git -C "$HOME_TREE" ls-tree --name-only "origin/main:.sbin" \
+           | grep -E '^(list\.pkg\.|Makefile$)'); do
+	git -C "$HOME_TREE" show "origin/main:.sbin/$f" >"sbin/$f"
 	echo "    $f"
 done
 
+echo "=== $REMOTE から mk.conf を取る"
 ssh -o BatchMode=yes "$REMOTE" 'cat /etc/mk.conf' >sbin/mk.conf
 echo "    mk.conf (/etc/mk.conf)"
 
 {
 	echo "# bin/nb-sync-sbin が書く。手で触らない。"
 	echo "#"
-	echo "# 正   : $REMOTE の ~/.sbin"
-	echo "# CVS  : elena.sh.fml.org:/cvsroot  ahodori/hostconf/home/.sbin"
-	echo "# 取得 : $(date '+%Y-%m-%d %H:%M:%S %z')"
+	echo "# 正     : zakinko/home の .sbin"
+	echo "# commit : $REF"
+	echo "# mk.conf: $REMOTE の /etc/mk.conf"
+	echo "# 取得   : $(date '+%Y-%m-%d %H:%M:%S %z')"
 	echo
 	for f in sbin/*; do
 		case "$f" in sbin/SOURCE) continue ;; esac

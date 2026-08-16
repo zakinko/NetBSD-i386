@@ -6,6 +6,7 @@
 #	base    pkg_install, digest, tcsh, ng, perl5, git, lv, rsync,
 #	        pkgin, pkg_rolling-replace, sysupgrade など土台
 #	sh      socket, tnftpd, chrony, sudo
+#	ns      bind918 (権威 DNS。bambi がこれ)
 #	www     apache24, cronolog, certbot-apache, nginx, thttpd
 #	mail    ja-mh, fetchmail, procmail, emacs26-nox11, anthy-elisp
 #	client  X 関係、フォント、印刷、画像など
@@ -13,14 +14,17 @@
 #	        git-lfs)
 #	doc / fml / tex / aws / build / go
 #
-# 一覧そのものは sbin/ の写しであって、正は techne の ~/.sbin。
-# 中身を変えたいときは .sbin を直してから bin/nb-sync-sbin で追従させる。
+# 一覧そのものは sbin/ の写しであって、正は zakinko/home の .sbin。
+# 中身を変えたいときは向こうを直して push してから bin/nb-sync-sbin で
+# 追従させる。
 #
 # 自作パッケージは pkgsrc-zakinko の zakinko カテゴリにあり、~/.sbin の
 # list.pkg.* には載っていないので、下の zakinko/ 行でここに足している。
 
 base
 sh
+ns
+www
 
 # 役割の一覧に無いもの (自作パッケージ) はここに直接書く。
 +zakinko/nss_stns

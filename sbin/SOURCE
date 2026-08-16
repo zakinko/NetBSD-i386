@@ -1,20 +1,23 @@
 # bin/nb-sync-sbin が書く。手で触らない。
 #
-# 正   : zakinko@techne.fml.org の ~/.sbin
-# CVS  : elena.sh.fml.org:/cvsroot  ahodori/hostconf/home/.sbin
-# 取得 : 2026-08-14 20:37:24 +0900
+# 正     : zakinko/home の .sbin
+# commit : 58b3d8e
+# mk.conf: techne.fml.org の /etc/mk.conf
+# 取得   : 2026-08-16 09:10:57 +0900
 
-Makefile                 FML: Makefile,v 1.118 2026/08/09 08:52:03 fukachan Exp 
 list.pkg.aws             (版の記載なし)
 list.pkg.base            (版の記載なし)
 list.pkg.build           (版の記載なし)
 list.pkg.client          (版の記載なし)
+list.pkg.comms           (版の記載なし)
 list.pkg.doc             (版の記載なし)
 list.pkg.fml             (版の記載なし)
 list.pkg.go              (版の記載なし)
 list.pkg.local           (版の記載なし)
 list.pkg.mail            (版の記載なし)
+list.pkg.ns              (版の記載なし)
 list.pkg.sh              (版の記載なし)
 list.pkg.tex             (版の記載なし)
 list.pkg.www             (版の記載なし)
+Makefile                 FML: Makefile,v 1.118 2026/08/09 08:52:03 fukachan Exp 
 mk.conf                  FML: mk.conf,v 1.38 2024/05/15 08:42:42 fukachan Exp 

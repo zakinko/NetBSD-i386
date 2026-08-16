@@ -87,9 +87,54 @@ pkg-summary:
 
 summary: pkg-summary
 
+# /usr/pkgsrc is git on some boxes and cvs on others, so look before pulling.
+# "[ -d ... ] && cmd" cannot do this: on a cvs box the test is false, the line
+# exits 1, and make stops before pkg_rolling-replace ever runs.
+#
+# cvs update over the whole of pkgsrc talks to the server once per directory
+# and takes long enough that running it on every "make update" is the reason
+# not to run "make update".  So it is skipped when it ran recently.  git needs
+# no such guard -- one fetch is one round trip -- and is left alone.
+#
+# The stamp is separate because cvs, unlike git, leaves no trace of an update
+# that found nothing: CVS/Entries is only rewritten where something changed.
+# A missing or unwritable stamp means "do it", which is the safe direction.
+#
+# CVS_MAXAGE is in minutes.  "make update CVS_MAXAGE=0" always updates.
+CVS_MAXAGE	 = 720
+CVS_STAMP	 = /var/db/pkgsrc-cvs-update.stamp
+
 update:
-	[ -d /usr/pkgsrc/.git     ] && (cd /usr/pkgsrc/;    git pull --rebase)
-	[ -d /usr/pkgsrc/wip/.git ] && (cd /usr/pkgsrc/wip; git pull --rebase)
+	@ if [ -d /usr/pkgsrc/.git ]; then \
+		echo "==> /usr/pkgsrc: git"; \
+		(cd /usr/pkgsrc; git pull --rebase); \
+	elif [ -d /usr/pkgsrc/CVS ]; then \
+		if [ ${CVS_MAXAGE} -gt 0 ] && \
+		   [ -n "`find ${CVS_STAMP} -mmin -${CVS_MAXAGE} 2>/dev/null`" ]; then \
+			echo "==> /usr/pkgsrc: cvs, updated within ${CVS_MAXAGE}min, skipped"; \
+		else \
+			echo "==> /usr/pkgsrc: cvs"; \
+			if (cd /usr/pkgsrc; cvs -q update -dP); then \
+				touch ${CVS_STAMP} 2>/dev/null || true; \
+			else exit 1; fi; \
+		fi; \
+	else \
+		echo "==> /usr/pkgsrc: neither, left alone"; \
+	fi
+	@ if [ -d /usr/pkgsrc/wip/.git ]; then \
+		echo "==> /usr/pkgsrc/wip: git"; \
+		(cd /usr/pkgsrc/wip; git pull --rebase); \
+	elif [ -d /usr/pkgsrc/wip/CVS ]; then \
+		if [ ${CVS_MAXAGE} -gt 0 ] && \
+		   [ -n "`find ${CVS_STAMP}.wip -mmin -${CVS_MAXAGE} 2>/dev/null`" ]; then \
+			echo "==> /usr/pkgsrc/wip: cvs, updated within ${CVS_MAXAGE}min, skipped"; \
+		else \
+			echo "==> /usr/pkgsrc/wip: cvs"; \
+			if (cd /usr/pkgsrc/wip; cvs -q update -dP); then \
+				touch ${CVS_STAMP}.wip 2>/dev/null || true; \
+			else exit 1; fi; \
+		fi; \
+	fi
 	/usr/pkg/sbin/pkg_rolling-replace -Fv
 	/usr/pkg/sbin/pkg_rolling-replace -suv
 	@ make update-check-template-show
