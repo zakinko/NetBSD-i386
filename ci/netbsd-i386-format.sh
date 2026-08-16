@@ -77,8 +77,9 @@ void print_time_taken(const struct timeval *start, const struct timeval *stop) {
 }
 EOF
 
-# 当て物をしたあとの形。
-sed -e 's|%ld ms|%lld ms|' -e 's|, elapsed)|, (long long) elapsed)|' t.c > t2.c
+# 当て物をしたあとの形。time_t ではなく long long にする。elapsed は
+# 時刻ではなく経過時間なので、time_t を使っているのがそもそも誤りである。
+sed -e 's|time_t elapsed|long long elapsed|' -e 's|%ld ms|%lld ms|' t.c > t2.c
 
 echo '--- いまのコード (%ld) ---'
 cc -Wall -Wformat -c -o t.o t.c 2>&1 | head -10
@@ -98,10 +99,10 @@ int main(void) {
     unsigned i;
     for (i = 0; i < sizeof(v)/sizeof(v[0]); i++) {
         printf("  期待 %lld\n", (long long) v[i]);
-        printf("    %%ld               -> ");
+        printf("    time_t + %%ld    -> ");
         printf("%ld\n", v[i]);
-        printf("    %%lld + (long long) -> ");
-        printf("%lld\n", (long long) v[i]);
+        printf("    long long + %%lld -> ");
+        { long long e = v[i]; printf("%lld\n", e); }
     }
     return 0;
 }
