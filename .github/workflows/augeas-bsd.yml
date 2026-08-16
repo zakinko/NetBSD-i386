@@ -37,7 +37,7 @@ on:
       target:
         description: 'どちらを回すか'
         type: choice
-        options: [both, openbsd, freebsd, openbsd-tarball, openbsd-probe]
+        options: [both, openbsd, freebsd, openbsd-tarball, openbsd-probe, netbsd-i386]
         default: both
       pkgsrc:
         description: 'pkgsrc の配布物 (current か stable)'
@@ -448,3 +448,26 @@ jobs:
               echo 'CHECK openbsd: リンクできない -> flags は落ちる'
               head -4 /tmp/p2b.log
             fi
+
+  # NetBSD/i386 の実機で -Wformat が何を言うかを見る。手元の pkgsrc には
+  # 既に当て物が入っていて build.yml では警告の出る状態を作れないので、
+  # pkgsrc を通さず素の五行を直に組む。イメージは netbsd-ci-images から。
+  netbsd-i386:
+    if: inputs.target == 'netbsd-i386'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: qemu を入れて KVM を通す
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-x86 qemu-utils netcat-openbsd
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+          [ -w /dev/kvm ] && echo "KVM あり" || echo "::warning::KVM 無し。相当遅い"
+
+      - name: NetBSD/i386 で -Wformat を見る
+        run: sh ci/netbsd-i386-format.sh i386-11.0
