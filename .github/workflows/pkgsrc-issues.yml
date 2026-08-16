@@ -1,0 +1,243 @@
+name: pkgsrc-issues
+
+# NetBSD/pkgsrc の GitHub issues のうち、手元で再現できるものを実機で採る。
+#
+# ここは「直す」前の段である。まず落とす。落ちる形を見てから直しを書く。
+#
+#   #166  FreeBSD で Variable OBJECT_FMT is recursive
+#   #126  HP-UX で Variable OS_VERSION is recursive (別ジョブ。HP-UX は qemu)
+#   #130 #132 #141  musl/busybox の箱で bootstrap が nawk を見つけられない
+#
+# #166 についての読み。mk/bsd.prefs.mk は
+#
+#   459  .include <bsd.own.mk>
+#   464  NATIVE_OBJECT_FMT:=	${OBJECT_FMT}
+#   466  OBJECT_FMT=	${... ? ${CROSS_OBJECT_FMT} : ${NATIVE_OBJECT_FMT}}
+#   ...
+#   504  .elif ${OPSYS} == "FreeBSD"
+#   505  OBJECT_FMT?=	ELF
+#
+# の順で書かれている。466 で OBJECT_FMT が無条件に定義されるので、505 の
+# `?=` は空振りする。同じ並びで DragonFly (507) Minix (509) Linux (511)
+# AIX (513) OSF1 (515) HPUX (516-) は素の `=` を使っていて効いている。
+# `?=` なのは FreeBSD (505) と OpenBSD (500,502) の二つだけである。
+#
+# 再帰そのものは、再帰した make で OBJECT_FMT が未展開のまま環境から
+# 入ってきた場合に 464 が ${NATIVE_OBJECT_FMT} を含む文字列を
+# NATIVE_OBJECT_FMT へ代入することで閉じる、というのがこちらの読み。
+# 報告者の traceback が mk/platform/FreeBSD.mk:17 (`.if ${OBJECT_FMT} ==
+# "ELF"`) を指しているのと合う。ただし bmake の評価順の話なので、読みだけ
+# では確証にならない。だから実機で採る。
+#
+# OpenBSD も同じ `?=` なので、報告は無いが同じ形で落ちるはずである。
+# 落ちるなら「FreeBSD だけの話ではない」という材料になり、落ちないなら
+# 上の読みが違うということになる。どちらでも収穫がある。
+#
+# 手で起動する。押すまで何もしない。
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'どれを回すか'
+        type: choice
+        options: [all, freebsd, openbsd, musl]
+        default: all
+      pkgsrc:
+        description: 'pkgsrc の配布物 (current か stable)'
+        type: choice
+        options: [current, stable]
+        default: current
+      freebsd_release:
+        description: 'FreeBSD の版'
+        default: '14.3'
+      openbsd_release:
+        description: 'OpenBSD の版'
+        default: '7.9'
+
+jobs:
+  # ------------------------------------------------------------------
+  # #166  FreeBSD
+  # ------------------------------------------------------------------
+  freebsd:
+    if: inputs.target == 'all' || inputs.target == 'freebsd'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PREFIX: /opt/pkg
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: FreeBSD で OBJECT_FMT を採る
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: ${{ inputs.freebsd_release }}
+          mem: 8192
+          cpu: 4
+          sync: 'no'
+          copyback: false
+          envs: 'PREFIX'
+          run: |
+            set -x
+            uname -a
+
+            echo '##### 1. pkgsrc を取る #####'
+            cd /root
+            fetch -o pkgsrc.tar.gz https://cdn.NetBSD.org/pub/pkgsrc/${{ inputs.pkgsrc }}/pkgsrc.tar.gz
+            tar xzf pkgsrc.tar.gz
+
+            echo '##### 2. bootstrap #####'
+            cd /root/pkgsrc/bootstrap
+            ./bootstrap --prefix "$PREFIX" --workdir /tmp/bs >/tmp/bootstrap.log 2>&1
+            echo "--- bootstrap の終了状態: $? ---"
+            tail -15 /tmp/bootstrap.log
+            PATH=$PREFIX/bin:$PREFIX/sbin:$PATH
+            export PATH
+
+            echo '##### 3. 報告者と同じ操作 (issue #166) #####'
+            # 報告は misc/fd で bmake clean が
+            #   Variable OBJECT_FMT is recursive.
+            #     in mk/platform/FreeBSD.mk:17
+            # と言って落ちる、というもの。
+            cd /root/pkgsrc/misc/fd
+            if bmake clean >/tmp/clean.log 2>&1; then
+              echo 'RESULT #166: 落ちなかった'
+            else
+              echo 'RESULT #166: 落ちた'
+            fi
+            cat /tmp/clean.log
+
+            echo '##### 4. OBJECT_FMT が実際に何になっているか #####'
+            # ここが空なら 505 の `?=` が空振りしているということ。
+            for v in OBJECT_FMT NATIVE_OBJECT_FMT CROSS_OBJECT_FMT USE_CROSS_COMPILE; do
+              printf '%-20s = [%s]\n' "$v" "$(bmake -V "$v" 2>&1)"
+            done
+
+            echo '##### 5. 上の階層 (mk/ を直に読ませる) #####'
+            cd /root/pkgsrc/misc/fd
+            bmake show-vars VARNAMES='OPSYS OBJECT_FMT NATIVE_OBJECT_FMT' 2>&1 | head -20
+
+  # ------------------------------------------------------------------
+  # #166 の裏取り  OpenBSD も同じ `?=` を使っている
+  # ------------------------------------------------------------------
+  openbsd:
+    if: inputs.target == 'all' || inputs.target == 'openbsd'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      # / が 986M しかない。空いているのは /home。augeas-bsd.yml と同じ。
+      PREFIX: /home/pkg
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: OpenBSD で OBJECT_FMT を採る
+        uses: vmactions/openbsd-vm@v1
+        with:
+          release: ${{ inputs.openbsd_release }}
+          mem: 8192
+          cpu: 4
+          sync: 'no'
+          copyback: false
+          envs: 'PREFIX'
+          run: |
+            set -x
+            uname -a
+            df -h /home
+
+            echo '##### 1. pkgsrc を取る #####'
+            mkdir -p /home/work && cd /home/work
+            ftp -o pkgsrc.tar.gz https://cdn.NetBSD.org/pub/pkgsrc/${{ inputs.pkgsrc }}/pkgsrc.tar.gz
+            tar xzf pkgsrc.tar.gz
+
+            echo '##### 2. bootstrap #####'
+            cd /home/work/pkgsrc/bootstrap
+            ./bootstrap --prefix "$PREFIX" --workdir /home/work/bs >/tmp/bootstrap.log 2>&1
+            echo "--- bootstrap の終了状態: $? ---"
+            tail -15 /tmp/bootstrap.log
+            # README.OpenBSD: pkgsrc の pkg_* が base と衝突する。base を
+            # 退避すると fw_update(1) が壊れるので PATH の順で避ける。
+            PATH=$PREFIX/bin:$PREFIX/sbin:$PATH
+            export PATH
+
+            echo '##### 3. OBJECT_FMT が実際に何になっているか #####'
+            # 500/502 が `?=` なので、FreeBSD と同じなら空になるはず。
+            cd /home/work/pkgsrc/misc/fd
+            if bmake clean >/tmp/clean.log 2>&1; then
+              echo 'RESULT OpenBSD: 落ちなかった'
+            else
+              echo 'RESULT OpenBSD: 落ちた'
+            fi
+            cat /tmp/clean.log
+            for v in OBJECT_FMT NATIVE_OBJECT_FMT ELF_TOOLCHAIN; do
+              printf '%-20s = [%s]\n' "$v" "$(bmake -V "$v" 2>&1)"
+            done
+
+  # ------------------------------------------------------------------
+  # #130 #132 #141  musl / busybox の箱で bootstrap
+  # ------------------------------------------------------------------
+  #
+  # bootstrap/bootstrap の awk 判定は今も
+  #
+  #   707  if [ -f /etc/debian_version ]; then need_awk=yes
+  #   711  elif [ -f /etc/arch-release ]; then need_awk=yes; need_pax=yes
+  #   716  elif grep -sq '^CHROMEOS_RELEASE_NAME' /etc/lsb-release; then ...
+  #
+  # という配布物名のハードコードだけで、musl/busybox の分岐が無い。
+  # busybox awk は pkgsrc/mk が使う正規表現を解さないのに native awk として
+  # 採られてしまう、というのが報告の筋。
+  #
+  # Alpine (busybox あり) と Adélie (musl だが busybox 無し) の二つで採る。
+  # 報告者が両方で同じ症状を出しているので、原因が busybox なのか musl なのか
+  # をここで分けられる。
+  musl:
+    if: inputs.target == 'all' || inputs.target == 'musl'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: alpine
+            image: alpine:3.21
+            setup: apk add --no-cache build-base file zlib-dev
+          - name: debian-mawk
+            # 対照。Debian は mawk だが 707 のハードコードで need_awk=yes に
+            # なるので通る。ここが通って alpine が落ちれば、原因は awk の
+            # 実装ではなく判定の書き方だと言える。
+            image: debian:12
+            setup: apt-get update && apt-get install -y build-essential file zlib1g-dev curl
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - name: ${{ matrix.name }} で bootstrap する
+        run: |
+          set -x
+          ${{ matrix.setup }}
+          cat /etc/os-release 2>/dev/null | head -3
+          echo "--- awk は何か ---"
+          command -v awk gawk nawk mawk 2>&1 || true
+          ls -l "$(command -v awk)" 2>&1 || true
+          awk --version 2>&1 | head -2 || awk -W version 2>&1 | head -2 || true
+
+          echo '##### pkgsrc を取る #####'
+          cd /tmp
+          (wget -q -O pkgsrc.tar.gz https://cdn.NetBSD.org/pub/pkgsrc/${{ inputs.pkgsrc }}/pkgsrc.tar.gz \
+            || curl -fsSL -o pkgsrc.tar.gz https://cdn.NetBSD.org/pub/pkgsrc/${{ inputs.pkgsrc }}/pkgsrc.tar.gz)
+          tar xzf pkgsrc.tar.gz
+
+          echo '##### bootstrap の awk 判定がどう転ぶか #####'
+          grep -n 'need_awk=yes' /tmp/pkgsrc/bootstrap/bootstrap | head
+          for f in /etc/debian_version /etc/arch-release /etc/lsb-release; do
+            [ -e "$f" ] && echo "  ある: $f" || echo "  無い: $f"
+          done
+
+          echo '##### bootstrap #####'
+          cd /tmp/pkgsrc/bootstrap
+          if ./bootstrap --prefix /opt/pkg --workdir /tmp/bs >/tmp/bootstrap.log 2>&1; then
+            echo "RESULT ${{ matrix.name }}: bootstrap は通った"
+          else
+            echo "RESULT ${{ matrix.name }}: bootstrap が落ちた"
+          fi
+          tail -40 /tmp/bootstrap.log
+          echo '--- nawk を探しているか ---'
+          grep -n -i 'nawk\|awk' /tmp/bootstrap.log | tail -20
