@@ -351,6 +351,20 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      - name: 新しい検査を Linux/glibc で試す
+        run: |
+          # 上流に出す検査。ここ (glibc) では yes になるはず。
+          cat > /tmp/p.c <<'EOF'
+          extern void __gcc_personality_v0(void);
+          int main(void) { __gcc_personality_v0(); return 0; }
+          EOF
+          if cc -o /tmp/p /tmp/p.c 2>/tmp/p.log; then
+            echo 'CHECK linux/glibc: __gcc_personality_v0 リンクできる -> flags は残る'
+          else
+            echo 'CHECK linux/glibc: リンクできない -> flags は落ちる'; head -5 /tmp/p.log
+          fi
+
       - name: OpenBSD で検査の書き方を測る
         uses: vmactions/openbsd-vm@v1
         with:
@@ -392,3 +406,11 @@ jobs:
               done
             done
             echo '--- 望ましいのは flags 無しで通り、flags 有りで落ちる候補 ---'
+
+            # 上流に出す検査そのもの。ここでは no になるはず。
+            if cc -o /tmp/p2b /tmp/p2.c >/tmp/p2b.log 2>&1; then
+              echo 'CHECK openbsd: __gcc_personality_v0 リンクできる -> flags は残る'
+            else
+              echo 'CHECK openbsd: リンクできない -> flags は落ちる'
+              head -4 /tmp/p2b.log
+            fi
