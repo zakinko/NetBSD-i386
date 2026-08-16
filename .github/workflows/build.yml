@@ -12,7 +12,9 @@ on:
       - 'ci/**'
       - '.github/workflows/build.yml'
   schedule:
-    # 毎週日曜 03:17 JST
+    # 毎時。使っているものに動きがあったときだけ建てる (watch が判定する)
+    - cron: '5 * * * *'
+    # 毎週日曜 03:17 JST。取りこぼしの受け皿で、こちらは無条件に建てる
     - cron: '17 18 * * 6'
   workflow_dispatch:
     inputs:
@@ -41,7 +43,98 @@ env:
   SEED_DIR: ${{ github.workspace }}/seed
 
 jobs:
+  #
+  # 建てる価値があるかを先に見る。pkgsrc は一日に何百と commit があり、その
+  # ほとんどはこちらの使っていないものへの変更なので、毎時そのまま建てると
+  # 何も変わらない六時間を延々と回すことになる。
+  #
+  # 見るのは二つの条件。
+  #
+  #   1. 前回建てたときの sha から trunk が進んでいるか
+  #      前回の sha は release の notes に書いてある (- pkgsrc: ...)
+  #
+  #   2. 進んだぶんに、こちらが使っている package の Makefile か distinfo が
+  #      含まれるか
+  #      版が変われば必ずどちらかが動く。同じ版のままの手入れ (コメント、
+  #      PLIST の並べ替え) では建て直さない。mk/ の下は基盤なので、そこが
+  #      動いたときは無条件に建てる。
+  #
+  # 週次と手動と push は判定を通さない。取りこぼしの受け皿がこの三つ。
+  #
+  watch:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.q.outputs.build }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: q
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" != schedule ] \
+             || [ "${{ github.event.schedule }}" = '17 18 * * 6' ]; then
+            echo "毎時の判定は通さない (${{ github.event_name }})"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          now=$(git ls-remote https://github.com/NetBSD/pkgsrc trunk | cut -f1)
+          echo "trunk: $now"
+
+          # どの release でも同じ sha で建てているので、一つ見れば足りる。
+          last=$(gh release view pkgsrc-10.1-i386 --json body -q .body 2>/dev/null \
+                 | sed -n 's/^- pkgsrc: //p' | head -1 || true)
+          echo "前回: ${last:-(不明)}"
+
+          if [ -z "$last" ]; then
+            echo "前回が分からないので建てる"
+            echo "build=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ "$last" = "$now" ]; then
+            echo "trunk が動いていない"
+            echo "build=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          # 使っているもの。list.pkg.* の一列目が pkgsrc の場所。
+          sed -e 's/#.*//' sbin/list.pkg.* \
+            | awk '{ print $1 }' | grep / | sort -u > /tmp/used
+          echo "使っている package: $(wc -l < /tmp/used)"
+
+          # compare は 300 file / 250 commit で頭打ちになる。打ち切られたら
+          # 見落としが出るので、そのときは建てる方に倒す。
+          gh api "repos/NetBSD/pkgsrc/compare/$last...$now" \
+            --jq '.files[].filename' > /tmp/changed 2>/dev/null || {
+              echo "compare が取れないので建てる"
+              echo "build=true" >> "$GITHUB_OUTPUT"; exit 0
+          }
+          echo "変わった file: $(wc -l < /tmp/changed)"
+          if [ "$(wc -l < /tmp/changed)" -ge 300 ]; then
+            echo "compare が打ち切られている見込みなので建てる"
+            echo "build=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          if grep -q '^mk/' /tmp/changed; then
+            echo "mk/ が動いた -- 基盤なので建てる"
+            echo "build=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          hit=$(grep -E '/(Makefile|distinfo)$' /tmp/changed \
+                | sed 's|/[^/]*$||' | sort -u \
+                | grep -Fx -f /tmp/used || true)
+          if [ -n "$hit" ]; then
+            echo "版が動いたもの:"; echo "$hit" | sed 's/^/    /'
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "使っているものに版の動きなし"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: watch
+    if: needs.watch.outputs.build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 350
 
