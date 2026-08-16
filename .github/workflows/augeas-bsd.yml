@@ -37,7 +37,7 @@ on:
       target:
         description: 'どちらを回すか'
         type: choice
-        options: [both, openbsd, freebsd]
+        options: [both, openbsd, freebsd, openbsd-tarball]
         default: both
       pkgsrc:
         description: 'pkgsrc の配布物 (current か stable)'
@@ -78,8 +78,12 @@ jobs:
           copyback: false
           envs: 'PREFIX WORK'
           prepare: |
-            # bootstrap 自体に要るものは base で足りる。ftp(1) も cc も
-            # ある。pkg_add は何も入れない。
+            # bootstrap 自体は base で足りるが、pkgsrc が建てる
+            # devel/pkgconf は OpenBSD 7.9 で segfault する
+            #   checking pkg-config is at least version 0.9.0...
+            #   Segmentation fault (core dumped)
+            # ので、OpenBSD の pkgconf を入れて mk.conf でそちらを使わせる。
+            pkg_add -I pkgconf
             df -h
           run: |
             set -x
@@ -118,6 +122,9 @@ jobs:
               else echo "!! $t が無い"; ls "$PREFIX/bin" "$PREFIX/sbin" 2>&1 | head -30; exit 1; fi
             done
             bmake --version | head -1
+            # 上の理由で、pkg-config は OpenBSD のものを使う。
+            echo 'TOOLS_PLATFORM.pkg-config=	/usr/local/bin/pkgconf' >>"$PREFIX/etc/mk.conf"
+            tail -3 "$PREFIX/etc/mk.conf"
             df -h
 
             echo '##### 3. augeas を建てる #####'
@@ -261,7 +268,7 @@ jobs:
   # LDFLAGS で組むので、これが通っても ports の patch が不要と断定は
   # できない。断定するには ports で patch を外して組む必要がある。
   openbsd-tarball:
-    if: inputs.target == 'both' || inputs.target == 'openbsd'
+    if: inputs.target == 'both' || inputs.target == 'openbsd' || inputs.target == 'openbsd-tarball'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -276,7 +283,8 @@ jobs:
           sync: 'no'
           copyback: false
           prepare: |
-            pkg_add -I libxml2 readline pkgconf gmake
+            # OpenBSD の package 名は libxml2 ではなく libxml。
+            pkg_add -I libxml readline pkgconf gmake
           run: |
             set -x
             uname -a
