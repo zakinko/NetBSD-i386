@@ -85,4 +85,27 @@ cc -Wall -Wformat -c -o t.o t.c 2>&1 | head -10
 echo '--- 直したあと ((long long) つき) ---'
 cc -Wall -Wformat -c -o t2.o t2.c 2>&1 | head -10
 echo '  (直したあとに何も出なければ警告なし)'
+
+# 警告が消えることと、正しい値が出ることは別である。実際に何が出るかを
+# 見る。i386 の varargs は 64bit 値をスタックに積むので、%ld が下位 32bit
+# を読むだけなら小さい値では化けない。それなら「値が壊れる」とは書けない。
+echo '--- 実際に何が表示されるか ---'
+cat > r.c <<'EOF'
+#include <stdio.h>
+#include <time.h>
+int main(void) {
+    time_t v[] = { 1234, 4294967296LL, 5000000000LL, -1 };
+    unsigned i;
+    for (i = 0; i < sizeof(v)/sizeof(v[0]); i++) {
+        printf("  期待 %lld\n", (long long) v[i]);
+        printf("    %%ld               -> ");
+        printf("%ld\n", v[i]);
+        printf("    %%lld + (long long) -> ");
+        printf("%lld\n", (long long) v[i]);
+    }
+    return 0;
+}
+EOF
+cc -Wall -o r r.c 2>/dev/null || cc -o r r.c
+./r
 GUEST
