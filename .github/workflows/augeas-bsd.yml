@@ -106,11 +106,16 @@ jobs:
             tail -25 /tmp/bootstrap.log
             PATH=$PREFIX/bin:$PREFIX/sbin:$PATH
             export PATH
-            # 終了状態だけでは足りない。前回 FreeBSD で 0 を返したのに
-            # digest も bmake も入っていなかった。実物を見て止める。
-            for t in bmake digest pkg_info; do
-              if [ -x "$PREFIX/bin/$t" ]; then echo "  ok $PREFIX/bin/$t"
-              else echo "!! $PREFIX/bin/$t が無い"; ls "$PREFIX/bin" 2>&1 | head -20; exit 1; fi
+            # bootstrap は digest を入れない (bootstrap の中に digest の字は
+            # 一つも無い)。makepatchsum が ${PREFIX}/bin/digest を呼ぶので、
+            # pkgtools/digest を先に建てておく。NetBSD の CI では既に入って
+            # いるため、ここで初めて露見した。
+            ( cd "$WORK/pkgsrc/pkgtools/digest" && bmake install ) >/tmp/digest.log 2>&1 || {
+              echo '!! pkgtools/digest を建てられなかった'; tail -30 /tmp/digest.log; exit 1; }
+            # 終了状態だけでは足りない。実物を見て止める。
+            for t in "$PREFIX/bin/bmake" "$PREFIX/bin/digest"; do
+              if [ -x "$t" ]; then echo "  ok $t"
+              else echo "!! $t が無い"; ls "$PREFIX/bin" "$PREFIX/sbin" 2>&1 | head -30; exit 1; fi
             done
             bmake --version | head -1
             df -h
@@ -216,9 +221,12 @@ jobs:
             tail -25 /tmp/bootstrap.log
             PATH=$PREFIX/bin:$PREFIX/sbin:$PATH
             export PATH
-            for t in bmake digest pkg_info; do
-              if [ -x "$PREFIX/bin/$t" ]; then echo "  ok $PREFIX/bin/$t"
-              else echo "!! $PREFIX/bin/$t が無い"; ls "$PREFIX/bin" 2>&1 | head -20; exit 1; fi
+            # bootstrap は digest を入れない。makepatchsum が要るので先に建てる。
+            ( cd /root/pkgsrc/pkgtools/digest && bmake install ) >/tmp/digest.log 2>&1 || {
+              echo '!! pkgtools/digest を建てられなかった'; tail -30 /tmp/digest.log; exit 1; }
+            for t in "$PREFIX/bin/bmake" "$PREFIX/bin/digest"; do
+              if [ -x "$t" ]; then echo "  ok $t"
+              else echo "!! $t が無い"; ls "$PREFIX/bin" "$PREFIX/sbin" 2>&1 | head -30; exit 1; fi
             done
 
             echo '##### 3. augeas を建てて試す #####'
