@@ -111,6 +111,15 @@ Machine: i386
 	patch-anthy.el (rev 1.1, 2023-09-06, msaitoh) already deals with it,
 	and the patch here is written against the tree with that applied.
 
+	As a cross-check: anthy-unicode, the fork that is still maintained
+	(https://github.com/fujiwarat/anthy-unicode, last commit 2026-03), has
+	made exactly these five changes in its own copy of the file and no
+	others.  It renames outright and drops the old branches, which it can
+	do because it does not carry emacs20, emacs21 or XEmacs; here they are
+	guarded instead.  That two people arrived at the same five names
+	independently is the best evidence I can offer that the list is
+	neither short nor padded.
+
 >How-To-Repeat:
 	The build stopping in can-be-built-here.mk:
 
@@ -147,9 +156,12 @@ Machine: i386
 	Guards rather than plain renames, because emacs20, emacs21 and the
 	XEmacs versions that stay in EMACS_VERSIONS_ACCEPTED do not have the
 	new names.  string-to-number is the exception -- it has existed since
-	Emacs 20 and in XEmacs 20 -- so that one is renamed outright.  anthy
-	has not been released since 2009, so there is nowhere upstream to send
-	any of this.
+	Emacs 20 and in XEmacs 20 -- so that one is renamed outright.
+
+	anthy itself has not been released since 2009, so there is nowhere to
+	send these upstream.  anthy-unicode is where the code went, and it
+	already carries the equivalent changes; if pkgsrc would rather follow
+	that than patch 9100h, that is a reasonable answer to this PR too.
 
 	The patches go in inputmethod/anthy/patches because anthy-elisp shares
 	PATCHDIR and DISTINFO_FILE with inputmethod/anthy.  They sort after the
@@ -162,13 +174,47 @@ Machine: i386
 	EMACS_TYPE=emacs30nox.  anthy-elisp-9100hnb8 builds on all three, with
 	all six .elc files present.
 
-	Conversion was checked rather than assumed.  On each of the three
-	releases, emacs is started, "nihongo" is typed through anthy-insert,
-	converted with space and committed with return, and the buffer is
-	written out and grepped: it contains 日本語.  The same check against an
-	unpatched tree fails -- on emacs30 at set-face-underline-p, and on
-	emacs26 at last-command-char, since without the patch anthy.el depends
-	on the user's init file supplying an alias for it.
+	Since the point of the patch is that byte compilation does not catch
+	the problem, building was not treated as enough.  Every Emacs in
+	EMACS_VERSIONS_ACCEPTED that pkgsrc packages was run against both
+	trees, on NetBSD 9.4/i386, using the official binary packages.  Each
+	run byte-compiles the six .el files, then starts emacs, types
+	"nihongo" through anthy-insert, converts with space, commits with
+	return, writes the buffer out and greps it for 日本語.
+
+	                    without the patch        with the patch
+	  emacs20  20.7     6/6  converts           6/6  converts
+	  emacs21  21.4     6/6  converts           6/6  converts
+	  emacs26  26.3     6/6  last-command-char  6/6  converts
+	  emacs27  27.2     6/6  last-command-char  6/6  converts
+	  emacs28  28.2     6/6  last-command-char  6/6  converts
+	  emacs29  29.4     4/6  set-face-underline-p   6/6  converts
+	  emacs30  30.2     4/6  set-face-underline-p   6/6  converts
+	  xemacs214 21.4.25 6/6  (not exercised)    6/6  (not exercised)
+
+	Two things worth drawing out of that.
+
+	emacs20 and emacs21 still convert with the patch applied, which is
+	what the fboundp and boundp guards are for -- widening the list must
+	not cost the versions that already worked.
+
+	Without the patch, anthy is unusable from emacs26 onwards even where
+	it builds: last-command-char is void, and it only appears to work
+	because init files carry
+
+	  (define-obsolete-variable-alias 'last-command-char 'last-command-event ...)
+
+	to paper over it.  That is a workaround in every user's init file for
+	something the package should not require.
+
+	The XEmacs row is byte compilation only.  anthy.el takes a different
+	branch there and reads last-command-event as an event object rather
+	than a character, so driving it from batch the way the GNU Emacs rows
+	are driven would not be testing the same thing.  The point of the row
+	is that the patch leaves XEmacs exactly where it found it: six .elc
+	files before and after.  (anthy-isearch.el and anthy-kyuri.el need
+	overlay.el from the fsf-compat XEmacs package; without it those two do
+	not compile, with or without this patch.)
 
 	Index: inputmethod/anthy-elisp/Makefile
 	===================================================================
