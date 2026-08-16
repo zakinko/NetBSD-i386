@@ -28,13 +28,27 @@ INFORMATION" にこうある。
 
 ## 今あるもの
 
-| | 上流 | 状態 |
-|---|---|---|
-| [augeas-adduser-conf.md](augeas-adduser-conf.md) | hercules-team/augeas | 枝 `adduser-conf-simplevars` を push 済み。**PR 未提出** |
-| [augeas-wsconsctl.md](augeas-wsconsctl.md) | hercules-team/augeas | 枝 `wsconsctl-conf-typo` を push 済み。**PR 未提出** |
-
-fork は [zakinko/augeas](https://github.com/zakinko/augeas)。どちらも
+上流 [hercules-team/augeas](https://github.com/hercules-team/augeas) へ 2026-08-16 に
+七本出した。fork は [zakinko/augeas](https://github.com/zakinko/augeas)。どれも
 master から 1 commit で、互いに独立している。
+
+| PR | 何 | 文書 |
+|---|---|---|
+| [#887](https://github.com/hercules-team/augeas/pull/887) | `/etc/wsconsctlctl.conf` の綴り | [augeas-wsconsctl.md](augeas-wsconsctl.md) |
+| [#888](https://github.com/hercules-team/augeas/pull/888) | PostgreSQL と rsyslog の `/usr/local` | [augeas-local-paths.md](augeas-local-paths.md) |
+| [#889](https://github.com/hercules-team/augeas/pull/889) | **`$(wildcard)` をやめる** | [augeas-lens-files.md](augeas-lens-files.md) |
+| [#890](https://github.com/hercules-team/augeas/pull/890) | 経過時間の型 | [augeas-elapsed-time.md](augeas-elapsed-time.md) |
+| [#891](https://github.com/hercules-team/augeas/pull/891) | `-fexceptions` の検査 | [augeas-fexceptions.md](augeas-fexceptions.md) |
+| [#892](https://github.com/hercules-team/augeas/pull/892) | man のパス | [augeas-man-paths.md](augeas-man-paths.md) |
+| [#893](https://github.com/hercules-team/augeas/pull/893) | `/etc/adduser.conf` を Simplevars へ | [augeas-adduser-conf.md](augeas-adduser-conf.md) |
+
+`#889` が本題である。pkgsrc は 2014 年からこの package の lens を一本も
+入れていない。他は掘っている途中で見つかったもので、`#887` から `#893` まで
+出す順は、小さく明白なものから、議論になりうるものへ、という並びにした。
+
+対応する pkgsrc 側の当て物は
+[pkgsrc-zakinko の overlay/sysutils/augeas](https://github.com/zakinko/pkgsrc-zakinko/tree/main/overlay/sysutils/augeas)
+にあり、Makefile の頭に patch と PR 番号の対応表が置いてある。
 
 ## どうやって確かめているか
 
@@ -77,3 +91,27 @@ OpenBSD の VM は `/` が 986M しかない。空いているのは `/home` (11
 
 bootstrap は失敗しても 0 を返すことがある。終了状態だけを見ず、`bmake` と
 `digest` が実際に入ったかを見て止めること。
+
+OpenBSD で pkgsrc の `devel/pkgconf` は 7.9 で segfault する。
+
+```
+checking pkg-config is at least version 0.9.0... Segmentation fault (core dumped)
+```
+
+`pkg_add` で入れ直そうとしても ports に `devel/pkgconf` も `devel/pkg-config`
+も無い。**OpenBSD は base に持っている**。`usr.bin/pkgconf` の `PROG` が
+`pkg-config` で、`/usr/bin/pkg-config` がその実体である。`mk.conf` の
+`TOOLS_PLATFORM.pkg-config` でそちらを使わせる。
+
+`pkg_add` の名前も素直ではない。libxml2 は **`libxml`**、pkgconf は base。
+入らなくても `pkg_add` は 0 を返すので、後段で「見つからない」となって
+初めて気付く。
+
+### その他
+
+`vmactions` に i386 の BSD イメージは無い。32bit を見たいときは
+`netbsd-ci-images` の i386 (6.1.5 / 7.2 / 8.3 / 9.4 / 10.1 / 11.0) を使う。
+[ci/netbsd-i386-format.sh](../../../ci/netbsd-i386-format.sh) がその形。
+
+lens を差し替えて比べるとき、`augtool -I <dir>` では既定のパスが勝つ。
+入っている木の方を直接いじること。
