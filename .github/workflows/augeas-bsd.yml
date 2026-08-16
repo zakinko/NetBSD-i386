@@ -78,12 +78,7 @@ jobs:
           copyback: false
           envs: 'PREFIX WORK'
           prepare: |
-            # bootstrap 自体は base で足りるが、pkgsrc が建てる
-            # devel/pkgconf は OpenBSD 7.9 で segfault する
-            #   checking pkg-config is at least version 0.9.0...
-            #   Segmentation fault (core dumped)
-            # ので、OpenBSD の pkgconf を入れて mk.conf でそちらを使わせる。
-            pkg_add -I pkgconf
+            # bootstrap 自体は base で足りる。pkg_add は何も入れない。
             df -h
           run: |
             set -x
@@ -122,8 +117,13 @@ jobs:
               else echo "!! $t が無い"; ls "$PREFIX/bin" "$PREFIX/sbin" 2>&1 | head -30; exit 1; fi
             done
             bmake --version | head -1
-            # 上の理由で、pkg-config は OpenBSD のものを使う。
-            echo 'TOOLS_PLATFORM.pkg-config=	/usr/local/bin/pkgconf' >>"$PREFIX/etc/mk.conf"
+            # pkgsrc が建てる devel/pkgconf は OpenBSD 7.9 で segfault する
+            #   checking pkg-config is at least version 0.9.0...
+            #   Segmentation fault (core dumped)
+            # OpenBSD は base に pkgconf を持っていて、usr.bin/pkgconf の
+            # PROG は pkg-config である。そちらを使わせる。
+            ls -l /usr/bin/pkg-config; /usr/bin/pkg-config --version
+            echo 'TOOLS_PLATFORM.pkg-config=	/usr/bin/pkg-config' >>"$PREFIX/etc/mk.conf"
             tail -3 "$PREFIX/etc/mk.conf"
             df -h
 
@@ -284,7 +284,8 @@ jobs:
           copyback: false
           prepare: |
             # OpenBSD の package 名は libxml2 ではなく libxml。
-            pkg_add -I libxml readline pkgconf gmake
+            # pkg-config は base にある (usr.bin/pkgconf の PROG が pkg-config)。
+            pkg_add -I libxml readline gmake
           run: |
             set -x
             uname -a

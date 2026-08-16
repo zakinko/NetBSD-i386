@@ -6,8 +6,8 @@
 | 枝 | `wsconsctl-conf-typo` ([zakinko/augeas](https://github.com/zakinko/augeas)) |
 | 触るもの | `lenses/simplevars.aug` |
 | 大きさ | 1 ファイル、1 行 |
-| PR | **未提出** |
-| pkgsrc 側 | `overlay/sysutils/augeas/patches/patch-wsconsctl-conf-typo` |
+| PR | [#887](https://github.com/hercules-team/augeas/pull/887) |
+| pkgsrc 側 | `overlay/sysutils/augeas/patches/patch-lenses_simplevars.aug` (#893 と同居) |
 
 ## なぜ
 
