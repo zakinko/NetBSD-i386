@@ -1,0 +1,5 @@
+# authoritative name server
+net/bind918
+
+# XXX zone handling perl modules (p5-Net-DNS, p5-NetAddr-IP, p5-Digest-SHA1)
+# XXX are in list.pkg.aws, and every host with this role has that one too.
