@@ -1,5 +1,12 @@
 # 上流 pkgsrc へ送るもの
 
+送り先は二系統ある。ここは **pkgsrc へ** (`send-pr`、メール) 送るもの。
+package が包んでいるソフト自体の上流へ送るものは [github/](github/) に
+置く。pkgsrc に当て物をするのは手元をすぐ直すためで、当て物を消せるように
+するには上流に入れてもらうしかない。`pkgsrc/bootstrap/README` も「pkgsrc の
+作法に合わせる類でない限り、直しは上流に出し、その URL を patch か Makefile
+に書け」としている。
+
 2026-08-14 に **CVS HEAD で確認済み**。三つとも誰も直していない。
 
 pkgsrc の正は CVS (`anoncvs@anoncvs.NetBSD.org:/cvsroot`) で、GitHub の
