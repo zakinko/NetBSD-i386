@@ -51,15 +51,20 @@ on:
         description: 'FreeBSD の版'
         default: '14.3'
 
-env:
-  # bootstrap の prefix。base の /usr/local とは別にする。
-  PREFIX: /opt/pkg
+# prefix と作業場所は job ごとに決める。OpenBSD は / が 986M しかなく、
+# 空いているのは /home (113G) と /usr (16.9G) の方である。最初これを
+# 見落として / に置き、pkgsrc の展開中に溢れた。
 
 jobs:
   openbsd:
     if: inputs.target == 'both' || inputs.target == 'openbsd'
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    env:
+      # / は 986M しかない。木も work も /home (113G) に置き、prefix は
+      # /usr (16.9G 空き) に置く。既定の /usr/pkg のままでよい。
+      WORK: /home/work
+      PREFIX: /usr/pkg
     steps:
       - uses: actions/checkout@v4
 
@@ -71,11 +76,11 @@ jobs:
           cpu: 4
           sync: 'no'
           copyback: false
-          envs: 'PREFIX'
+          envs: 'PREFIX WORK'
           prepare: |
             # bootstrap 自体に要るものは base で足りる。ftp(1) も cc も
             # ある。pkg_add は何も入れない。
-            df -h /
+            df -h
           run: |
             set -x
             uname -a
@@ -83,25 +88,35 @@ jobs:
             df -h
 
             echo '##### 1. pkgsrc と overlay を取る #####'
-            cd /root
+            # / は 986M しかない。作業は /home でする。
+            mkdir -p "$WORK" && cd "$WORK"
             ftp -o pkgsrc.tar.gz https://cdn.NetBSD.org/pub/pkgsrc/${{ inputs.pkgsrc }}/pkgsrc.tar.gz
             tar xzf pkgsrc.tar.gz
             ftp -o overlay.tar.gz https://codeload.github.com/zakinko/pkgsrc-zakinko/tar.gz/refs/heads/main
             tar xzf overlay.tar.gz
             cp -Rf pkgsrc-zakinko-main/overlay/sysutils/augeas/. pkgsrc/sysutils/augeas/
             ls pkgsrc/sysutils/augeas/patches
+            df -h
 
             echo '##### 2. bootstrap #####'
-            cd /root/pkgsrc/bootstrap
-            ./bootstrap --prefix "$PREFIX" --workdir /tmp/bs >/tmp/bootstrap.log 2>&1 || {
-              echo '!! bootstrap に失敗'; tail -40 /tmp/bootstrap.log; exit 1; }
-            tail -5 /tmp/bootstrap.log
+            cd "$WORK/pkgsrc/bootstrap"
+            ./bootstrap --prefix "$PREFIX" --workdir "$WORK/bs" >/tmp/bootstrap.log 2>&1
+            rc=$?
+            echo "--- bootstrap の終了状態: $rc ---"
+            tail -25 /tmp/bootstrap.log
             PATH=$PREFIX/bin:$PREFIX/sbin:$PATH
             export PATH
+            # 終了状態だけでは足りない。前回 FreeBSD で 0 を返したのに
+            # digest も bmake も入っていなかった。実物を見て止める。
+            for t in bmake digest pkg_info; do
+              if [ -x "$PREFIX/bin/$t" ]; then echo "  ok $PREFIX/bin/$t"
+              else echo "!! $PREFIX/bin/$t が無い"; ls "$PREFIX/bin" 2>&1 | head -20; exit 1; fi
+            done
             bmake --version | head -1
+            df -h
 
             echo '##### 3. augeas を建てる #####'
-            cd /root/pkgsrc/sysutils/augeas
+            cd "$WORK/pkgsrc/sysutils/augeas"
             # 当て物の SHA1 を distinfo に入れる。pkgsrc 標準の的。
             bmake makepatchsum
             if bmake >/tmp/build.log 2>&1; then
@@ -113,10 +128,10 @@ jobs:
             fi
 
             echo '##### 4. -fexceptions はどう扱われたか #####'
-            find /root/pkgsrc/sysutils/augeas/work -name config.log -maxdepth 3 2>/dev/null | head -1 | while read l; do
+            find "$WORK/pkgsrc/sysutils/augeas/work" -name config.log -maxdepth 3 2>/dev/null | head -1 | while read l; do
               grep -i 'fexceptions\|asynchronous-unwind' "$l" | head -5
             done
-            grep -rn 'common_flags=' /root/pkgsrc/sysutils/augeas/work/augeas-*/configure 2>/dev/null | head -2
+            grep -rn 'common_flags=' "$WORK"/pkgsrc/sysutils/augeas/work/augeas-*/configure 2>/dev/null | head -2
 
             echo '##### 5. make test (= augeas の make check) #####'
             bmake install >/tmp/install.log 2>&1 || { echo '!! install に失敗'; tail -20 /tmp/install.log; }
@@ -162,6 +177,9 @@ jobs:
     if: inputs.target == 'both' || inputs.target == 'freebsd'
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    env:
+      # こちらは / が 199G あるので /root のままでよい。
+      PREFIX: /opt/pkg
     steps:
       - uses: actions/checkout@v4
 
@@ -175,7 +193,7 @@ jobs:
           copyback: false
           envs: 'PREFIX'
           prepare: |
-            df -h /
+            df -h
           run: |
             set -x
             uname -a
@@ -192,10 +210,16 @@ jobs:
             echo '##### 2. bootstrap #####'
             # README.FreeBSD: base の compiler のみ対応。ports の gcc は不可。
             cd /root/pkgsrc/bootstrap
-            ./bootstrap --prefix "$PREFIX" --workdir /tmp/bs >/tmp/bootstrap.log 2>&1 || {
-              echo '!! bootstrap に失敗'; tail -40 /tmp/bootstrap.log; exit 1; }
+            ./bootstrap --prefix "$PREFIX" --workdir /tmp/bs >/tmp/bootstrap.log 2>&1
+            rc=$?
+            echo "--- bootstrap の終了状態: $rc ---"
+            tail -25 /tmp/bootstrap.log
             PATH=$PREFIX/bin:$PREFIX/sbin:$PATH
             export PATH
+            for t in bmake digest pkg_info; do
+              if [ -x "$PREFIX/bin/$t" ]; then echo "  ok $PREFIX/bin/$t"
+              else echo "!! $PREFIX/bin/$t が無い"; ls "$PREFIX/bin" 2>&1 | head -20; exit 1; fi
+            done
 
             echo '##### 3. augeas を建てて試す #####'
             cd /root/pkgsrc/sysutils/augeas
