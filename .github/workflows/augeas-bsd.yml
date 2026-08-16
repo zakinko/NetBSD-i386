@@ -1,0 +1,221 @@
+name: augeas-bsd
+
+# pkgsrc を OpenBSD と FreeBSD で bootstrap し、そこで sysutils/augeas を
+# 建てる。手元の CI が見ているのは NetBSD だけなので、そこでは確かめようの
+# ない三つを見るためのもの。
+#
+#   1. -fexceptions
+#      OpenBSD の ports は configure から -fexceptions と
+#      -fasynchronous-unwind-tables を外す patch を抱えている。添えられた
+#      ログでは libcompiler_rt の __gcc_personality_v0 が _Unwind_* を
+#      引けずにリンクが落ちている。上流のフラグ検査は ac_fn_c_try_link で
+#      リンクまで見ているので検査は通るはずで、検査用の main(){} が例外表を
+#      使わないため本体のリンクで初めて落ちる、というのがこちらの読み。
+#      手元に OpenBSD が無いので確かめていない。
+#
+#   2. lens の filter 二本
+#      /etc/adduser.conf を Shellvars から Simplevars へ移したものと、
+#      /etc/wsconsctlctl.conf の綴りを直したもの。どちらも NetBSD には
+#      対象のファイルが無く、効くのはここだけである。
+#
+#   3. その箱で解釈に失敗する設定ファイルの一覧
+#      lens は 231 本あり glob を除いても 331 個のパスを主張している。目で
+#      追っても確証にならないので、全部読ませて augeas 自身に言わせる。
+#      出るのは実在して、かつ解釈に失敗したものだけである。通ったように
+#      見えて構造が違うものは出ない。
+#
+# pkgsrc/bootstrap/README と README.OpenBSD / README.FreeBSD に従う。
+# bmake を使うこと、$prefix/bin を PATH の前に置くこと、OpenBSD では
+# pkgsrc の pkg_* が base の同名コマンドと衝突すること。base を退避すると
+# fw_update(1) が壊れると README が明記しているので、PATH の順で避ける。
+#
+# 手で起動する。押すまで何もしない。
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'どちらを回すか'
+        type: choice
+        options: [both, openbsd, freebsd]
+        default: both
+      pkgsrc:
+        description: 'pkgsrc の配布物 (current か stable)'
+        type: choice
+        options: [current, stable]
+        default: current
+      openbsd_release:
+        description: 'OpenBSD の版'
+        default: '7.9'
+      freebsd_release:
+        description: 'FreeBSD の版'
+        default: '14.3'
+
+env:
+  # bootstrap の prefix。base の /usr/local とは別にする。
+  PREFIX: /opt/pkg
+
+jobs:
+  openbsd:
+    if: inputs.target == 'both' || inputs.target == 'openbsd'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: OpenBSD で bootstrap して augeas を建てる
+        uses: vmactions/openbsd-vm@v1
+        with:
+          release: ${{ inputs.openbsd_release }}
+          mem: 8192
+          cpu: 4
+          sync: 'no'
+          copyback: false
+          envs: 'PREFIX'
+          prepare: |
+            # bootstrap 自体に要るものは base で足りる。ftp(1) も cc も
+            # ある。pkg_add は何も入れない。
+            df -h /
+          run: |
+            set -x
+            uname -a
+            cc --version | head -2
+            df -h
+
+            echo '##### 1. pkgsrc と overlay を取る #####'
+            cd /root
+            ftp -o pkgsrc.tar.gz https://cdn.NetBSD.org/pub/pkgsrc/${{ inputs.pkgsrc }}/pkgsrc.tar.gz
+            tar xzf pkgsrc.tar.gz
+            ftp -o overlay.tar.gz https://codeload.github.com/zakinko/pkgsrc-zakinko/tar.gz/refs/heads/main
+            tar xzf overlay.tar.gz
+            cp -Rf pkgsrc-zakinko-main/overlay/sysutils/augeas/. pkgsrc/sysutils/augeas/
+            ls pkgsrc/sysutils/augeas/patches
+
+            echo '##### 2. bootstrap #####'
+            cd /root/pkgsrc/bootstrap
+            ./bootstrap --prefix "$PREFIX" --workdir /tmp/bs >/tmp/bootstrap.log 2>&1 || {
+              echo '!! bootstrap に失敗'; tail -40 /tmp/bootstrap.log; exit 1; }
+            tail -5 /tmp/bootstrap.log
+            PATH=$PREFIX/bin:$PREFIX/sbin:$PATH
+            export PATH
+            bmake --version | head -1
+
+            echo '##### 3. augeas を建てる #####'
+            cd /root/pkgsrc/sysutils/augeas
+            # 当て物の SHA1 を distinfo に入れる。pkgsrc 標準の的。
+            bmake makepatchsum
+            if bmake >/tmp/build.log 2>&1; then
+              echo 'RESULT build: 通った'
+            else
+              echo 'RESULT build: 落ちた'
+              grep -iE '_Unwind_|personality|undefined reference' /tmp/build.log | head -10
+              tail -30 /tmp/build.log
+            fi
+
+            echo '##### 4. -fexceptions はどう扱われたか #####'
+            find /root/pkgsrc/sysutils/augeas/work -name config.log -maxdepth 3 2>/dev/null | head -1 | while read l; do
+              grep -i 'fexceptions\|asynchronous-unwind' "$l" | head -5
+            done
+            grep -rn 'common_flags=' /root/pkgsrc/sysutils/augeas/work/augeas-*/configure 2>/dev/null | head -2
+
+            echo '##### 5. make test (= augeas の make check) #####'
+            bmake install >/tmp/install.log 2>&1 || { echo '!! install に失敗'; tail -20 /tmp/install.log; }
+            if bmake test >/tmp/test.log 2>&1; then
+              echo 'RESULT test: 通った'
+            else
+              echo 'RESULT test: 落ちた'
+            fi
+            grep -E '^(PASS|FAIL|ERROR|# TOTAL|# PASS|# FAIL)' /tmp/test.log | tail -20
+            echo '--- lens のテストだけ抜き出す ---'
+            grep -E 'lens-(simplevars|shellvars)' /tmp/test.log | head -10
+
+            echo '##### 6. この箱で解釈に失敗する設定ファイル #####'
+            AUG=$PREFIX/bin/augtool
+            echo "入った lens: $(ls $PREFIX/share/augeas/lenses/dist/*.aug 2>/dev/null | wc -l) 本"
+            $AUG -e 'match /augeas/files//error' 2>&1 |
+              sed -e 's|^/augeas/files||' -e 's|/error.*||' | sort -u
+            echo '--- 言い分 ---'
+            $AUG -e 'print /augeas/files//error' 2>&1 | head -40
+
+            echo '##### 7. /etc/adduser.conf #####'
+            # 素の OpenBSD には無い。adduser(8) に既定値で書かせる。
+            [ -f /etc/adduser.conf ] || adduser -config_create -silent </dev/null || true
+            if [ -f /etc/adduser.conf ]; then
+              echo '--- 実物の頭 ---'; head -14 /etc/adduser.conf
+              echo '--- augeas から見えるか ---'
+              $AUG -e 'print /files/etc/adduser.conf' 2>&1 | head -25
+              echo '--- error は出ていないか ---'
+              $AUG -e 'print /augeas/files/etc/adduser.conf/error' 2>&1 | head -5
+            else
+              echo '(adduser.conf を作れなかった)'
+            fi
+
+            echo '##### 8. /etc/wsconsctl.conf #####'
+            ls -l /etc/wsconsctl.conf 2>/dev/null || echo '(この箱には無い)'
+            $AUG -e 'print /files/etc/wsconsctl.conf' 2>&1 | head -10
+
+      - name: 転けたらログを出す
+        if: failure()
+        run: echo "VM の中のログは上の run 出力を見ること"
+
+  freebsd:
+    if: inputs.target == 'both' || inputs.target == 'freebsd'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: FreeBSD で bootstrap して augeas を建てる
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: ${{ inputs.freebsd_release }}
+          mem: 8192
+          cpu: 4
+          sync: 'no'
+          copyback: false
+          envs: 'PREFIX'
+          prepare: |
+            df -h /
+          run: |
+            set -x
+            uname -a
+            cc --version | head -2
+
+            echo '##### 1. pkgsrc と overlay を取る #####'
+            cd /root
+            fetch -o pkgsrc.tar.gz https://cdn.NetBSD.org/pub/pkgsrc/${{ inputs.pkgsrc }}/pkgsrc.tar.gz
+            tar xzf pkgsrc.tar.gz
+            fetch -o overlay.tar.gz https://codeload.github.com/zakinko/pkgsrc-zakinko/tar.gz/refs/heads/main
+            tar xzf overlay.tar.gz
+            cp -Rf pkgsrc-zakinko-main/overlay/sysutils/augeas/. pkgsrc/sysutils/augeas/
+
+            echo '##### 2. bootstrap #####'
+            # README.FreeBSD: base の compiler のみ対応。ports の gcc は不可。
+            cd /root/pkgsrc/bootstrap
+            ./bootstrap --prefix "$PREFIX" --workdir /tmp/bs >/tmp/bootstrap.log 2>&1 || {
+              echo '!! bootstrap に失敗'; tail -40 /tmp/bootstrap.log; exit 1; }
+            PATH=$PREFIX/bin:$PREFIX/sbin:$PATH
+            export PATH
+
+            echo '##### 3. augeas を建てて試す #####'
+            cd /root/pkgsrc/sysutils/augeas
+            bmake makepatchsum
+            if bmake >/tmp/build.log 2>&1; then echo 'RESULT build: 通った'; else
+              echo 'RESULT build: 落ちた'; tail -30 /tmp/build.log; fi
+            bmake install >/tmp/install.log 2>&1 || tail -20 /tmp/install.log
+            if bmake test >/tmp/test.log 2>&1; then echo 'RESULT test: 通った'; else
+              echo 'RESULT test: 落ちた'; fi
+            grep -E '^(# TOTAL|# PASS|# FAIL)' /tmp/test.log | tail -5
+
+            echo '##### 4. adduser.conf は FreeBSD では本当に shell #####'
+            AUG=$PREFIX/bin/augtool
+            [ -f /etc/adduser.conf ] || adduser -C -q </dev/null || true
+            ls -l /etc/adduser.conf 2>/dev/null || echo '(無い)'
+            head -20 /etc/adduser.conf 2>/dev/null
+            echo '--- Simplevars で読めているか ---'
+            $AUG -e 'print /files/etc/adduser.conf' 2>&1 | head -20
+            $AUG -e 'print /augeas/files/etc/adduser.conf/error' 2>&1 | head -5
+
+            echo '##### 5. この箱で解釈に失敗する設定ファイル #####'
+            $AUG -e 'match /augeas/files//error' 2>&1 |
+              sed -e 's|^/augeas/files||' -e 's|/error.*||' | sort -u
