@@ -368,6 +368,18 @@ jobs:
             grep -E '^(FAIL|ERROR):' /tmp/chk2.log | sort -u
             grep -E '^# (TOTAL|PASS|SKIP|FAIL):' /tmp/chk2.log
 
+            echo '##### 2d. では何が原因なのか #####'
+            # bash と sed の見立ては外れた。直しても同じ四件が落ちる。
+            # そもそも bash が居るのかどうかから見て、automake が残す
+            # 各テストの .log を読む。
+            echo '--- bash はあるか ---'
+            ls -l /bin/bash /usr/local/bin/bash 2>&1 | head -3
+            command -v bash gsed 2>&1 | head -3
+            for t in test-augprint test-augtool test-createfile test-idempotent; do
+              echo "--- tests/$t.sh.log ---"
+              tail -25 "tests/$t.sh.log" 2>/dev/null || echo '  (log が無い)'
+            done
+
             echo '##### 3. 結論 #####'
             echo 'A が落ちて B が通れば patch はいまも要る。'
             echo 'A が通れば、2018 年の状況は再現しない。'
