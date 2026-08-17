@@ -343,6 +343,31 @@ jobs:
             grep -E '^(FAIL|ERROR):' /tmp/chk.log | sort -u
             grep -E '^# (TOTAL|PASS|SKIP|XFAIL|FAIL|XPASS|ERROR):' /tmp/chk.log
 
+            echo '##### 2c. test の bash と sed を直したら変わるか #####'
+            # 落ちる四件のうち三件は #!/bin/bash で、BSD に /bin/bash は無い。
+            # test-augprint.sh に bashism は無く、test-createfile.sh の [[ ]] は
+            # 四箇所とも -e と -z なので [ ] にできる。test-augtool.sh は
+            # GSED=sed; type gsed && GSED=gsed という仕組みを既に持っているのに
+            # 一箇所だけ素の sed を呼んでいる。直して通るのか、起動するように
+            # なるだけで別の理由で落ちるのかを見る。
+            for f in test-augprint.sh test-createfile.sh test-augtool.sh; do
+              sed -i 's|^#!/bin/bash$|#!/bin/sh|' "tests/$f"
+            done
+            sed -i -e 's|\[\[ ! -e \(.*\) \]\]|[ ! -e "\1" ]|' \
+                   -e 's|\[\[ -z \(.*\) \]\]|[ -z \1 ]|' tests/test-createfile.sh
+            sed -i 's#| sed #| $GSED #' tests/test-augtool.sh
+            echo '--- 直したあと ---'
+            head -1 tests/test-augprint.sh tests/test-createfile.sh tests/test-augtool.sh
+            echo "  残った [[ : $(grep -c '\[\[' tests/test-createfile.sh)"
+            grep -n 'GSED' tests/test-augtool.sh
+            if gmake check >/tmp/chk2.log 2>&1; then
+              echo 'RESULT check(直した後): 通った'
+            else
+              echo 'RESULT check(直した後): 落ちた'
+            fi
+            grep -E '^(FAIL|ERROR):' /tmp/chk2.log | sort -u
+            grep -E '^# (TOTAL|PASS|SKIP|FAIL):' /tmp/chk2.log
+
             echo '##### 3. 結論 #####'
             echo 'A が落ちて B が通れば patch はいまも要る。'
             echo 'A が通れば、2018 年の状況は再現しない。'
