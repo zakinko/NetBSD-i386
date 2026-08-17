@@ -152,9 +152,11 @@ jobs:
             else
               echo 'RESULT test: 落ちた'
             fi
-            grep -E '^(PASS|FAIL|ERROR|# TOTAL|# PASS|# FAIL)' /tmp/test.log | tail -20
-            echo '--- lens のテストだけ抜き出す ---'
-            grep -E 'lens-(simplevars|shellvars)' /tmp/test.log | head -10
+            echo '--- 落ちたものを全部 ---'
+            grep -E '^(FAIL|ERROR):' /tmp/test.log | sort -u
+            grep -E '^# (TOTAL|PASS|SKIP|XFAIL|FAIL|XPASS|ERROR):' /tmp/test.log
+            echo '--- lens のテスト ---'
+            grep -E '(PASS|FAIL): lens-(simplevars|shellvars)' /tmp/test.log | sort -u
 
             echo '##### 6. この箱で解釈に失敗する設定ファイル #####'
             AUG=$PREFIX/bin/augtool
@@ -329,6 +331,17 @@ jobs:
               echo 'RESULT B (-fexceptions なし): 落ちた'
               tail -20 b2.log
             fi
+
+            echo '##### 2b. 当て物なしのテストはどこまで通るか #####'
+            # 当て物ありの側 (pkgsrc の job) で 4 件落ちる。それが配布物自身の
+            # ものか、こちらが持ち込んだものかを見るには、素の状態の集合が要る。
+            if gmake check >/tmp/chk.log 2>&1; then
+              echo 'RESULT check: 通った'
+            else
+              echo 'RESULT check: 落ちた'
+            fi
+            grep -E '^(FAIL|ERROR):' /tmp/chk.log | sort -u
+            grep -E '^# (TOTAL|PASS|SKIP|XFAIL|FAIL|XPASS|ERROR):' /tmp/chk.log
 
             echo '##### 3. 結論 #####'
             echo 'A が落ちて B が通れば patch はいまも要る。'
