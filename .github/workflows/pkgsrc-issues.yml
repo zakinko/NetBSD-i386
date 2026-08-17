@@ -41,7 +41,7 @@ on:
       target:
         description: 'どれを回すか'
         type: choice
-        options: [all, freebsd, openbsd, musl]
+        options: [all, freebsd, openbsd, musl, hpux]
         default: all
       pkgsrc:
         description: 'pkgsrc の配布物 (current か stable)'
@@ -116,6 +116,30 @@ jobs:
             echo '##### 5. 上の階層 (mk/ を直に読ませる) #####'
             cd /root/pkgsrc/misc/fd
             bmake show-vars VARNAMES='OPSYS OBJECT_FMT NATIVE_OBJECT_FMT' 2>&1 | head -20
+
+            echo '##### 6. どちらの bsd.own.mk を掴んでいるか #####'
+            # 一回目で分かったこと。OBJECT_FMT を置いているのは pkgsrc 自身の
+            # bsd.own.mk であって (bootstrap-mk-files の mods/bsd.own.mk.in:115
+            # が "All platforms are ELF" として無条件に ELF を置く)、FreeBSD
+            # base の /usr/share/mk/bsd.own.mk は OBJECT_FMT を一切定義しない。
+            #
+            # つまり再帰するかどうかは pkgsrc の版ではなく、.include <bsd.own.mk>
+            # がどちらを掴むかで決まるはずである。既に closed の issue #134
+            # (bmake が /usr/share/mk を読んで Malformed conditional) が同じ系統。
+            # 報告者の /home/marc/pkgsrc という非特権 prefix も条件に合う。
+            echo '--- それぞれの bsd.own.mk ---'
+            ls -l "$PREFIX/share/mk/bsd.own.mk" /usr/share/mk/bsd.own.mk 2>&1
+            echo "  pkgsrc 側の OBJECT_FMT: $(grep -c OBJECT_FMT "$PREFIX/share/mk/bsd.own.mk" 2>/dev/null) 件"
+            echo "  base 側の OBJECT_FMT:   $(grep -c OBJECT_FMT /usr/share/mk/bsd.own.mk 2>/dev/null) 件"
+
+            echo '--- base の /usr/share/mk を掴ませたらどうなるか ---'
+            cd /root/pkgsrc/misc/fd
+            if bmake -m /usr/share/mk clean >/tmp/base-mk.log 2>&1; then
+              echo 'RESULT #166 (base の mk): 落ちなかった'
+            else
+              echo 'RESULT #166 (base の mk): 落ちた'
+            fi
+            head -20 /tmp/base-mk.log
 
   # ------------------------------------------------------------------
   # #166 の裏取り  OpenBSD も同じ `?=` を使っている
@@ -241,3 +265,128 @@ jobs:
           tail -40 /tmp/bootstrap.log
           echo '--- nawk を探しているか ---'
           grep -n -i 'nawk\|awk' /tmp/bootstrap.log | tail -20
+
+  # ------------------------------------------------------------------
+  # #126  HP-UX で Variable OS_VERSION is recursive
+  # ------------------------------------------------------------------
+  #
+  # 報告は HP-UX 11.31 だが、手元にあるのは 11i v1 (11.11) と 10.20 で、
+  # どちらも hppa である。11.31 は Itanium で使われることが多く qemu では
+  # 動かないので、そもそも狙えない。効くのは uname -r が B.11.x を返すこと
+  # だけ (mk/bsd.prefs.mk:267-268 の :C/^B.//) なので 11i v1 でよい。
+  # GNATS の pkg/59002 も 11.11 なので突き合わせる相手も揃う。
+  #
+  # ただし #166 で学んだとおり、効いている軸が OS の版とは限らない。報告者が
+  # 出した
+  #
+  #   bmake: Unknown modifier 'C'
+  #
+  # は :C/// を解さない古い make の言い分で、今の bmake は解する。再現しな
+  # ければ次に振るのは HP-UX の版ではなく pkgsrc と bmake の年代である。
+  #
+  # ここでやるのはまず起動である。SUPPORT.md が「pkgsrc の bootstrap が
+  # HP-UX で通るか」を未確認の側に置いているとおり、通った実績がまだ無い。
+  # 「駄目でした」で終わらせず、どこで止まったかを残す。
+  #
+  # 媒体の取得元は secret の MEDIA_BASE で渡す。netbsd-ci-images の
+  # fetch-media.sh が ::add-mask:: と sed で URL とホスト名を伏せるので、
+  # それをそのまま使い、こちらでは書かない。
+  #
+  # **落としたものを artifact にも release にも上げないこと。** 商用 Unix の
+  # 媒体は配布元が再配布を許諾していない。上げるとログを伏せる意味も消える。
+  hpux:
+    if: inputs.target == 'all' || inputs.target == 'hpux'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: qemu と lzip を入れる
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-hppa lzip
+          qemu-system-hppa --version | head -1
+          df -h / /mnt 2>&1 | head -5
+
+      - name: fetch-media.sh を借りる
+        uses: actions/checkout@v4
+        with:
+          repository: zakinko/netbsd-ci-images
+          path: ci-images
+
+      - name: 媒体を取る
+        env:
+          MEDIA_BASE: ${{ secrets.MEDIA_BASE }}
+          MEDIA_DIR: /mnt/media
+          MEDIA_SUBDIR: ${{ secrets.MEDIA_HPUX_DIR }}
+          MEDIA_FILE: ${{ secrets.MEDIA_HPUX_FILE }}
+        run: |
+          # set -x は使わない。展開後の URL と名前がログに出る。
+          #
+          # 取得元だけでなく、そこでの位置と名前も伏せる。名前は十分に
+          # 特徴的なので、それだけで取得元が引ける。GitHub は secret の値を
+          # 自動で伏字にするが、fetch-media.sh に倣って ::add-mask:: も明示
+          # しておく。二重にしておけば、どちらかの扱いが変わっても残る。
+          for v in "$MEDIA_BASE" "$MEDIA_SUBDIR" "$MEDIA_FILE"; do
+            [ -n "$v" ] || { echo '!! secret が空。三つとも要る。'; exit 1; }
+            echo "::add-mask::$v"
+          done
+          sudo mkdir -p /mnt/media /mnt/work
+          sudo chown "$(id -u):$(id -g)" /mnt/media /mnt/work
+          sh ci-images/fetch-media.sh "$MEDIA_SUBDIR" "$MEDIA_FILE"
+
+          # 中立な名前へ移す。以後の段は secret 由来の名前を一切扱わないので、
+          # 展開でも起動でも出しようがなくなる。
+          mv "/mnt/media/$MEDIA_SUBDIR/$MEDIA_FILE" /mnt/work/media.tar.lz
+          rm -rf /mnt/media
+          echo "取れた大きさ: $(wc -c < /mnt/work/media.tar.lz) バイト"
+
+      - name: 展開する
+        run: |
+          set -x
+          cd /mnt/work
+          # 中身は配布元の作りで .img と .sh の二つ。.sh には
+          # qemu の引数しか入っていないが、名前をそのまま残す理由も無いので
+          # 中立な名前へ移し、qemu の行はこちらのものを使う。
+          lzip -dc media.tar.lz | tar -xf -
+          mv ./*.img disk.img
+          rm -f media.tar.lz ./*.sh
+          ls -l /mnt/work
+          df -h /mnt | tail -1
+
+      - name: 起動して console を採る
+        run: |
+          cd /mnt/work
+          # 配布元の .sh をもとに、CI 向けに三つ変える。
+          #   -display none -serial file:  画面が無いので console を採る
+          #   hostfwd                      後で ssh で入れるなら要る
+          #   -d nochain                   run.sh のものをそのまま残す
+          qemu-system-hppa \
+            -machine B160L \
+            -smp cpus=4 \
+            -accel tcg,thread=multi \
+            -boot c -boot menu=off \
+            -drive if=scsi,bus=0,index=6,file=hpux.img,format=qcow2 \
+            -m 512 \
+            -d nochain \
+            -nic user,model=tulip,hostfwd=tcp:127.0.0.1:2222-:22 \
+            -display none \
+            -serial file:/tmp/console.log \
+            -pidfile /tmp/qemu.pid &
+
+          # hppa は TCG なので遅い。様子を刻んで出す。落ちたか進んだかを
+          # 見たいだけなので、止まっても job は失敗させない。
+          for i in $(seq 1 20); do
+            sleep 60
+            printf '=== %d 分経過  console %s バイト ===\n' \
+              "$i" "$(wc -c < /tmp/console.log 2>/dev/null || echo 0)"
+            tail -5 /tmp/console.log 2>/dev/null || true
+            if ! kill -0 "$(cat /tmp/qemu.pid 2>/dev/null)" 2>/dev/null; then
+              echo '!! qemu が終了した'; break
+            fi
+            if grep -q 'login:' /tmp/console.log 2>/dev/null; then
+              echo 'RESULT #126: login: まで来た'; break
+            fi
+          done
+
+          kill "$(cat /tmp/qemu.pid 2>/dev/null)" 2>/dev/null || true
+          echo '##### console の全文 #####'
+          cat /tmp/console.log 2>/dev/null || echo '(console に何も出なかった)'
