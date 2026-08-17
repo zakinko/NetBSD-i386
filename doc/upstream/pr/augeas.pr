@@ -1,5 +1,5 @@
 To: gnats-bugs@NetBSD.org
-Subject: sysutils/augeas: fix NULL dereference (CVE-2025-2588)
+Subject: sysutils/augeas: install the lenses; fix CVE-2025-2588
 From: zakinko@snowrabbit.org
 Reply-To: zakinko@snowrabbit.org
 X-send-pr-version: 3.95
@@ -8,215 +8,1138 @@ X-send-pr-version: 3.95
 >Originator:	Showta Ishizaki
 >Organization:
 >Confidential:	no
->Synopsis:	sysutils/augeas: fix NULL dereference (CVE-2025-2588)
->Severity:	non-critical
+>Synopsis:	sysutils/augeas: install the lenses; fix CVE-2025-2588
+>Severity:	serious
 >Priority:	medium
 >Category:	pkg
 >Class:		sw-bug
->Release:	NetBSD 11.0, pkgsrc CVS as of 2026-08-14
+>Release:	NetBSD 11.0, pkgsrc CVS as of 2026-08-17
 >Environment:
 System: NetBSD 11.0 i386
 Architecture: i386
 Machine: i386
 >Description:
-	pkg_admin audit reports CVE-2025-2588 against every version of
-	sysutils/augeas, and there is no release to update to.
+	sysutils/augeas installs no lenses, so augtool cannot read a single
+	configuration file.  On a NetBSD 11.0/amd64 machine, with the binary
+	package from cdn.NetBSD.org:
 
-	parse_regexp() in src/fa.c can return NULL without recording a reason
-	in parse->error.  Three of its callers -- fa_expand_nocase(),
-	fa_restrict_alphabet() and fa_expand_char_ranges() -- only test
-	parse->error before dereferencing what came back, so they walk into
-	the NULL.  (A fourth caller, fa_compile(), tests the pointer and is
-	fine.)
+	  # pkg_add augeas
+	  # ls /usr/pkg/share/augeas/lenses/dist
+	  ls: /usr/pkg/share/augeas/lenses/dist: No such file or directory
+	  # augtool print /files/etc/hosts
+	  #
 
-	Upstream fixed this by filling in parse->error at the error label
-	rather than adding a NULL check to each caller, which closes all three
-	at once:
+	The cause is one line in the distfile's Makefile.am:
 
-	  https://github.com/hercules-team/augeas/issues/852
-	  commit af2aa88ab37fc48167d8c5e43b1770a4ba2ff403, 2025-03-30
+	  dist_lens_DATA=$(wildcard lenses/*.aug)
+	  dist_lenstest_DATA=$(wildcard lenses/tests/*.aug)
 
-	That commit has never been released.  1.14.1 (2023-07-15) is still the
-	last release, seventeen months after the fix landed, so waiting for
-	upstream is not a plan.  Nor is moving to a snapshot worth it here:
-	master is only 19 commits ahead of 1.14.1, and once the new Deb822
-	apt sources lens and its tests are set aside, the C code differs by
-	about 80 lines, nearly all of it -Wdiscarded-qualifiers cleanup for
-	GCC 16.
+	$(wildcard) is a GNU make function.  Under bmake it stays a literal
+	string, both lists come out empty, and make install installs nothing.
+	The package has been in pkgsrc since 2014 and has never installed a
+	lens.
 
-	Other distributions already carry the fix.  Fedora ships it as a git
-	snapshot (1.14.2-0.4.20250324git4dffa3d); Debian has it in bookworm,
-	trixie and sid, naming the same commit; SUSE record it as resolved in
-	bsc#1239909.  No BSD carries it yet -- FreeBSD textproc/augeas and
-	OpenBSD sysutils/augeas both have patches, but none of them touch
-	src/fa.c.
+	FreeBSD's ports tree adds gmake to USES and OpenBSD's sets USE_GMAKE
+	to work around this.  pkgsrc does neither.
+
+	Separately, pkg_admin audit reports CVE-2025-2588 against every
+	version of this package.  Upstream fixed it in commit af2aa88
+	(2025-03-30) but has made no release since 1.14.1 (2023-06-27), so
+	there is nothing to update to.
 
 >How-To-Repeat:
-	pkg_admin audit on a system with augeas installed reports
+	  # pkg_add augeas
+	  # augtool print /files/etc/hosts
 
-	  Package augeas-1.14.1nb1 has a denial-of-service vulnerability,
-	  see https://nvd.nist.gov/vuln/detail/CVE-2025-2588
+	Nothing is printed.  With the lenses installed it prints the parsed
+	file.
 
-	and the pkg-vulnerabilities entry is augeas-[0-9]*, so no version
-	clears it.
-
-	For the crash itself, apply the patch below with its src/fa.c hunk
-	dropped, so that only the regression test goes in, then build and run
-	that one test:
-
-	  cd tests && make fatest && ./fatest
-
-	It prints nothing and dies with SIGSEGV (exit 139).  With the whole
-	patch applied it reports "OK (21 tests)".  (Observed on NetBSD
-	9.4/i386; nothing in this path is OS specific.)
-
-	"make test" shows it too, but augeas 1.14.1 already fails 7 of its 263
-	tests without this patch, so fatest on its own is the clearer signal.
-	See below.
+	For the CVE, augparse dies with SIGSEGV on a lens whose regexp makes
+	parse_regexp() return NULL while leaving parse->error at REG_NOERROR.
+	The distfile's own tests/fatest covers it: drop the src/fa.c hunk
+	from patch-CVE-2025-2588 and make test dies there.
 
 >Fix:
-	The patch is upstream commit af2aa88 applied verbatim -- the fix in
-	src/fa.c, the fa.h comment that documents the new return value, and
-	the regression test.  Nothing is adapted.
+	The lens lists are globbed in configure and substituted into the
+	makefile.  That needs no GNU make and works for an out-of-tree build
+	as well, which a bare glob in the makefile does not: automake's
+	install rule falls back to $(srcdir)/ only when it can test each
+	name, which it cannot do with a pattern.  PLIST grows by the 462
+	files that were never installed.
 
-	It is one patch covering three files and named after the CVE rather
-	than after a source file, following editors/emacs21 and net/avahi.
-	Splitting it three ways would separate the fix from the test that
-	demonstrates it.
+	Twelve patches.  Eleven have been sent upstream and each patch header
+	names the pull request, as pkgsrc/bootstrap/README asks:
 
-	_REG_ENOSYS resolves even though NetBSD's <regex.h> does not have it,
-	because augeas is built with -I ../gnulib/lib and its <regex.h> is the
-	bundled gnulib copy, not the system header.  I checked this rather
-	than assumed it; the preprocessor resolves <regex.h> from src/fa.c to
-	../gnulib/lib/regex.h, which defines _REG_ENOSYS.
+	  patch-Makefile.in                       hercules-team/augeas#889
+	  patch-configure                         #889 and #891
+	  patch-src_augtool.c                     #890
+	  patch-examples_dump.c                   #890
+	  patch-man_Makefile.in                   #892
+	  patch-lenses_pg_hba.aug                 #888
+	  patch-lenses_postgresql.aug             #888
+	  patch-lenses_rsyslog.aug                #888
+	  patch-lenses_shellvars.aug              #893
+	  patch-lenses_simplevars.aug             #893 and #887
+	  patch-lenses_tests_test_simplevars.aug  #893
+	  patch-CVE-2025-2588                     upstream commit af2aa88
 
-	PKGREVISION bumped.  Built and packaged on NetBSD 9.4, 10.1 and
-	11.0/i386.
+	None of the eleven has been merged yet; upstream has been quiet since
+	April and its CI has been failing to find a runner since January.
 
-	fatest, which is where the CVE lives, passes on all three.  The rest of
-	the suite does not, but that is not this patch: 1.14.1 fails these
-	seven either way --
+	Four of them do nothing on NetBSD, which has neither
+	/etc/adduser.conf nor /etc/wsconsctl.conf.  They matter where pkgsrc
+	is bootstrapped elsewhere.  So does #891: on OpenBSD augeas fails to
+	link with -fexceptions, because libcompiler_rt.a provides
+	__gcc_personality_v0 while _Unwind_* live only in libc++abi, which a
+	C program does not link.  The configure check accepts the flag anyway,
+	since its empty main() emits no exception table.
 
-	  lens-sip_conf.sh   test-augprint.sh    test-idempotent.sh
-	  lens-sudoers.sh    test-augtool.sh     test-interpreter.sh
-	                     test-createfile.sh
+	sysutils/augeas/patches is a new directory, so applying this needs:
 
-	Reverting src/fa.c, src/fa.h and tests/fatest.c and running the suite
-	again gives the same totals (263 run, 252 passed, 7 failed) and the
-	same seven names.
+	  cd /usr/pkgsrc && patch -p0 < pr.diff
+	  cvs add sysutils/augeas/patches
+	  cvs add sysutils/augeas/patches/patch-*
 
-	Please also narrow the pkg-vulnerabilities entry when this goes in.
-	It currently reads
+	Built and tested on NetBSD 9.4, 10.1 and 11.0 (i386, under qemu)
+	against pkgsrc CVS of today.  TEST_TARGET=check runs the distfile's
+	own suite: XXX-NETBSD-TEST.  augtool finds the lenses with no -I and
+	reads /etc/hosts.
 
-	  augeas-[0-9]*		denial-of-service	.../CVE-2025-2588
+	Also bootstrapped pkgsrc on OpenBSD 7.9/amd64 and built it there,
+	where the lens and -fexceptions patches are the ones that matter.
+	263 tests, 255 pass, 4 fail; 231 lenses installed; the
+	/etc/adduser.conf that adduser(8) itself wrote is readable, which it
+	is not without patch-lenses_shellvars.aug.
 
-	and should become
+	The diff below is 1029 lines, of which 476 are PLIST: the names of
+	the 462 lens files.  Nothing to read there.
 
-	  augeas<1.14.1nb2	denial-of-service	.../CVE-2025-2588
-
-	Without that, pkg_admin audit keeps reporting the CVE against the
-	fixed package, because the entry matches every version.
-
-	Index: sysutils/augeas/Makefile
-	===================================================================
-	RCS file: /cvsroot/pkgsrc/sysutils/augeas/Makefile,v
-	retrieving revision 1.20
-	diff -u -r1.20 Makefile
-	--- sysutils/augeas/Makefile	7 Jan 2026 08:48:48 -0000	1.20
-	+++ sysutils/augeas/Makefile	14 Aug 2026 17:42:15 -0000
-	@@ -1,7 +1,7 @@
-	 # $NetBSD: Makefile,v 1.20 2026/01/07 08:48:48 wiz Exp $
-	 
-	 DISTNAME=	augeas-1.14.1
-	-PKGREVISION=	1
-	+PKGREVISION=	2
-	 CATEGORIES=	sysutils
-	 MASTER_SITES=	${MASTER_SITE_GITHUB:=hercules-team/}
-	 GITHUB_RELEASE=	release-${PKGVERSION_NOREV}
-	Index: sysutils/augeas/distinfo
-	===================================================================
-	RCS file: /cvsroot/pkgsrc/sysutils/augeas/distinfo,v
-	retrieving revision 1.8
-	diff -u -r1.8 distinfo
-	--- sysutils/augeas/distinfo	28 Apr 2025 19:31:33 -0000	1.8
-	+++ sysutils/augeas/distinfo	14 Aug 2026 17:42:15 -0000
-	@@ -3,3 +3,4 @@
-	 BLAKE2s (augeas-1.14.1.tar.gz) = c16626c6d440ab43be0b705f4aef01ebbb109544a23478a780fd563ec27c1004
-	 SHA512 (augeas-1.14.1.tar.gz) = fddb2e243f979e71fc09f9d45d569d6307b35485b2d885bf7bcbc032ba5617fe7ab2071a041422c3efe2dd62eda74aba41016d248c0636e947d4f1c9144375aa
-	 Size (augeas-1.14.1.tar.gz) = 2653776 bytes
-	+SHA1 (patch-CVE-2025-2588) = 64f6fc558930a890b68592b1e41d6f2fffd1a928
-	Index: sysutils/augeas/patches/patch-CVE-2025-2588
-	===================================================================
-	RCS file: sysutils/augeas/patches/patch-CVE-2025-2588
-	diff -N sysutils/augeas/patches/patch-CVE-2025-2588
-	--- /dev/null	1 Jan 1970 00:00:00 -0000
-	+++ sysutils/augeas/patches/patch-CVE-2025-2588	15 Aug 2026 00:00:00 -0000
-	@@ -0,0 +1,68 @@
-	+$NetBSD$
-	+
-	+Fix a NULL dereference in the regexp parser.  CVE-2025-2588.
-	+
-	+parse_regexp() could return NULL while leaving parse->error at REG_NOERROR.
-	+fa_expand_nocase(), fa_restrict_alphabet() and fa_expand_char_ranges() only
-	+test parse->error before dereferencing what came back, so they walk into the
-	+NULL and the process dies.  Upstream fixed this at the error label rather
-	+than adding a check to each of the three callers.
-	+
-	+Upstream commit af2aa88ab37fc48167d8c5e43b1770a4ba2ff403 applied verbatim:
-	+the fix itself, the fa.h comment that documents the new return value, and
-	+the regression test.  It has not been released; 1.14.1 (2023) is still the
-	+last release.
-	+
-	+_REG_ENOSYS is not in NetBSD's <regex.h>, but augeas is built with
-	+-I ../gnulib/lib and takes <regex.h> from the bundled gnulib copy, which
-	+defines it.  Without the src/fa.c hunk below, tests/fatest dies with SIGSEGV.
-	+
-	+https://github.com/hercules-team/augeas/issues/852
-	+
-	+--- src/fa.c.orig
-	++++ src/fa.c
-	+@@ -3550,6 +3550,8 @@
-	+     return re;
-	+ 
-	+  error:
-	++    if (re == NULL && parse->error == REG_NOERROR)
-	++        parse->error = _REG_ENOSYS;
-	+     re_unref(re);
-	+     return NULL;
-	+ }
-	+
-	+--- src/fa.h.orig
-	++++ src/fa.h
-	+@@ -81,7 +81,8 @@
-	+  *
-	+  * On success, FA points to the newly allocated automaton constructed for
-	+  * RE, and the function returns REG_NOERROR. Otherwise, FA is NULL, and the
-	+- * return value indicates the error.
-	++ * return value indicates the error. Special value _REG_ENOSYS indicates
-	++ * fa_compile() couldn't identify the syntax issue with regexp.
-	+  *
-	+  * The FA is case sensitive. Call FA_NOCASE to switch it to
-	+  * case-insensitive.
-	+
-	+--- tests/fatest.c.orig
-	++++ tests/fatest.c
-	+@@ -589,6 +589,7 @@
-	+     const char *p1 = "aB";
-	+     const char *p2 = "[a-cUV]";
-	+     const char *p3 = "[^a-z]";
-	++    const char *wrong_regexp = "{&.{";
-	+     char *s;
-	+     size_t len;
-	+     int r;
-	+@@ -607,6 +608,11 @@
-	+     CuAssertIntEquals(tc, 0, r);
-	+     CuAssertStrEquals(tc, "[^A-Za-z]", s);
-	+     free(s);
-	++
-	++    /* Test that fa_expand_nocase does return _REG_ENOSYS */
-	++    r = fa_expand_nocase(wrong_regexp, strlen(wrong_regexp), &s, &len);
-	++    CuAssertIntEquals(tc, _REG_ENOSYS, r);
-	++    free(s);
-	+ }
-	+ 
-	+ static void testNoCaseComplement(CuTest *tc) {
+tIndex: sysutils/augeas/Makefile
+t===================================================================
+tRCS file: /cvsroot/pkgsrc/sysutils/augeas/Makefile,v
+tretrieving revision 1.20
+tdiff -u -u -r1.20 Makefile
+t--- sysutils/augeas/Makefile	7 Jan 2026 08:48:48 -0000	1.20
+t+++ sysutils/augeas/Makefile	16 Aug 2026 22:32:20 -0000
+t@@ -1,7 +1,7 @@
+t # $NetBSD: Makefile,v 1.20 2026/01/07 08:48:48 wiz Exp $
+t 
+t DISTNAME=	augeas-1.14.1
+t-PKGREVISION=	1
+t+PKGREVISION=	2
+t CATEGORIES=	sysutils
+t MASTER_SITES=	${MASTER_SITE_GITHUB:=hercules-team/}
+t GITHUB_RELEASE=	release-${PKGVERSION_NOREV}
+tIndex: sysutils/augeas/PLIST
+t===================================================================
+tRCS file: /cvsroot/pkgsrc/sysutils/augeas/PLIST,v
+tretrieving revision 1.4
+tdiff -u -u -r1.4 PLIST
+t--- sysutils/augeas/PLIST	28 Apr 2025 19:31:33 -0000	1.4
+t+++ sysutils/augeas/PLIST	16 Aug 2026 22:32:20 -0000
+t@@ -13,6 +13,468 @@
+t man/man1/augparse.1
+t man/man1/augprint.1
+t man/man1/augtool.1
+t+share/augeas/lenses/dist/access.aug
+t+share/augeas/lenses/dist/activemq_conf.aug
+t+share/augeas/lenses/dist/activemq_xml.aug
+t+share/augeas/lenses/dist/afs_cellalias.aug
+t+share/augeas/lenses/dist/aliases.aug
+t+share/augeas/lenses/dist/anaconda.aug
+t+share/augeas/lenses/dist/anacron.aug
+t+share/augeas/lenses/dist/approx.aug
+t+share/augeas/lenses/dist/apt_update_manager.aug
+t+share/augeas/lenses/dist/aptcacherngsecurity.aug
+t+share/augeas/lenses/dist/aptconf.aug
+t+share/augeas/lenses/dist/aptpreferences.aug
+t+share/augeas/lenses/dist/aptsources.aug
+t+share/augeas/lenses/dist/authinfo2.aug
+t+share/augeas/lenses/dist/authorized_keys.aug
+t+share/augeas/lenses/dist/authselectpam.aug
+t+share/augeas/lenses/dist/automaster.aug
+t+share/augeas/lenses/dist/automounter.aug
+t+share/augeas/lenses/dist/avahi.aug
+t+share/augeas/lenses/dist/backuppchosts.aug
+t+share/augeas/lenses/dist/bbhosts.aug
+t+share/augeas/lenses/dist/bootconf.aug
+t+share/augeas/lenses/dist/build.aug
+t+share/augeas/lenses/dist/cachefilesd.aug
+t+share/augeas/lenses/dist/carbon.aug
+t+share/augeas/lenses/dist/ceph.aug
+t+share/augeas/lenses/dist/cgconfig.aug
+t+share/augeas/lenses/dist/cgrules.aug
+t+share/augeas/lenses/dist/channels.aug
+t+share/augeas/lenses/dist/chrony.aug
+t+share/augeas/lenses/dist/clamav.aug
+t+share/augeas/lenses/dist/cmdline.aug
+t+share/augeas/lenses/dist/cobblermodules.aug
+t+share/augeas/lenses/dist/cobblersettings.aug
+t+share/augeas/lenses/dist/cockpit.aug
+t+share/augeas/lenses/dist/collectd.aug
+t+share/augeas/lenses/dist/cpanel.aug
+t+share/augeas/lenses/dist/cron.aug
+t+share/augeas/lenses/dist/cron_user.aug
+t+share/augeas/lenses/dist/crypttab.aug
+t+share/augeas/lenses/dist/csv.aug
+t+share/augeas/lenses/dist/cups.aug
+t+share/augeas/lenses/dist/cyrus_imapd.aug
+t+share/augeas/lenses/dist/darkice.aug
+t+share/augeas/lenses/dist/debctrl.aug
+t+share/augeas/lenses/dist/desktop.aug
+t+share/augeas/lenses/dist/devfsrules.aug
+t+share/augeas/lenses/dist/device_map.aug
+t+share/augeas/lenses/dist/dhclient.aug
+t+share/augeas/lenses/dist/dhcpd.aug
+t+share/augeas/lenses/dist/dns_zone.aug
+t+share/augeas/lenses/dist/dnsmasq.aug
+t+share/augeas/lenses/dist/dovecot.aug
+t+share/augeas/lenses/dist/dpkg.aug
+t+share/augeas/lenses/dist/dput.aug
+t+share/augeas/lenses/dist/erlang.aug
+t+share/augeas/lenses/dist/ethers.aug
+t+share/augeas/lenses/dist/exports.aug
+t+share/augeas/lenses/dist/fai_diskconfig.aug
+t+share/augeas/lenses/dist/fail2ban.aug
+t+share/augeas/lenses/dist/fonts.aug
+t+share/augeas/lenses/dist/fstab.aug
+t+share/augeas/lenses/dist/fuse.aug
+t+share/augeas/lenses/dist/gdm.aug
+t+share/augeas/lenses/dist/getcap.aug
+t+share/augeas/lenses/dist/group.aug
+t+share/augeas/lenses/dist/grub.aug
+t+share/augeas/lenses/dist/grubenv.aug
+t+share/augeas/lenses/dist/gshadow.aug
+t+share/augeas/lenses/dist/gtkbookmarks.aug
+t+share/augeas/lenses/dist/host_conf.aug
+t+share/augeas/lenses/dist/hostname.aug
+t+share/augeas/lenses/dist/hosts.aug
+t+share/augeas/lenses/dist/hosts_access.aug
+t+share/augeas/lenses/dist/htpasswd.aug
+t+share/augeas/lenses/dist/httpd.aug
+t+share/augeas/lenses/dist/inetd.aug
+t+share/augeas/lenses/dist/inifile.aug
+t+share/augeas/lenses/dist/inittab.aug
+t+share/augeas/lenses/dist/inputrc.aug
+t+share/augeas/lenses/dist/interfaces.aug
+t+share/augeas/lenses/dist/iproute2.aug
+t+share/augeas/lenses/dist/iptables.aug
+t+share/augeas/lenses/dist/iscsid.aug
+t+share/augeas/lenses/dist/jaas.aug
+t+share/augeas/lenses/dist/jettyrealm.aug
+t+share/augeas/lenses/dist/jmxaccess.aug
+t+share/augeas/lenses/dist/jmxpassword.aug
+t+share/augeas/lenses/dist/json.aug
+t+share/augeas/lenses/dist/kdump.aug
+t+share/augeas/lenses/dist/keepalived.aug
+t+share/augeas/lenses/dist/known_hosts.aug
+t+share/augeas/lenses/dist/koji.aug
+t+share/augeas/lenses/dist/krb5.aug
+t+share/augeas/lenses/dist/ldif.aug
+t+share/augeas/lenses/dist/ldso.aug
+t+share/augeas/lenses/dist/lightdm.aug
+t+share/augeas/lenses/dist/limits.aug
+t+share/augeas/lenses/dist/login_defs.aug
+t+share/augeas/lenses/dist/logrotate.aug
+t+share/augeas/lenses/dist/logwatch.aug
+t+share/augeas/lenses/dist/lokkit.aug
+t+share/augeas/lenses/dist/lvm.aug
+t+share/augeas/lenses/dist/mailscanner.aug
+t+share/augeas/lenses/dist/mailscanner_rules.aug
+t+share/augeas/lenses/dist/masterpasswd.aug
+t+share/augeas/lenses/dist/mcollective.aug
+t+share/augeas/lenses/dist/mdadm_conf.aug
+t+share/augeas/lenses/dist/memcached.aug
+t+share/augeas/lenses/dist/mke2fs.aug
+t+share/augeas/lenses/dist/modprobe.aug
+t+share/augeas/lenses/dist/modules.aug
+t+share/augeas/lenses/dist/modules_conf.aug
+t+share/augeas/lenses/dist/mongodbserver.aug
+t+share/augeas/lenses/dist/monit.aug
+t+share/augeas/lenses/dist/multipath.aug
+t+share/augeas/lenses/dist/mysql.aug
+t+share/augeas/lenses/dist/nagioscfg.aug
+t+share/augeas/lenses/dist/nagiosobjects.aug
+t+share/augeas/lenses/dist/netmasks.aug
+t+share/augeas/lenses/dist/networkmanager.aug
+t+share/augeas/lenses/dist/networks.aug
+t+share/augeas/lenses/dist/nginx.aug
+t+share/augeas/lenses/dist/nrpe.aug
+t+share/augeas/lenses/dist/nslcd.aug
+t+share/augeas/lenses/dist/nsswitch.aug
+t+share/augeas/lenses/dist/ntp.aug
+t+share/augeas/lenses/dist/ntpd.aug
+t+share/augeas/lenses/dist/odbc.aug
+t+share/augeas/lenses/dist/opendkim.aug
+t+share/augeas/lenses/dist/openshift_config.aug
+t+share/augeas/lenses/dist/openshift_http.aug
+t+share/augeas/lenses/dist/openshift_quickstarts.aug
+t+share/augeas/lenses/dist/openvpn.aug
+t+share/augeas/lenses/dist/oz.aug
+t+share/augeas/lenses/dist/pagekite.aug
+t+share/augeas/lenses/dist/pam.aug
+t+share/augeas/lenses/dist/pamconf.aug
+t+share/augeas/lenses/dist/passwd.aug
+t+share/augeas/lenses/dist/pbuilder.aug
+t+share/augeas/lenses/dist/pg_hba.aug
+t+share/augeas/lenses/dist/pgbouncer.aug
+t+share/augeas/lenses/dist/php.aug
+t+share/augeas/lenses/dist/phpvars.aug
+t+share/augeas/lenses/dist/postfix_access.aug
+t+share/augeas/lenses/dist/postfix_main.aug
+t+share/augeas/lenses/dist/postfix_master.aug
+t+share/augeas/lenses/dist/postfix_passwordmap.aug
+t+share/augeas/lenses/dist/postfix_sasl_smtpd.aug
+t+share/augeas/lenses/dist/postfix_transport.aug
+t+share/augeas/lenses/dist/postfix_virtual.aug
+t+share/augeas/lenses/dist/postgresql.aug
+t+share/augeas/lenses/dist/properties.aug
+t+share/augeas/lenses/dist/protocols.aug
+t+share/augeas/lenses/dist/puppet.aug
+t+share/augeas/lenses/dist/puppet_auth.aug
+t+share/augeas/lenses/dist/puppetfile.aug
+t+share/augeas/lenses/dist/puppetfileserver.aug
+t+share/augeas/lenses/dist/pylonspaste.aug
+t+share/augeas/lenses/dist/pythonpaste.aug
+t+share/augeas/lenses/dist/qpid.aug
+t+share/augeas/lenses/dist/quote.aug
+t+share/augeas/lenses/dist/rabbitmq.aug
+t+share/augeas/lenses/dist/radicale.aug
+t+share/augeas/lenses/dist/rancid.aug
+t+share/augeas/lenses/dist/redis.aug
+t+share/augeas/lenses/dist/reprepro_uploaders.aug
+t+share/augeas/lenses/dist/resolv.aug
+t+share/augeas/lenses/dist/rhsm.aug
+t+share/augeas/lenses/dist/rmt.aug
+t+share/augeas/lenses/dist/rsyncd.aug
+t+share/augeas/lenses/dist/rsyslog.aug
+t+share/augeas/lenses/dist/rtadvd.aug
+t+share/augeas/lenses/dist/rx.aug
+t+share/augeas/lenses/dist/samba.aug
+t+share/augeas/lenses/dist/schroot.aug
+t+share/augeas/lenses/dist/securetty.aug
+t+share/augeas/lenses/dist/semanage.aug
+t+share/augeas/lenses/dist/sep.aug
+t+share/augeas/lenses/dist/services.aug
+t+share/augeas/lenses/dist/shadow.aug
+t+share/augeas/lenses/dist/shells.aug
+t+share/augeas/lenses/dist/shellvars.aug
+t+share/augeas/lenses/dist/shellvars_list.aug
+t+share/augeas/lenses/dist/simplelines.aug
+t+share/augeas/lenses/dist/simplevars.aug
+t+share/augeas/lenses/dist/sip_conf.aug
+t+share/augeas/lenses/dist/slapd.aug
+t+share/augeas/lenses/dist/smbusers.aug
+t+share/augeas/lenses/dist/solaris_system.aug
+t+share/augeas/lenses/dist/soma.aug
+t+share/augeas/lenses/dist/sos.aug
+t+share/augeas/lenses/dist/spacevars.aug
+t+share/augeas/lenses/dist/splunk.aug
+t+share/augeas/lenses/dist/squid.aug
+t+share/augeas/lenses/dist/ssh.aug
+t+share/augeas/lenses/dist/sshd.aug
+t+share/augeas/lenses/dist/sssd.aug
+t+share/augeas/lenses/dist/star.aug
+t+share/augeas/lenses/dist/strongswan.aug
+t+share/augeas/lenses/dist/stunnel.aug
+t+share/augeas/lenses/dist/subversion.aug
+t+share/augeas/lenses/dist/sudoers.aug
+t+share/augeas/lenses/dist/sysconfig.aug
+t+share/augeas/lenses/dist/sysconfig_route.aug
+t+share/augeas/lenses/dist/sysctl.aug
+t+share/augeas/lenses/dist/syslog.aug
+t+share/augeas/lenses/dist/systemd.aug
+t+share/augeas/lenses/dist/termcap.aug
+t+share/augeas/lenses/dist/tests/test_access.aug
+t+share/augeas/lenses/dist/tests/test_activemq_conf.aug
+t+share/augeas/lenses/dist/tests/test_activemq_xml.aug
+t+share/augeas/lenses/dist/tests/test_afs_cellalias.aug
+t+share/augeas/lenses/dist/tests/test_aliases.aug
+t+share/augeas/lenses/dist/tests/test_anaconda.aug
+t+share/augeas/lenses/dist/tests/test_anacron.aug
+t+share/augeas/lenses/dist/tests/test_approx.aug
+t+share/augeas/lenses/dist/tests/test_apt_update_manager.aug
+t+share/augeas/lenses/dist/tests/test_aptcacherngsecurity.aug
+t+share/augeas/lenses/dist/tests/test_aptconf.aug
+t+share/augeas/lenses/dist/tests/test_aptpreferences.aug
+t+share/augeas/lenses/dist/tests/test_aptsources.aug
+t+share/augeas/lenses/dist/tests/test_authinfo2.aug
+t+share/augeas/lenses/dist/tests/test_authorized_keys.aug
+t+share/augeas/lenses/dist/tests/test_authselectpam.aug
+t+share/augeas/lenses/dist/tests/test_automaster.aug
+t+share/augeas/lenses/dist/tests/test_automounter.aug
+t+share/augeas/lenses/dist/tests/test_avahi.aug
+t+share/augeas/lenses/dist/tests/test_backuppchosts.aug
+t+share/augeas/lenses/dist/tests/test_bbhosts.aug
+t+share/augeas/lenses/dist/tests/test_bootconf.aug
+t+share/augeas/lenses/dist/tests/test_build.aug
+t+share/augeas/lenses/dist/tests/test_cachefilesd.aug
+t+share/augeas/lenses/dist/tests/test_carbon.aug
+t+share/augeas/lenses/dist/tests/test_ceph.aug
+t+share/augeas/lenses/dist/tests/test_cgconfig.aug
+t+share/augeas/lenses/dist/tests/test_cgrules.aug
+t+share/augeas/lenses/dist/tests/test_channels.aug
+t+share/augeas/lenses/dist/tests/test_chrony.aug
+t+share/augeas/lenses/dist/tests/test_clamav.aug
+t+share/augeas/lenses/dist/tests/test_cmdline.aug
+t+share/augeas/lenses/dist/tests/test_cobblermodules.aug
+t+share/augeas/lenses/dist/tests/test_cobblersettings.aug
+t+share/augeas/lenses/dist/tests/test_cockpit.aug
+t+share/augeas/lenses/dist/tests/test_collectd.aug
+t+share/augeas/lenses/dist/tests/test_cpanel.aug
+t+share/augeas/lenses/dist/tests/test_cron.aug
+t+share/augeas/lenses/dist/tests/test_cron_user.aug
+t+share/augeas/lenses/dist/tests/test_crypttab.aug
+t+share/augeas/lenses/dist/tests/test_csv.aug
+t+share/augeas/lenses/dist/tests/test_cups.aug
+t+share/augeas/lenses/dist/tests/test_cyrus_imapd.aug
+t+share/augeas/lenses/dist/tests/test_darkice.aug
+t+share/augeas/lenses/dist/tests/test_debctrl.aug
+t+share/augeas/lenses/dist/tests/test_desktop.aug
+t+share/augeas/lenses/dist/tests/test_devfsrules.aug
+t+share/augeas/lenses/dist/tests/test_device_map.aug
+t+share/augeas/lenses/dist/tests/test_dhclient.aug
+t+share/augeas/lenses/dist/tests/test_dhcpd.aug
+t+share/augeas/lenses/dist/tests/test_dns_zone.aug
+t+share/augeas/lenses/dist/tests/test_dnsmasq.aug
+t+share/augeas/lenses/dist/tests/test_dovecot.aug
+t+share/augeas/lenses/dist/tests/test_dpkg.aug
+t+share/augeas/lenses/dist/tests/test_dput.aug
+t+share/augeas/lenses/dist/tests/test_erlang.aug
+t+share/augeas/lenses/dist/tests/test_ethers.aug
+t+share/augeas/lenses/dist/tests/test_exports.aug
+t+share/augeas/lenses/dist/tests/test_fai_diskconfig.aug
+t+share/augeas/lenses/dist/tests/test_fail2ban.aug
+t+share/augeas/lenses/dist/tests/test_fonts.aug
+t+share/augeas/lenses/dist/tests/test_fstab.aug
+t+share/augeas/lenses/dist/tests/test_fuse.aug
+t+share/augeas/lenses/dist/tests/test_gdm.aug
+t+share/augeas/lenses/dist/tests/test_getcap.aug
+t+share/augeas/lenses/dist/tests/test_group.aug
+t+share/augeas/lenses/dist/tests/test_grub.aug
+t+share/augeas/lenses/dist/tests/test_grubenv.aug
+t+share/augeas/lenses/dist/tests/test_gshadow.aug
+t+share/augeas/lenses/dist/tests/test_gtkbookmarks.aug
+t+share/augeas/lenses/dist/tests/test_host_conf.aug
+t+share/augeas/lenses/dist/tests/test_hostname.aug
+t+share/augeas/lenses/dist/tests/test_hosts.aug
+t+share/augeas/lenses/dist/tests/test_hosts_access.aug
+t+share/augeas/lenses/dist/tests/test_htpasswd.aug
+t+share/augeas/lenses/dist/tests/test_httpd.aug
+t+share/augeas/lenses/dist/tests/test_inetd.aug
+t+share/augeas/lenses/dist/tests/test_inifile.aug
+t+share/augeas/lenses/dist/tests/test_inittab.aug
+t+share/augeas/lenses/dist/tests/test_inputrc.aug
+t+share/augeas/lenses/dist/tests/test_interfaces.aug
+t+share/augeas/lenses/dist/tests/test_iproute2.aug
+t+share/augeas/lenses/dist/tests/test_iptables.aug
+t+share/augeas/lenses/dist/tests/test_iscsid.aug
+t+share/augeas/lenses/dist/tests/test_jaas.aug
+t+share/augeas/lenses/dist/tests/test_jettyrealm.aug
+t+share/augeas/lenses/dist/tests/test_jmxaccess.aug
+t+share/augeas/lenses/dist/tests/test_jmxpassword.aug
+t+share/augeas/lenses/dist/tests/test_json.aug
+t+share/augeas/lenses/dist/tests/test_kdump.aug
+t+share/augeas/lenses/dist/tests/test_keepalived.aug
+t+share/augeas/lenses/dist/tests/test_known_hosts.aug
+t+share/augeas/lenses/dist/tests/test_koji.aug
+t+share/augeas/lenses/dist/tests/test_krb5.aug
+t+share/augeas/lenses/dist/tests/test_ldap.aug
+t+share/augeas/lenses/dist/tests/test_ldif.aug
+t+share/augeas/lenses/dist/tests/test_ldso.aug
+t+share/augeas/lenses/dist/tests/test_lightdm.aug
+t+share/augeas/lenses/dist/tests/test_limits.aug
+t+share/augeas/lenses/dist/tests/test_login_defs.aug
+t+share/augeas/lenses/dist/tests/test_logrotate.aug
+t+share/augeas/lenses/dist/tests/test_logwatch.aug
+t+share/augeas/lenses/dist/tests/test_lokkit.aug
+t+share/augeas/lenses/dist/tests/test_lvm.aug
+t+share/augeas/lenses/dist/tests/test_mailscanner.aug
+t+share/augeas/lenses/dist/tests/test_mailscanner_rules.aug
+t+share/augeas/lenses/dist/tests/test_masterpasswd.aug
+t+share/augeas/lenses/dist/tests/test_mcollective.aug
+t+share/augeas/lenses/dist/tests/test_mdadm_conf.aug
+t+share/augeas/lenses/dist/tests/test_memcached.aug
+t+share/augeas/lenses/dist/tests/test_mke2fs.aug
+t+share/augeas/lenses/dist/tests/test_modprobe.aug
+t+share/augeas/lenses/dist/tests/test_modules.aug
+t+share/augeas/lenses/dist/tests/test_modules_conf.aug
+t+share/augeas/lenses/dist/tests/test_mongodbserver.aug
+t+share/augeas/lenses/dist/tests/test_monit.aug
+t+share/augeas/lenses/dist/tests/test_multipath.aug
+t+share/augeas/lenses/dist/tests/test_mysql.aug
+t+share/augeas/lenses/dist/tests/test_nagioscfg.aug
+t+share/augeas/lenses/dist/tests/test_nagiosobjects.aug
+t+share/augeas/lenses/dist/tests/test_netmasks.aug
+t+share/augeas/lenses/dist/tests/test_networkmanager.aug
+t+share/augeas/lenses/dist/tests/test_networks.aug
+t+share/augeas/lenses/dist/tests/test_nginx.aug
+t+share/augeas/lenses/dist/tests/test_nrpe.aug
+t+share/augeas/lenses/dist/tests/test_nslcd.aug
+t+share/augeas/lenses/dist/tests/test_nsswitch.aug
+t+share/augeas/lenses/dist/tests/test_ntp.aug
+t+share/augeas/lenses/dist/tests/test_ntpd.aug
+t+share/augeas/lenses/dist/tests/test_odbc.aug
+t+share/augeas/lenses/dist/tests/test_opendkim.aug
+t+share/augeas/lenses/dist/tests/test_openshift_config.aug
+t+share/augeas/lenses/dist/tests/test_openshift_http.aug
+t+share/augeas/lenses/dist/tests/test_openshift_quickstarts.aug
+t+share/augeas/lenses/dist/tests/test_openvpn.aug
+t+share/augeas/lenses/dist/tests/test_oz.aug
+t+share/augeas/lenses/dist/tests/test_pagekite.aug
+t+share/augeas/lenses/dist/tests/test_pam.aug
+t+share/augeas/lenses/dist/tests/test_pamconf.aug
+t+share/augeas/lenses/dist/tests/test_passwd.aug
+t+share/augeas/lenses/dist/tests/test_pbuilder.aug
+t+share/augeas/lenses/dist/tests/test_pg_hba.aug
+t+share/augeas/lenses/dist/tests/test_pgbouncer.aug
+t+share/augeas/lenses/dist/tests/test_php.aug
+t+share/augeas/lenses/dist/tests/test_phpvars.aug
+t+share/augeas/lenses/dist/tests/test_postfix_access.aug
+t+share/augeas/lenses/dist/tests/test_postfix_main.aug
+t+share/augeas/lenses/dist/tests/test_postfix_master.aug
+t+share/augeas/lenses/dist/tests/test_postfix_passwordmap.aug
+t+share/augeas/lenses/dist/tests/test_postfix_sasl_smtpd.aug
+t+share/augeas/lenses/dist/tests/test_postfix_transport.aug
+t+share/augeas/lenses/dist/tests/test_postfix_virtual.aug
+t+share/augeas/lenses/dist/tests/test_postgresql.aug
+t+share/augeas/lenses/dist/tests/test_properties.aug
+t+share/augeas/lenses/dist/tests/test_protocols.aug
+t+share/augeas/lenses/dist/tests/test_puppet.aug
+t+share/augeas/lenses/dist/tests/test_puppet_auth.aug
+t+share/augeas/lenses/dist/tests/test_puppetfile.aug
+t+share/augeas/lenses/dist/tests/test_puppetfileserver.aug
+t+share/augeas/lenses/dist/tests/test_pylonspaste.aug
+t+share/augeas/lenses/dist/tests/test_pythonpaste.aug
+t+share/augeas/lenses/dist/tests/test_qpid.aug
+t+share/augeas/lenses/dist/tests/test_quote.aug
+t+share/augeas/lenses/dist/tests/test_rabbitmq.aug
+t+share/augeas/lenses/dist/tests/test_radicale.aug
+t+share/augeas/lenses/dist/tests/test_rancid.aug
+t+share/augeas/lenses/dist/tests/test_redis.aug
+t+share/augeas/lenses/dist/tests/test_reprepro_uploaders.aug
+t+share/augeas/lenses/dist/tests/test_resolv.aug
+t+share/augeas/lenses/dist/tests/test_rhsm.aug
+t+share/augeas/lenses/dist/tests/test_rmt.aug
+t+share/augeas/lenses/dist/tests/test_rsyncd.aug
+t+share/augeas/lenses/dist/tests/test_rsyslog.aug
+t+share/augeas/lenses/dist/tests/test_rtadvd.aug
+t+share/augeas/lenses/dist/tests/test_rx.aug
+t+share/augeas/lenses/dist/tests/test_samba.aug
+t+share/augeas/lenses/dist/tests/test_schroot.aug
+t+share/augeas/lenses/dist/tests/test_securetty.aug
+t+share/augeas/lenses/dist/tests/test_semanage.aug
+t+share/augeas/lenses/dist/tests/test_services.aug
+t+share/augeas/lenses/dist/tests/test_shadow.aug
+t+share/augeas/lenses/dist/tests/test_shells.aug
+t+share/augeas/lenses/dist/tests/test_shellvars.aug
+t+share/augeas/lenses/dist/tests/test_shellvars_list.aug
+t+share/augeas/lenses/dist/tests/test_simplelines.aug
+t+share/augeas/lenses/dist/tests/test_simplevars.aug
+t+share/augeas/lenses/dist/tests/test_sip_conf.aug
+t+share/augeas/lenses/dist/tests/test_slapd.aug
+t+share/augeas/lenses/dist/tests/test_smbusers.aug
+t+share/augeas/lenses/dist/tests/test_solaris_system.aug
+t+share/augeas/lenses/dist/tests/test_soma.aug
+t+share/augeas/lenses/dist/tests/test_sos.aug
+t+share/augeas/lenses/dist/tests/test_spacevars.aug
+t+share/augeas/lenses/dist/tests/test_splunk.aug
+t+share/augeas/lenses/dist/tests/test_squid.aug
+t+share/augeas/lenses/dist/tests/test_ssh.aug
+t+share/augeas/lenses/dist/tests/test_sshd.aug
+t+share/augeas/lenses/dist/tests/test_sssd.aug
+t+share/augeas/lenses/dist/tests/test_star.aug
+t+share/augeas/lenses/dist/tests/test_strongswan.aug
+t+share/augeas/lenses/dist/tests/test_stunnel.aug
+t+share/augeas/lenses/dist/tests/test_subversion.aug
+t+share/augeas/lenses/dist/tests/test_sudoers.aug
+t+share/augeas/lenses/dist/tests/test_sysconfig.aug
+t+share/augeas/lenses/dist/tests/test_sysconfig_route.aug
+t+share/augeas/lenses/dist/tests/test_sysctl.aug
+t+share/augeas/lenses/dist/tests/test_syslog.aug
+t+share/augeas/lenses/dist/tests/test_systemd.aug
+t+share/augeas/lenses/dist/tests/test_termcap.aug
+t+share/augeas/lenses/dist/tests/test_thttpd.aug
+t+share/augeas/lenses/dist/tests/test_tinc.aug
+t+share/augeas/lenses/dist/tests/test_tmpfiles.aug
+t+share/augeas/lenses/dist/tests/test_toml.aug
+t+share/augeas/lenses/dist/tests/test_trapperkeeper.aug
+t+share/augeas/lenses/dist/tests/test_tuned.aug
+t+share/augeas/lenses/dist/tests/test_up2date.aug
+t+share/augeas/lenses/dist/tests/test_updatedb.aug
+t+share/augeas/lenses/dist/tests/test_util.aug
+t+share/augeas/lenses/dist/tests/test_vfstab.aug
+t+share/augeas/lenses/dist/tests/test_vmware_config.aug
+t+share/augeas/lenses/dist/tests/test_vsftpd.aug
+t+share/augeas/lenses/dist/tests/test_webmin.aug
+t+share/augeas/lenses/dist/tests/test_wine.aug
+t+share/augeas/lenses/dist/tests/test_xendconfsxp.aug
+t+share/augeas/lenses/dist/tests/test_xinetd.aug
+t+share/augeas/lenses/dist/tests/test_xml.aug
+t+share/augeas/lenses/dist/tests/test_xorg.aug
+t+share/augeas/lenses/dist/tests/test_xymon.aug
+t+share/augeas/lenses/dist/tests/test_xymon_alerting.aug
+t+share/augeas/lenses/dist/tests/test_yaml.aug
+t+share/augeas/lenses/dist/tests/test_yum.aug
+t+share/augeas/lenses/dist/thttpd.aug
+t+share/augeas/lenses/dist/tinc.aug
+t+share/augeas/lenses/dist/tmpfiles.aug
+t+share/augeas/lenses/dist/toml.aug
+t+share/augeas/lenses/dist/trapperkeeper.aug
+t+share/augeas/lenses/dist/tuned.aug
+t+share/augeas/lenses/dist/up2date.aug
+t+share/augeas/lenses/dist/updatedb.aug
+t+share/augeas/lenses/dist/util.aug
+t+share/augeas/lenses/dist/vfstab.aug
+t+share/augeas/lenses/dist/vmware_config.aug
+t+share/augeas/lenses/dist/vsftpd.aug
+t+share/augeas/lenses/dist/webmin.aug
+t+share/augeas/lenses/dist/wine.aug
+t+share/augeas/lenses/dist/xendconfsxp.aug
+t+share/augeas/lenses/dist/xinetd.aug
+t+share/augeas/lenses/dist/xml.aug
+t+share/augeas/lenses/dist/xorg.aug
+t+share/augeas/lenses/dist/xymon.aug
+t+share/augeas/lenses/dist/xymon_alerting.aug
+t+share/augeas/lenses/dist/yaml.aug
+t+share/augeas/lenses/dist/yum.aug
+t share/bash-completion/completions/augmatch
+t share/bash-completion/completions/augprint
+t share/bash-completion/completions/augtool
+tIndex: sysutils/augeas/distinfo
+t===================================================================
+tRCS file: /cvsroot/pkgsrc/sysutils/augeas/distinfo,v
+tretrieving revision 1.8
+tdiff -u -u -r1.8 distinfo
+t--- sysutils/augeas/distinfo	28 Apr 2025 19:31:33 -0000	1.8
+t+++ sysutils/augeas/distinfo	16 Aug 2026 22:32:20 -0000
+t@@ -3,3 +3,15 @@
+t BLAKE2s (augeas-1.14.1.tar.gz) = c16626c6d440ab43be0b705f4aef01ebbb109544a23478a780fd563ec27c1004
+t SHA512 (augeas-1.14.1.tar.gz) = fddb2e243f979e71fc09f9d45d569d6307b35485b2d885bf7bcbc032ba5617fe7ab2071a041422c3efe2dd62eda74aba41016d248c0636e947d4f1c9144375aa
+t Size (augeas-1.14.1.tar.gz) = 2653776 bytes
+t+SHA1 (patch-CVE-2025-2588) = 64f6fc558930a890b68592b1e41d6f2fffd1a928
+t+SHA1 (patch-Makefile.in) = 8ea89f64b2f32e96793e95a24b877ca63b0c4d51
+t+SHA1 (patch-configure) = 0ed1f68fdbf538404bfebd66bae3ee87a90a78f4
+t+SHA1 (patch-examples_dump.c) = e3a4e38df55a9ca0c9523b7afe1de3f08135c395
+t+SHA1 (patch-lenses_pg_hba.aug) = c4d7219beaa7c585505cafa7a9e4f3657b6cbddc
+t+SHA1 (patch-lenses_postgresql.aug) = 7b645f395e2e5e04a23a6bb811cefde5c0610cff
+t+SHA1 (patch-lenses_rsyslog.aug) = 016c09c8f9746ab028fc710618f65de3fbb5f7df
+t+SHA1 (patch-lenses_shellvars.aug) = c3d6f20e8f6d53b266716c8f2809c2bac6c4b98b
+t+SHA1 (patch-lenses_simplevars.aug) = 5cc297f6401b7d1965d368446601047e21c2bc06
+t+SHA1 (patch-lenses_tests_test_simplevars.aug) = 3ddb6bf8d524f0fda8d717d850c855e9a9eb49f6
+t+SHA1 (patch-man_Makefile.in) = efc74a71eb28976950b56f79a7cad45c6747d965
+t+SHA1 (patch-src_augtool.c) = 9369842b7ddfe117fc470eb366f45abeb36e3862
+tIndex: sysutils/augeas/patches/patch-CVE-2025-2588
+t===================================================================
+tRCS file: sysutils/augeas/patches/patch-CVE-2025-2588
+tdiff -u /dev/null sysutils/augeas/patches/patch-CVE-2025-2588
+t--- /dev/null
+t+++ sysutils/augeas/patches/patch-CVE-2025-2588
+t@@ -0,0 +1,68 @@
+t+$NetBSD$
+t+
+t+Fix a NULL dereference in the regexp parser.  CVE-2025-2588.
+t+
+t+parse_regexp() could return NULL while leaving parse->error at REG_NOERROR.
+t+fa_expand_nocase(), fa_restrict_alphabet() and fa_expand_char_ranges() only
+t+test parse->error before dereferencing what came back, so they walk into the
+t+NULL and the process dies.  Upstream fixed this at the error label rather
+t+than adding a check to each of the three callers.
+t+
+t+Upstream commit af2aa88ab37fc48167d8c5e43b1770a4ba2ff403 applied verbatim:
+t+the fix itself, the fa.h comment that documents the new return value, and
+t+the regression test.  It has not been released; 1.14.1 (2023) is still the
+t+last release.
+t+
+t+_REG_ENOSYS is not in NetBSD's <regex.h>, but augeas is built with
+t+-I ../gnulib/lib and takes <regex.h> from the bundled gnulib copy, which
+t+defines it.  Without the src/fa.c hunk below, tests/fatest dies with SIGSEGV.
+t+
+t+https://github.com/hercules-team/augeas/issues/852
+t+
+t+--- src/fa.c.orig
+t++++ src/fa.c
+t+@@ -3550,6 +3550,8 @@
+t+     return re;
+t+ 
+t+  error:
+t++    if (re == NULL && parse->error == REG_NOERROR)
+t++        parse->error = _REG_ENOSYS;
+t+     re_unref(re);
+t+     return NULL;
+t+ }
+t+
+t+--- src/fa.h.orig
+t++++ src/fa.h
+t+@@ -81,7 +81,8 @@
+t+  *
+t+  * On success, FA points to the newly allocated automaton constructed for
+t+  * RE, and the function returns REG_NOERROR. Otherwise, FA is NULL, and the
+t+- * return value indicates the error.
+t++ * return value indicates the error. Special value _REG_ENOSYS indicates
+t++ * fa_compile() couldn't identify the syntax issue with regexp.
+t+  *
+t+  * The FA is case sensitive. Call FA_NOCASE to switch it to
+t+  * case-insensitive.
+t+
+t+--- tests/fatest.c.orig
+t++++ tests/fatest.c
+t+@@ -589,6 +589,7 @@
+t+     const char *p1 = "aB";
+t+     const char *p2 = "[a-cUV]";
+t+     const char *p3 = "[^a-z]";
+t++    const char *wrong_regexp = "{&.{";
+t+     char *s;
+t+     size_t len;
+t+     int r;
+t+@@ -607,6 +608,11 @@
+t+     CuAssertIntEquals(tc, 0, r);
+t+     CuAssertStrEquals(tc, "[^A-Za-z]", s);
+t+     free(s);
+t++
+t++    /* Test that fa_expand_nocase does return _REG_ENOSYS */
+t++    r = fa_expand_nocase(wrong_regexp, strlen(wrong_regexp), &s, &len);
+t++    CuAssertIntEquals(tc, _REG_ENOSYS, r);
+t++    free(s);
+t+ }
+t+ 
+t+ static void testNoCaseComplement(CuTest *tc) {
+tIndex: sysutils/augeas/patches/patch-Makefile.in
+t===================================================================
+tRCS file: sysutils/augeas/patches/patch-Makefile.in
+tdiff -u /dev/null sysutils/augeas/patches/patch-Makefile.in
+t--- /dev/null
+t+++ sysutils/augeas/patches/patch-Makefile.in
+t@@ -0,0 +1,26 @@
+t+$NetBSD$
+t+
+t+Install the lenses.  They depend on GNU make otherwise.
+t+
+t+Makefile.am picks the lens lists up with $(wildcard), which is a GNU make
+t+function.  bmake leaves it as the literal string, both lists come out empty
+t+and no lens is installed at all, so augtool cannot read any configuration
+t+file.  The package has been shipping that way since 2014.
+t+
+t+The lists are globbed in configure instead; see patch-configure.  Sent
+t+upstream as well.  Patching the generated files rather than Makefile.am and
+t+configure.ac keeps autoreconf out of the build here.
+t+
+t+--- Makefile.in.orig
+t++++ Makefile.in
+t+@@ -1703,8 +1703,8 @@
+t+ ACLOCAL_AMFLAGS = -I gnulib/m4
+t+ lensdir = $(datadir)/augeas/lenses/dist
+t+ lenstestdir = $(datadir)/augeas/lenses/dist/tests
+t+-dist_lens_DATA = $(wildcard lenses/*.aug)
+t+-dist_lenstest_DATA = $(wildcard lenses/tests/*.aug)
+t++dist_lens_DATA = @LENS_FILES@
+t++dist_lenstest_DATA = @LENS_TEST_FILES@
+t+ EXTRA_DIST = augeas.spec build/ac-aux/move-if-change Makefile.am HACKING.md
+t+ pkgconfigdir = $(libdir)/pkgconfig
+t+ pkgconfig_DATA = augeas.pc
+tIndex: sysutils/augeas/patches/patch-configure
+t===================================================================
+tRCS file: sysutils/augeas/patches/patch-configure
+tdiff -u /dev/null sysutils/augeas/patches/patch-configure
+t--- /dev/null
+t+++ sysutils/augeas/patches/patch-configure
+t@@ -0,0 +1,82 @@
+t+$NetBSD$
+t+
+t+Two changes to the generated script.
+t+
+t+Glob the lens lists here rather than with $(wildcard) in the makefile; see
+t+patch-Makefile.in.  Doing it in configure rather than leaving a bare glob
+t+in the makefile is what makes an out-of-tree build work: the install rule
+t+falls back to $(srcdir)/ only when it can test each name, which it cannot
+t+do with a pattern.  Sent upstream as hercules-team/augeas#889.
+t+
+t+Do not use -fexceptions where the personality routine cannot be linked.
+t+The flag makes the compiler emit exception tables, and those name
+t+__gcc_personality_v0.  The check upstream makes is a compile and link of a
+t+program whose main() is empty, which settles nothing: an empty main() has
+t+no exception table and so never mentions the routine, the flag is
+t+accepted, and the link of the real program fails afterwards.  On OpenBSD
+t+that is what happens; libcompiler_rt.a has the routine but _Unwind_* live
+t+only in libc++abi, which a C program does not link:
+t+
+t+  ld: error: undefined symbol: _Unwind_GetLanguageSpecificData
+t+  >>> referenced by gcc_personality_v0.c:203
+t+  >>>   gcc_personality_v0.o:(__gcc_personality_v0)
+t+  >>>   in archive /usr/lib/libcompiler_rt.a
+t+
+t+Asking for the routine itself changes nothing where it links, so NetBSD
+t+and Linux are unaffected.  Sent upstream as hercules-team/augeas#891,
+t+which changes acinclude.m4; this is the same check written the way the
+t+generated script does it, so that autoreconf is not needed here.
+t+
+t+--- configure.orig
+t++++ configure
+t+@@ -2153,6 +2153,8 @@
+t+ PACKAGE_NAME
+t+ PATH_SEPARATOR
+t+ SHELL
+t++LENS_FILES
+t++LENS_TEST_FILES
+t+ am__quote'
+t+ ac_subst_files=''
+t+ ac_user_opts='
+t+@@ -17842,6 +17844,31 @@
+t+     warnCFLAGS=
+t+ 
+t+     common_flags="-fexceptions -fasynchronous-unwind-tables"
+t++
+t++    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether __gcc_personality_v0 can be linked" >&5
+t++printf %s "checking whether __gcc_personality_v0 can be linked... " >&6; }
+t++cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+t++/* end confdefs.h.  */
+t++extern void __gcc_personality_v0(void);
+t++int
+t++main (void)
+t++{
+t++__gcc_personality_v0();
+t++  ;
+t++  return 0;
+t++}
+t++_ACEOF
+t++if ac_fn_c_try_link "$LINENO"
+t++then :
+t++  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+t++printf "%s\n" "yes" >&6; }
+t++else $as_nop
+t++  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
+t++printf "%s\n" "no" >&6; }
+t++    common_flags=""
+t++fi
+t++rm -f core conftest.err conftest.$ac_objext conftest.beam \
+t++    conftest$ac_exeext conftest.$ac_ext
+t+ 
+t+     case "$enable_compile_warnings" in
+t+     no)
+t+@@ -52016,6 +52043,9 @@
+t+ fi
+t+ 
+t+ 
+t++LENS_FILES=`cd "$srcdir" && echo lenses/*.aug`
+t++LENS_TEST_FILES=`cd "$srcdir" && echo lenses/tests/*.aug`
+t++
+t+ ac_config_files="$ac_config_files Makefile gnulib/lib/Makefile gnulib/tests/Makefile src/Makefile man/Makefile tests/Makefile examples/Makefile doc/Makefile doc/naturaldocs/Makefile augeas.pc augeas.spec"
+t+ 
+t+ cat >confcache <<\_ACEOF
+tIndex: sysutils/augeas/patches/patch-examples_dump.c
+t===================================================================
+tRCS file: sysutils/augeas/patches/patch-examples_dump.c
+tdiff -u /dev/null sysutils/augeas/patches/patch-examples_dump.c
+t--- /dev/null
+t+++ sysutils/augeas/patches/patch-examples_dump.c
+t@@ -0,0 +1,16 @@
+t+$NetBSD$
+t+
+t+Print elapsed time with a format that matches time_t.  See
+t+patch-src_augtool.c.
+t+
+t+--- examples/dump.c.orig
+t++++ examples/dump.c
+t+@@ -119,7 +119,7 @@
+t+                              const struct timeval *stop) {
+t+     time_t elapsed = (stop->tv_sec - start->tv_sec)*1000
+t+                    + (stop->tv_usec - start->tv_usec)/1000;
+t+-    fprintf(stderr, "time: %ld ms\n", elapsed);
+t++    fprintf(stderr, "time: %lld ms\n", (long long) elapsed);
+t+ }
+t+ 
+t+ int main(int argc, char **argv) {
+tIndex: sysutils/augeas/patches/patch-lenses_pg_hba.aug
+t===================================================================
+tRCS file: sysutils/augeas/patches/patch-lenses_pg_hba.aug
+tdiff -u /dev/null sysutils/augeas/patches/patch-lenses_pg_hba.aug
+t--- /dev/null
+t+++ sysutils/augeas/patches/patch-lenses_pg_hba.aug
+t@@ -0,0 +1,20 @@
+t+$NetBSD$
+t+
+t+Add the /usr/local paths, which are missing from three filters.
+t+
+t+/usr/local/pgsql/data is what PostgreSQL itself uses by default, on any
+t+operating system, when built from source with the default prefix.  The
+t+filter carries the Red Hat and Debian layouts but not that one.
+t+
+t+Sent upstream as hercules-team/augeas#888; this is that diff.
+t+
+t+--- lenses/pg_hba.aug.orig
+t++++ lenses/pg_hba.aug
+t+@@ -81,6 +81,7 @@ module Pg_Hba =
+t+     (* View: filter
+t+         The pg_hba.conf conf file *)
+t+     let filter = (incl "/var/lib/pgsql/data/pg_hba.conf" .
+t++                  incl "/usr/local/pgsql/data/pg_hba.conf" .
+t+                   incl "/var/lib/pgsql/*/data/pg_hba.conf" .
+t+                   incl "/var/lib/postgresql/*/data/pg_hba.conf" .
+t+                   incl "/etc/postgresql/*/*/pg_hba.conf" )
+tIndex: sysutils/augeas/patches/patch-lenses_postgresql.aug
+t===================================================================
+tRCS file: sysutils/augeas/patches/patch-lenses_postgresql.aug
+tdiff -u /dev/null sysutils/augeas/patches/patch-lenses_postgresql.aug
+t--- /dev/null
+t+++ sysutils/augeas/patches/patch-lenses_postgresql.aug
+t@@ -0,0 +1,20 @@
+t+$NetBSD$
+t+
+t+Add the /usr/local paths, which are missing from three filters.
+t+
+t+/usr/local/pgsql/data is what PostgreSQL itself uses by default, on any
+t+operating system, when built from source with the default prefix.  The
+t+filter carries the Red Hat and Debian layouts but not that one.
+t+
+t+Sent upstream as hercules-team/augeas#888; this is that diff.
+t+
+t+--- lenses/postgresql.aug.orig
+t++++ lenses/postgresql.aug
+t+@@ -70,6 +70,7 @@ let lns = (Util.empty | Util.comment | entry)*
+t+ 
+t+ (* Variable: filter *)
+t+ let filter = (incl "/var/lib/pgsql/data/postgresql.conf" .
+t++              incl "/usr/local/pgsql/data/postgresql.conf" .
+t+               incl "/var/lib/pgsql/*/data/postgresql.conf" .
+t+               incl "/var/lib/postgresql/*/data/postgresql.conf" .
+t+               incl "/etc/postgresql/*/*/postgresql.conf" )
+tIndex: sysutils/augeas/patches/patch-lenses_rsyslog.aug
+t===================================================================
+tRCS file: sysutils/augeas/patches/patch-lenses_rsyslog.aug
+tdiff -u /dev/null sysutils/augeas/patches/patch-lenses_rsyslog.aug
+t--- /dev/null
+t+++ sysutils/augeas/patches/patch-lenses_rsyslog.aug
+t@@ -0,0 +1,22 @@
+t+$NetBSD$
+t+
+t+Add the /usr/local paths, which are missing from three filters.
+t+
+t+On the BSDs rsyslog is configured under /usr/local/etc, as software the
+t+system did not ship itself.  Dovecot, Nginx, Php, Postfix, Puppet,
+t+Sudoers and Systemd already carry their /usr/local counterpart; Rsyslog
+t+does not.
+t+
+t+Sent upstream as hercules-team/augeas#888; this is that diff.
+t+
+t+--- lenses/rsyslog.aug.orig
+t++++ lenses/rsyslog.aug
+t+@@ -93,6 +93,8 @@ let lns = entries . ( program | hostname )*
+t+ 
+t+ let filter = incl "/etc/rsyslog.conf"
+t+            . incl "/etc/rsyslog.d/*"
+t++           . incl "/usr/local/etc/rsyslog.conf"
+t++           . incl "/usr/local/etc/rsyslog.d/*"
+t+            . Util.stdexcl
+t+ 
+t+ let xfm = transform lns filter
+tIndex: sysutils/augeas/patches/patch-lenses_shellvars.aug
+t===================================================================
+tRCS file: sysutils/augeas/patches/patch-lenses_shellvars.aug
+tdiff -u /dev/null sysutils/augeas/patches/patch-lenses_shellvars.aug
+t--- /dev/null
+t+++ sysutils/augeas/patches/patch-lenses_shellvars.aug
+t@@ -0,0 +1,25 @@
+t+$NetBSD$
+t+
+t+Do not read /etc/adduser.conf as a shell script.
+t+
+t+Of the three systems that ship the file, only FreeBSD treats it as one.
+t+OpenBSD's adduser(8) is perl and evals each line, so what it writes is
+t+perl and this lens fails on it outright.  Debian's is perl too and allows
+t+whitespace around the equals sign, which this lens does not reject but
+t+reads as a command, so the setting disappears without an error.  NetBSD
+t+has no adduser(8); useradd(8) reads /etc/usermgmt.conf instead.
+t+
+t+Simplevars accepts all three; see patch-lenses_simplevars.aug.
+t+
+t+Sent upstream as hercules-team/augeas#893; this is that diff.
+t+
+t+--- lenses/shellvars.aug.orig
+t++++ lenses/shellvars.aug
+t+@@ -305,7 +305,6 @@
+t+                      . incl "/etc/environment"
+t+                      . incl "/etc/firewalld/firewalld.conf"
+t+                      . incl "/etc/blkid.conf"
+t+-                     . incl "/etc/adduser.conf"
+t+                      . incl "/etc/cowpoke.conf"
+t+                      . incl "/etc/cvs-cron.conf"
+t+                      . incl "/etc/cvs-pserver.conf"
+tIndex: sysutils/augeas/patches/patch-lenses_simplevars.aug
+t===================================================================
+tRCS file: sysutils/augeas/patches/patch-lenses_simplevars.aug
+tdiff -u /dev/null sysutils/augeas/patches/patch-lenses_simplevars.aug
+t--- /dev/null
+t+++ sysutils/augeas/patches/patch-lenses_simplevars.aug
+t@@ -0,0 +1,29 @@
+t+$NetBSD$
+t+
+t+Two entries in this filter.
+t+
+t+Take over /etc/adduser.conf from Shellvars, which cannot read what
+t+OpenBSD's adduser(8) writes and silently mis-reads Debian's; see
+t+patch-lenses_shellvars.aug.  Sent upstream as hercules-team/augeas#893.
+t+
+t+Fix the path of OpenBSD's wsconsctl.conf.  The entry has read
+t+/etc/wsconsctlctl.conf since it was added upstream in aa3bc264 (2013), so
+t+it has never matched anything.  What OpenBSD's /etc/rc applies is
+t+/etc/wsconsctl.conf, one wsconsctl(8) variable assignment per line, which
+t+this lens parses as it stands.  NetBSD is unaffected: it has
+t+/etc/wscons.conf, a different file in a different format.  Sent upstream
+t+as hercules-team/augeas#887.
+t+
+t+--- lenses/simplevars.aug.orig
+t++++ lenses/simplevars.aug
+t+@@ -44,8 +44,9 @@
+t+            . incl "/etc/wgetrc"
+t+            . incl "/etc/zabbix/*.conf"
+t+            . incl "/etc/audit/auditd.conf"
+t++           . incl "/etc/adduser.conf"
+t+            . incl "/etc/mixerctl.conf"
+t+-           . incl "/etc/wsconsctlctl.conf"
+t++           . incl "/etc/wsconsctl.conf"
+t+            . incl "/etc/ocsinventory/ocsinventory-agent.cfg"
+t+ 
+t+ let xfm = transform lns filter
+tIndex: sysutils/augeas/patches/patch-lenses_tests_test_simplevars.aug
+t===================================================================
+tRCS file: sysutils/augeas/patches/patch-lenses_tests_test_simplevars.aug
+tdiff -u /dev/null sysutils/augeas/patches/patch-lenses_tests_test_simplevars.aug
+t--- /dev/null
+t+++ sysutils/augeas/patches/patch-lenses_tests_test_simplevars.aug
+t@@ -0,0 +1,42 @@
+t+$NetBSD$
+t+
+t+Test that the perl form of adduser.conf is read; see
+t+patch-lenses_simplevars.aug.
+t+
+t+Sent upstream as hercules-team/augeas#893; this is that diff.
+t+
+t+--- lenses/tests/test_simplevars.aug.orig
+t++++ lenses/tests/test_simplevars.aug
+t+@@ -34,3 +34,32 @@
+t+      Support empty values *)
+t+ test Simplevars.lns get "foo =\n" =
+t+   { "foo" = "" { } }
+t++
+t++(* Variable: bsd_adduser
+t++     adduser(8) on the BSDs writes its config as perl, not as shell *)
+t++let bsd_adduser = "# verbose = [0-2]
+t++verbose = 1
+t++
+t++# copy dotfiles from this dir (\"/etc/skel\" or \"no\")
+t++dotdir = \"/etc/skel\"
+t++
+t++# List of directories where shells located
+t++# path = ('/bin', '/usr/bin', '/usr/local/bin')
+t++path = ('/bin', '/usr/bin', '/usr/local/bin')
+t++
+t++## DO NOT DELETE THIS LINE!
+t++"
+t++
+t++(* Test: Simplevars.lns *)
+t++test Simplevars.lns get bsd_adduser =
+t++   { "#comment" = "verbose = [0-2]" }
+t++   { "verbose" = "1" }
+t++   { }
+t++   { "#comment" = "copy dotfiles from this dir (\"/etc/skel\" or \"no\")" }
+t++   { "dotdir" = "\"/etc/skel\"" }
+t++   { }
+t++   { "#comment" = "List of directories where shells located" }
+t++   { "#comment" = "path = ('/bin', '/usr/bin', '/usr/local/bin')" }
+t++   { "path" = "('/bin', '/usr/bin', '/usr/local/bin')" }
+t++   { }
+t++   { "#comment" = "# DO NOT DELETE THIS LINE!" }
+tIndex: sysutils/augeas/patches/patch-man_Makefile.in
+t===================================================================
+tRCS file: sysutils/augeas/patches/patch-man_Makefile.in
+tdiff -u /dev/null sysutils/augeas/patches/patch-man_Makefile.in
+t--- /dev/null
+t+++ sysutils/augeas/patches/patch-man_Makefile.in
+t@@ -0,0 +1,56 @@
+t+$NetBSD$
+t+
+t+Point the manual pages at the configured lens directory.
+t+
+t+augtool.1, augparse.1, augmatch.1 and augprint.1 all say the lenses live
+t+in /usr/share/augeas/lenses.  What the tools search is AUGEAS_LENS_DIR,
+t+which src/internal.h builds from DATADIR, which configure sets from
+t+$(datadir).  The text is therefore only right when the package was
+t+configured with --prefix=/usr, and wrong for pkgsrc: /usr/pkg by default,
+t+/opt/pkg on macOS, whatever --prefix says.  There are 15 mentions across
+t+the four pages.
+t+
+t+Rewriting the installed pages rather than the .pod sources keeps the
+t+sources readable and needs no extra build step: the substitution has
+t+nothing to do until the paths are known, which is at install time.
+t+
+t+Sent upstream as hercules-team/augeas#892, which adds install-data-hook to
+t+man/Makefile.am.  This is the same change in the generated makefile: the
+t+hook itself, the line that calls it from install-data-am, and the .PHONY
+t+entry, all as automake writes them.
+t+
+t+--- man/Makefile.in.orig
+t++++ man/Makefile.in
+t+@@ -1784,6 +1784,8 @@
+t+ info-am:
+t+ 
+t+ install-data-am: install-man
+t++	@$(NORMAL_INSTALL)
+t++	$(MAKE) $(AM_MAKEFLAGS) install-data-hook
+t+ 
+t+ install-dvi: install-dvi-am
+t+ 
+t+@@ -1836,7 +1838,8 @@
+t+ .PHONY: all all-am check check-am clean clean-generic clean-libtool \
+t+ 	cscopelist-am ctags-am distclean distclean-generic \
+t+ 	distclean-libtool distdir dvi dvi-am html html-am info info-am \
+t+-	install install-am install-data install-data-am install-dvi \
+t++	install install-am install-data install-data-am \
+t++	install-data-hook install-dvi \
+t+ 	install-dvi-am install-exec install-exec-am install-html \
+t+ 	install-html-am install-info install-info-am install-man \
+t+ 	install-man1 install-pdf install-pdf-am install-ps \
+t+@@ -1851,6 +1854,13 @@
+t+ 
+t+ %.1: %.pod
+t+ 	pod2man -c "Augeas" -r "Augeas $(VERSION)" $< > $@
+t++
+t++install-data-hook:
+t++	@for f in $(man1_MANS); do \
+t++	  p=$(DESTDIR)$(man1dir)/$$f; \
+t++	  sed -e 's|/usr/share/augeas|$(datadir)/augeas|g' $$p > $$p.tmp \
+t++	    && mv -f $$p.tmp $$p; \
+t++	done
+t+ 
+t+ # Tell versions [3.59,3.63) of GNU make to not export all variables.
+t+ # Otherwise a system limit (for SysV at least) may be exceeded.
+tIndex: sysutils/augeas/patches/patch-src_augtool.c
+t===================================================================
+tRCS file: sysutils/augeas/patches/patch-src_augtool.c
+tdiff -u /dev/null sysutils/augeas/patches/patch-src_augtool.c
+t--- /dev/null
+t+++ sysutils/augeas/patches/patch-src_augtool.c
+t@@ -0,0 +1,24 @@
+t+$NetBSD$
+t+
+t+Print elapsed time with a format that matches time_t.
+t+
+t+time_t is 64 bits on NetBSD while long is 32 bits on the 32 bit ports, so
+t+"%ld" is the wrong conversion and gcc says so:
+t+
+t+  augtool.c:469:21: warning: format '%ld' expects argument of type 'long int',
+t+  but argument 2 has type 'time_t {aka long long int}' [-Wformat=]
+t+
+t+Cast rather than assume time_t is long long.  Still present upstream, with
+t+no issue or pull request open about it; OpenBSD carries the same fix.
+t+
+t+--- src/augtool.c.orig
+t++++ src/augtool.c
+t+@@ -466,7 +466,7 @@
+t+                              const struct timeval *stop) {
+t+     time_t elapsed = (stop->tv_sec - start->tv_sec)*1000
+t+                    + (stop->tv_usec - start->tv_usec)/1000;
+t+-    printf("Time: %ld ms\n", elapsed);
+t++    printf("Time: %lld ms\n", (long long) elapsed);
+t+ }
+t+ 
+t+ static int run_command(const char *line, bool with_timing) {
