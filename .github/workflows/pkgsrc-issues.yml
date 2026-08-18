@@ -361,38 +361,53 @@ jobs:
       - name: 起動して console を採る
         run: |
           cd /mnt/work
+          ls -l disk.img
+          : > /tmp/console.log
+
           # 配布元の .sh をもとに、CI 向けに三つ変える。
           #   -display none -serial file:  画面が無いので console を採る
           #   hostfwd                      後で ssh で入れるなら要る
-          #   -d nochain                   run.sh のものをそのまま残す
+          #   -d nochain                   配布元のものをそのまま残す
           qemu-system-hppa \
             -machine B160L \
             -smp cpus=4 \
             -accel tcg,thread=multi \
             -boot c -boot menu=off \
-            -drive if=scsi,bus=0,index=6,file=hpux.img,format=qcow2 \
+            -drive if=scsi,bus=0,index=6,file=disk.img,format=qcow2 \
             -m 512 \
             -d nochain \
             -nic user,model=tulip,hostfwd=tcp:127.0.0.1:2222-:22 \
             -display none \
             -serial file:/tmp/console.log \
             -pidfile /tmp/qemu.pid &
+          QPID=$!
 
-          # hppa は TCG なので遅い。様子を刻んで出す。落ちたか進んだかを
-          # 見たいだけなので、止まっても job は失敗させない。
+          # 起動できたかどうかは先に見る。前回ここで qemu が即死したのに、
+          # 「止まっても job は失敗させない」ようにしていたせいで step が
+          # success になり、失敗が success の顔をして通り抜けた。起動しない
+          # のは調べる前の段の誤りなので、そこは落とす。
+          sleep 20
+          if ! kill -0 "$QPID" 2>/dev/null; then
+            echo '!! qemu が起動しなかった'
+            cat /tmp/console.log
+            exit 1
+          fi
+
+          # ここから先は hppa が TCG で遅いだけなので、どこまで進んだかを
+          # 残せれば足りる。login: に届かなくても job は落とさない。
           for i in $(seq 1 20); do
             sleep 60
             printf '=== %d 分経過  console %s バイト ===\n' \
-              "$i" "$(wc -c < /tmp/console.log 2>/dev/null || echo 0)"
-            tail -5 /tmp/console.log 2>/dev/null || true
-            if ! kill -0 "$(cat /tmp/qemu.pid 2>/dev/null)" 2>/dev/null; then
-              echo '!! qemu が終了した'; break
+              "$i" "$(wc -c < /tmp/console.log)"
+            tail -5 /tmp/console.log
+            if ! kill -0 "$QPID" 2>/dev/null; then
+              echo 'RESULT #126: qemu が途中で終了した'; break
             fi
-            if grep -q 'login:' /tmp/console.log 2>/dev/null; then
+            if grep -q 'login:' /tmp/console.log; then
               echo 'RESULT #126: login: まで来た'; break
             fi
           done
 
-          kill "$(cat /tmp/qemu.pid 2>/dev/null)" 2>/dev/null || true
+          kill "$QPID" 2>/dev/null || true
           echo '##### console の全文 #####'
-          cat /tmp/console.log 2>/dev/null || echo '(console に何も出なかった)'
+          cat /tmp/console.log
