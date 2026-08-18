@@ -2,15 +2,15 @@ Index: inputmethod/anthy-elisp/Makefile
 ===================================================================
 RCS file: /cvsroot/pkgsrc/inputmethod/anthy-elisp/Makefile,v
 retrieving revision 1.14
-diff -u -r1.14 Makefile
+diff -u -u -r1.14 Makefile
 --- inputmethod/anthy-elisp/Makefile	8 May 2024 12:20:52 -0000	1.14
-+++ inputmethod/anthy-elisp/Makefile	15 Aug 2026 14:14:50 -0000
++++ inputmethod/anthy-elisp/Makefile	17 Aug 2026 00:47:20 -0000
 @@ -2,7 +2,7 @@
  
  .include	"../../inputmethod/anthy/Makefile.common"
  PKGNAME=	${EMACS_PKGNAME_PREFIX}anthy-elisp-${ANTHY_VERSION}
 -PKGREVISION=	6
-+PKGREVISION=	8
++PKGREVISION=	9
  CATEGORIES=	inputmethod editors
  
  MAINTAINER=	taya@NetBSD.org
@@ -33,15 +33,15 @@ Index: inputmethod/anthy/distinfo
 ===================================================================
 RCS file: /cvsroot/pkgsrc/inputmethod/anthy/distinfo,v
 retrieving revision 1.16
-diff -u -r1.16 distinfo
+diff -u -u -r1.16 distinfo
 --- inputmethod/anthy/distinfo	7 Sep 2023 14:44:51 -0000	1.16
-+++ inputmethod/anthy/distinfo	15 Aug 2026 14:14:50 -0000
++++ inputmethod/anthy/distinfo	17 Aug 2026 00:47:20 -0000
 @@ -10,3 +10,5 @@
  SHA512 (okinawa-20090801.t) = 03cd20ef12ea25bb462a94e77ee04825c5acd4e9281bfe9c33d390a0106d2e3113c51083389bb21996af9bcf9a74acde6fbcdc6006f737b8a74fc55abc7d6260
  Size (okinawa-20090801.t) = 165520 bytes
  SHA1 (patch-anthy.el) = 3464a065d4dd25f38cd2990e0796eba53e69876a
 +SHA1 (patch-src-util_anthy-dic.el) = 34c7f6ab82452b59cc1f62a7e7141bde858d602b
-+SHA1 (patch-src-util_anthy.el) = d44c88284c9fcd50dbd1441b48e9c0b0f942cb13
++SHA1 (patch-src-util_anthy.el) = 5458e71132a036a4f842d2ec417bbd19fca608c5
 Index: inputmethod/anthy/patches/patch-src-util_anthy-dic.el
 ===================================================================
 RCS file: inputmethod/anthy/patches/patch-src-util_anthy-dic.el
@@ -83,7 +83,7 @@ RCS file: inputmethod/anthy/patches/patch-src-util_anthy.el
 diff -N inputmethod/anthy/patches/patch-src-util_anthy.el
 --- /dev/null
 +++ inputmethod/anthy/patches/patch-src-util_anthy.el
-@@ -0,0 +1,93 @@
+@@ -0,0 +1,98 @@
 +$NetBSD$
 +
 +Make anthy.el work on current Emacs.  Four names it uses were made obsolete
@@ -97,14 +97,19 @@ diff -N inputmethod/anthy/patches/patch-src-util_anthy.el
 +their .elc files end up missing from what PLIST expects.
 +
 +process-kill-without-query was obsoleted by set-process-query-on-exit-flag
-+in Emacs 22.1 and removed in Emacs 30.  It is called from anthy-check-agent,
-+which anthy-do-send-recv-command calls to start anthy-agent.  This one does
-+not break the build -- byte compilation only warns about an unknown function
-+and every .elc is still produced -- but japanese-anthy fails on the first
-+conversion request, that is, as soon as the input method is used at all.
++in Emacs 22.1 and removed in Emacs 27 -- NEWS.27, under "Some functions and
++variables obsolete since Emacs 22 have been removed".  It is called from
++anthy-check-agent, which anthy-do-send-recv-command calls to start
++anthy-agent.  This one does not break the build -- byte compilation only
++warns about an unknown function and every .elc is still produced -- but
++japanese-anthy fails on the first conversion request, that is, as soon as
++the input method is used at all.  This is the earliest of the five, so it,
++not set-face-underline-p, is what makes Emacs 26 the last usable version.
 +
 +inactivate-input-method was renamed deactivate-input-method in Emacs 24.3
-+and the old name was removed in Emacs 30.  It is called from
++and the old name was removed in Emacs 29 -- NEWS.29, under "Some functions
++and variables obsolete since Emacs 24 have been removed", which lists it
++next to set-face-underline-p.  It is called from
 +anthy-leim-exit-from-minibuffer, which is put on minibuffer-exit-hook while
 +anthy is active in the minibuffer.
 +

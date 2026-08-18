@@ -76,17 +76,27 @@ Machine: i386
 	  anthy.el:895       last-command-char
 	  anthy-dic.el:73,116  string-to-int
 
-	process-kill-without-query is the one that matters most.  It was
-	obsoleted by set-process-query-on-exit-flag in Emacs 22.1 and removed
-	in Emacs 30.  It sits in anthy-check-agent, which is what
-	anthy-do-send-recv-command calls to start anthy-agent.  So on Emacs 30
-	the package builds cleanly and then dies on the first conversion
-	request -- that is, the first time the input method is used at all.
+	process-kill-without-query is the one that matters most, and it is the
+	earliest.  It was obsoleted by set-process-query-on-exit-flag in Emacs
+	22.1 and removed in Emacs 27 -- NEWS.27, under "Some functions and
+	variables obsolete since Emacs 22 have been removed".  It sits in
+	anthy-check-agent, which is what anthy-do-send-recv-command calls to
+	start anthy-agent.  So from Emacs 27 the package builds cleanly and
+	then dies on the first conversion request -- that is, the first time
+	the input method is used at all.
+
+	This is why the practical answer is Emacs 27, not 29.  On 27 and 28
+	nothing looks wrong: the package builds, all six .elc files are there,
+	an init file loads without a word, and default-input-method is set.
+	The failure arrives when the user types.
 
 	inactivate-input-method was renamed deactivate-input-method in Emacs
-	24.3 and the old name was removed in Emacs 30.  It is called from
-	anthy-leim-exit-from-minibuffer, which goes on minibuffer-exit-hook
-	while anthy is active in the minibuffer.
+	24.3 and the old name was removed in Emacs 29 -- NEWS.29, under "Some
+	functions and variables obsolete since Emacs 24 have been removed",
+	which lists 'inactivate-current-input-method-function' and
+	'inactivate-input-method' alongside 'set-face-underline-p'.  It is
+	called from anthy-leim-exit-from-minibuffer, which goes on
+	minibuffer-exit-hook while anthy is active in the minibuffer.
 
 	last-command-char was removed in Emacs 24 -- NEWS.24, under "Some
 	obsolete functions, variables, and faces have been removed", lists
@@ -110,15 +120,83 @@ Machine: i386
 	The old backquote syntax anthy.el also used is not part of this.
 	patch-anthy.el (rev 1.1, 2023-09-06, msaitoh) already deals with it,
 	and the patch here is written against the tree with that applied.
+	That commit's log reads
 
-	As a cross-check: anthy-unicode, the fork that is still maintained
+	    anthy: Don't use old style backquote to unbreak anthy-elisp build.
+
+	so this PR is not a new idea so much as the rest of that one.  Removing
+	the backquote got anthy-elisp through the reader; these five names are
+	what was still in the way.
+
+	This is not a novel diagnosis.  Three other projects reached it first.
+
+	OpenBSD ports carries inputmethods/anthy with an emacs-anthy
+	subpackage, and patches/patch-src-util_anthy_el makes the same
+	substitutions this patch does -- set-face-underline, the backquote,
+	set-process-query-on-exit-flag, deactivate-current-input-method-function,
+	deactivate-input-method, last-command-event -- with
+	patch-src-util_anthy-dic_el doing string-to-number in the same two
+	places.  They rename outright where this patch guards, because they
+	ship one Emacs and pkgsrc keeps emacs20, emacs21 and XEmacs in the
+	accepted list.  Their history is worth quoting, because it is the same
+	boundary from the other side:
+
+	    2020-08-24  jca      Unbreak anthy.el with emacs-27.1
+	    2020-11-09  yasuoka  Fix anthy.el not to use process-kill-without-query
+	                         which is deleted.
+	    2023-10-03  yasuoka  Fix anthy.el not not use a deleted function.
+	    2023-10-04  yasuoka  Fix emacs-anthy again.  Replace functions which
+	                         are deleted at emacs
+
+	Emacs 27.1, in August 2020.  Their REVISION-emacs is at 9.
+
+	Their patch cannot simply be copied here, and it is worth showing why
+	rather than asserting it.  Applying OpenBSD's two patches to the same
+	tree and running the same check:
+
+	                    this patch (guarded)   OpenBSD's (renamed)
+	  emacs20  20.7     6/6, converts          4/6, build fails
+	  emacs21  21.4     6/6, converts          6/6, conversion fails
+	  emacs26  26.3     6/6, converts          6/6, converts
+	  emacs27  27.2     6/6, converts          6/6, converts
+	  emacs28  28.2     6/6, converts          6/6, converts
+	  emacs29  29.4     6/6, converts          6/6, converts
+	  emacs30  30.2     6/6, converts          6/6, converts
+
+	On emacs20 set-face-underline does not exist yet, so the top-level call
+	fails and two .elc files go missing -- the same PLIST mismatch as
+	before, from the other end.  On emacs21 it builds and then dies in
+	anthy-check-agent:
+
+	  Debugger entered--Lisp error: (void-function set-process-query-on-exit-flag)
+	    set-process-query-on-exit-flag(#<process anthy-agent> nil)
+	    anthy-check-agent()
+	    anthy-do-send-recv-command(" SELECT_CONTEXT 1\n")
+	    anthy-send-recv-command("n\n")
+	    anthy-handle-normal-key("n")
+
+	which is the mirror image of what unpatched anthy does on Emacs 27:
+	same function, same kind of failure, opposite direction.
+	set-process-query-on-exit-flag arrived in Emacs 22.  OpenBSD can rename
+	because it ships one Emacs; pkgsrc cannot while emacs20, emacs21 and
+	XEmacs stay in EMACS_VERSIONS_ACCEPTED.  Hence fboundp and boundp.
+
+	anthy-unicode, the fork that is still maintained
 	(https://github.com/fujiwarat/anthy-unicode, last commit 2026-03), has
-	made exactly these five changes in its own copy of the file and no
-	others.  It renames outright and drops the old branches, which it can
-	do because it does not carry emacs20, emacs21 or XEmacs; here they are
-	guarded instead.  That two people arrived at the same five names
-	independently is the best evidence I can offer that the list is
-	neither short nor padded.
+	made exactly these same changes in its own copy of the file and no
+	others.
+
+	FreeBSD and Debian took the other road and dropped anthy 9100h
+	entirely: FreeBSD ports has japanese/anthy-unicode and no
+	japanese/anthy, and Debian's anthy source package went from 9100h-24
+	to 1:0.4-3, the epoch marking the switch to anthy-unicode.
+
+	That leaves pkgsrc and Gentoo as the two places still shipping 9100h's
+	anthy.el unpatched -- Gentoo's app-i18n/anthy builds the elisp under
+	USE=emacs with only a C patch applied.  So the choice here is between
+	carrying the patch, as OpenBSD does, or following FreeBSD and Debian to
+	anthy-unicode.  Either answers this PR; doing neither is the state we
+	are in.
 
 >How-To-Repeat:
 	The build stopping in can-be-built-here.mk:
@@ -198,14 +276,36 @@ Machine: i386
 	what the fboundp and boundp guards are for -- widening the list must
 	not cost the versions that already worked.
 
-	Without the patch, anthy is unusable from emacs26 onwards even where
-	it builds: last-command-char is void, and it only appears to work
-	because init files carry
+	Without the patch, anthy on its own is unusable from emacs26 onwards
+	even where it builds: last-command-char is void.  It appears to work
+	only because init files carry
 
 	  (define-obsolete-variable-alias 'last-command-char 'last-command-event ...)
 
 	to paper over it.  That is a workaround in every user's init file for
-	something the package should not require.
+	something the package should not require -- and it is worth knowing how
+	far it gets them.  Rerunning the same check with a real init file that
+	carries that alias:
+
+	                    without the patch            with the patch
+	  emacs26  26.3     converts                     converts
+	  emacs27  27.2     process-kill-without-query   converts
+	  emacs28  28.2     process-kill-without-query   converts
+	  emacs29  29.4     set-face-underline-p         converts
+	  emacs30  30.2     set-face-underline-p         converts
+
+	So emacs26 is the last version on which anthy-elisp is usable at all,
+	with or without the init-file workaround.  Anyone whose init file does
+
+	  (load-library "anthy")
+	  (setq default-input-method 'japanese-anthy)
+
+	is pinned there.  On 27 and 28 the failure is quiet -- the init file
+	loads, default-input-method is set, and the error arrives on the first
+	keystroke.  On 29 and 30 it is loud but misleading: the init file dies
+	at the load-library line, so default-input-method never gets set and
+	the language environment's own default, the built-in "japanese", is
+	what M-SPC brings up instead.
 
 	The XEmacs row is byte compilation only.  anthy.el takes a different
 	branch there and reads last-command-event as an event object rather
@@ -220,15 +320,15 @@ Machine: i386
 	===================================================================
 	RCS file: /cvsroot/pkgsrc/inputmethod/anthy-elisp/Makefile,v
 	retrieving revision 1.14
-	diff -u -r1.14 Makefile
+	diff -u -u -r1.14 Makefile
 	--- inputmethod/anthy-elisp/Makefile	8 May 2024 12:20:52 -0000	1.14
-	+++ inputmethod/anthy-elisp/Makefile	15 Aug 2026 14:14:50 -0000
+	+++ inputmethod/anthy-elisp/Makefile	17 Aug 2026 00:47:20 -0000
 	@@ -2,7 +2,7 @@
 	 
 	 .include	"../../inputmethod/anthy/Makefile.common"
 	 PKGNAME=	${EMACS_PKGNAME_PREFIX}anthy-elisp-${ANTHY_VERSION}
 	-PKGREVISION=	6
-	+PKGREVISION=	8
+	+PKGREVISION=	9
 	 CATEGORIES=	inputmethod editors
 	 
 	 MAINTAINER=	taya@NetBSD.org
@@ -251,15 +351,15 @@ Machine: i386
 	===================================================================
 	RCS file: /cvsroot/pkgsrc/inputmethod/anthy/distinfo,v
 	retrieving revision 1.16
-	diff -u -r1.16 distinfo
+	diff -u -u -r1.16 distinfo
 	--- inputmethod/anthy/distinfo	7 Sep 2023 14:44:51 -0000	1.16
-	+++ inputmethod/anthy/distinfo	15 Aug 2026 14:14:50 -0000
+	+++ inputmethod/anthy/distinfo	17 Aug 2026 00:47:20 -0000
 	@@ -10,3 +10,5 @@
 	 SHA512 (okinawa-20090801.t) = 03cd20ef12ea25bb462a94e77ee04825c5acd4e9281bfe9c33d390a0106d2e3113c51083389bb21996af9bcf9a74acde6fbcdc6006f737b8a74fc55abc7d6260
 	 Size (okinawa-20090801.t) = 165520 bytes
 	 SHA1 (patch-anthy.el) = 3464a065d4dd25f38cd2990e0796eba53e69876a
 	+SHA1 (patch-src-util_anthy-dic.el) = 34c7f6ab82452b59cc1f62a7e7141bde858d602b
-	+SHA1 (patch-src-util_anthy.el) = d44c88284c9fcd50dbd1441b48e9c0b0f942cb13
+	+SHA1 (patch-src-util_anthy.el) = 5458e71132a036a4f842d2ec417bbd19fca608c5
 	Index: inputmethod/anthy/patches/patch-src-util_anthy-dic.el
 	===================================================================
 	RCS file: inputmethod/anthy/patches/patch-src-util_anthy-dic.el
@@ -301,7 +401,7 @@ Machine: i386
 	diff -N inputmethod/anthy/patches/patch-src-util_anthy.el
 	--- /dev/null
 	+++ inputmethod/anthy/patches/patch-src-util_anthy.el
-	@@ -0,0 +1,93 @@
+	@@ -0,0 +1,98 @@
 	+$NetBSD$
 	+
 	+Make anthy.el work on current Emacs.  Four names it uses were made obsolete
@@ -315,14 +415,19 @@ Machine: i386
 	+their .elc files end up missing from what PLIST expects.
 	+
 	+process-kill-without-query was obsoleted by set-process-query-on-exit-flag
-	+in Emacs 22.1 and removed in Emacs 30.  It is called from anthy-check-agent,
-	+which anthy-do-send-recv-command calls to start anthy-agent.  This one does
-	+not break the build -- byte compilation only warns about an unknown function
-	+and every .elc is still produced -- but japanese-anthy fails on the first
-	+conversion request, that is, as soon as the input method is used at all.
+	+in Emacs 22.1 and removed in Emacs 27 -- NEWS.27, under "Some functions and
+	+variables obsolete since Emacs 22 have been removed".  It is called from
+	+anthy-check-agent, which anthy-do-send-recv-command calls to start
+	+anthy-agent.  This one does not break the build -- byte compilation only
+	+warns about an unknown function and every .elc is still produced -- but
+	+japanese-anthy fails on the first conversion request, that is, as soon as
+	+the input method is used at all.  This is the earliest of the five, so it,
+	+not set-face-underline-p, is what makes Emacs 26 the last usable version.
 	+
 	+inactivate-input-method was renamed deactivate-input-method in Emacs 24.3
-	+and the old name was removed in Emacs 30.  It is called from
+	+and the old name was removed in Emacs 29 -- NEWS.29, under "Some functions
+	+and variables obsolete since Emacs 24 have been removed", which lists it
+	+next to set-face-underline-p.  It is called from
 	+anthy-leim-exit-from-minibuffer, which is put on minibuffer-exit-hook while
 	+anthy is active in the minibuffer.
 	+

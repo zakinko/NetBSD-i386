@@ -35,15 +35,17 @@ the PLIST.
 The other four are inside functions, so byte compilation only warns and the
 package installs looking healthy:
 
-  anthy.el:748         process-kill-without-query   removed in Emacs 30
-  anthy.el:877         inactivate-input-method      removed in Emacs 30
+  anthy.el:748         process-kill-without-query   removed in Emacs 27
+  anthy.el:877         inactivate-input-method      removed in Emacs 29
   anthy.el:895         last-command-char            removed in Emacs 24
   anthy-dic.el:73,116  string-to-int                removed in Emacs 26
 
-process-kill-without-query is the one that matters.  It sits in
-anthy-check-agent, which anthy-do-send-recv-command calls to start
-anthy-agent, so on Emacs 30 the package builds cleanly and then dies on the
-first conversion request.
+process-kill-without-query is the one that matters, and it is the earliest.
+It sits in anthy-check-agent, which anthy-do-send-recv-command calls to start
+anthy-agent, so from Emacs 27 the package builds cleanly and then dies on the
+first conversion request.  That makes Emacs 26 the last version on which
+anthy-elisp is usable, not 28 as the build failure alone would suggest.  On
+27 and 28 nothing looks wrong until the user types.
 
 The diff below adds emacs26 through emacs30, guards the four calls in
 anthy.el with fboundp or boundp, and renames string-to-int in anthy-dic.el.
@@ -52,10 +54,32 @@ accepted list and do not have the new names; string-to-number is the
 exception, being available since Emacs 20.
 
 anthy itself has not been released since 2009, so there is nowhere to send
-these upstream.  anthy-unicode -- the fork that is still maintained, last
-commit 2026-03 -- has made exactly these five changes in its own copy and no
-others, renaming outright since it does not carry emacs20, emacs21 or XEmacs.
-If you would rather follow that than patch 9100h, that is a fair answer too.
+these upstream.  Three other projects got here first, though.
+
+OpenBSD ports patches the same two files with the same substitutions, and
+their log shows the same boundary from the other side:
+
+  2020-08-24  jca      Unbreak anthy.el with emacs-27.1
+  2020-11-09  yasuoka  Fix anthy.el not to use process-kill-without-query
+                       which is deleted.
+
+Their patch cannot be copied here as it stands, though.  They rename where
+this one guards, and applying theirs to the same tree gives 4/6 and a build
+failure on emacs20 (set-face-underline does not exist yet) and, on emacs21,
+a package that builds and then dies in anthy-check-agent with
+(void-function set-process-query-on-exit-flag) -- the mirror image of what
+unpatched anthy does on Emacs 27, in the same function.  OpenBSD ships one
+Emacs; pkgsrc keeps emacs20, emacs21 and XEmacs in the accepted list.
+
+anthy-unicode, the maintained fork, has made the same changes in its own
+copy.  FreeBSD and Debian dropped 9100h instead -- FreeBSD ports has only
+japanese/anthy-unicode now, and Debian's anthy went from 9100h-24 to 1:0.4-3
+with an epoch to mark the switch.
+
+That leaves pkgsrc and Gentoo shipping 9100h's anthy.el unpatched.  So the
+choice is between carrying the patch as OpenBSD does, or following FreeBSD
+and Debian to anthy-unicode.  If you would rather do the latter, that is a
+fair answer to this too.
 
 The patches go in inputmethod/anthy/patches, since anthy-elisp shares
 PATCHDIR and DISTINFO_FILE with inputmethod/anthy.  They sort after your
