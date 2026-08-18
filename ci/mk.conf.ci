@@ -50,7 +50,7 @@ RUST_TYPE=	bin
 ## 何を試しているか:
 ##   inputmethod/anthy-elisp は EMACS_VERSIONS_ACCEPTED が emacs21 世代の
 ##   ままで、これが ~/.emacs の (load-library "anthy") を塞いでいた。
-##   overlay で 26〜30 に広げたところ、emacs26nox では建った (.elc が 6 本)。
+##   zakinko/anthy-elisp で 26〜30 に広げたところ、emacs26nox では建った (.elc が 6 本)。
 ##   emacs30nox でも建つなら EMACS_TYPE を上げられて、audit の
 ##   CVE-2022-45939 と CVE-2024-39331 が消える。
 ##

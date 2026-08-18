@@ -61,21 +61,22 @@ if [ ! -f $PKGSRCDIR/mk/bsd.pkg.mk ]; then
 fi
 
 ##
-## 2. overlay の当たり先
+## 2. zakinko カテゴリの写し
 ##
-## 上流 pkgsrc がまだ取り込んでいない当て物は、ホスト側で pkgsrc ツリーに
-## 焼き込んだうえで渡ってくる (ci/make-pkgsrc-tarball.sh)。実体は
-## pkgsrc-zakinko の overlay/。ここでは当たった場所の一覧を受け取るだけ。
+## 上流 pkgsrc がまだ取り込んでいない直しは、pkgsrc-zakinko が zakinko/<pkg>
+## として持っている。ホスト側で zakinko カテゴリごと渡ってくる
+## (ci/make-pkgsrc-tarball.sh)。ここでは何が来ているかを控えるだけ。
 ##
-if [ -f $PKGSRCDIR/.overlay-dirs ]; then
-	cp $PKGSRCDIR/.overlay-dirs /tmp/overlay-dirs
-	n=$(wc -l </tmp/overlay-dirs | tr -d ' ')
-	log "overlay が当たっているもの $n 件"
-	[ "$n" -gt 0 ] && sed 's/^/    /' /tmp/overlay-dirs
-else
-	: >/tmp/overlay-dirs
-	log "overlay はない"
+: >/tmp/zakinko-dirs
+if [ -d "$PKGSRCDIR/zakinko" ]; then
+	for d in "$PKGSRCDIR"/zakinko/*/; do
+		[ -f "$d/Makefile" ] || continue
+		echo "zakinko/$(basename "$d")" >>/tmp/zakinko-dirs
+	done
 fi
+n=$(wc -l </tmp/zakinko-dirs | tr -d ' ')
+log "zakinko カテゴリ $n 件"
+[ "$n" -gt 0 ] && sed 's/^/    /' /tmp/zakinko-dirs
 
 ##
 ## 3. 設定
@@ -128,33 +129,23 @@ log "作る対象 $(wc -l </tmp/pkglist | tr -d ' ') 件"
 
 mkdir -p "$PACKAGES/All" "$DISTDIR" /var/tmp/pkgsrc.work
 
-## overlay で足した patch の SHA1 を distinfo に入れる。mk.conf が要るので
-## ここまで来てから走らせる。
-if [ -s /tmp/overlay-dirs ]; then
-	## makepatchsum は pkgtools/digest の digest を呼ぶ。入れたばかりの
-	## システムには無く、無いと黙って SHA1 を書かずに成功したふりをする。
-	if [ ! -x /usr/pkg/bin/digest ]; then
-		log "makepatchsum のために pkgtools/digest を入れる"
-		( cd "$PKGSRCDIR/pkgtools/digest" && make install ) ||
-		    die "pkgtools/digest を入れられない"
-	fi
-
-	while read -r d; do
-		[ -n "$d" ] || continue
-		log "makepatchsum $d"
-		( cd "$PKGSRCDIR/$d" && make makepatchsum ) ||
-		    die "$d の makepatchsum に失敗"
-
-		## 本当に書けたか確かめる。書けていないまま進むと
-		## patch のチェックサム不一致でビルドが止まる。
-		for p in "$PKGSRCDIR/$d"/patches/patch-*; do
-			[ -e "$p" ] || continue
-			b=${p##*/}
-			grep -q "SHA1 ($b)" "$PKGSRCDIR/$d/distinfo" ||
-			    die "$d/distinfo に $b の SHA1 が入らなかった"
-		done
-	done </tmp/overlay-dirs
-fi
+## patch を持つものは distinfo に SHA1 が入っていること。以前はここで
+## makepatchsum を走らせていたが、当て物を上流へ焼き込むのをやめ、
+## zakinko/<pkg> が上流の写しをまるごと持つようになったので、distinfo も
+## repo に入っている。走らせるのではなく、入っているかを確かめる。
+##
+## 抜けたまま進むと patch のチェックサム不一致でビルドが止まる。どこで
+## 止まったのか分かりにくいので、先に見て名前を出す。
+while read -r d; do
+	[ -n "$d" ] || continue
+	[ -d "$PKGSRCDIR/$d/patches" ] || continue
+	for p in "$PKGSRCDIR/$d"/patches/patch-*; do
+		[ -e "$p" ] || continue
+		b=${p##*/}
+		grep -q "SHA1 ($b)" "$PKGSRCDIR/$d/distinfo" ||
+		    die "$d/distinfo に $b の SHA1 が無い (make makepatchsum を忘れていないか)"
+	done
+done </tmp/zakinko-dirs
 
 ##
 ## 4. 前回のパッケージ
@@ -324,7 +315,7 @@ while read -r pkgpath pkgname; do
 		## 落ちてもビルドは失敗にしない。当て物と関係のないところで
 		## 転ぶことがあり、それでパッケージの配布まで止めたくない。
 		## 結果は ci-report に出るので、そこで見る。
-		if grep -qx "$pkgpath" /tmp/overlay-dirs 2>/dev/null; then
+		if grep -qx "$pkgpath" /tmp/zakinko-dirs 2>/dev/null; then
 			if ( cd "$PKGSRCDIR/$pkgpath" && make test </dev/null ); then
 				log "test ok $pkgpath"
 				echo "$pkgpath ok" >>/tmp/tested

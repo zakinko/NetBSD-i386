@@ -48,62 +48,21 @@ if [ -n "$ZAKINKO_PKGSRC_URL" ]; then
 	fi
 fi
 
+## 当て物は zakinko カテゴリの中に zakinko/<pkg> として入っている。上流の
+## 位置へ焼き込むことはもうしない。上で clone した時点でツリーに乗っている。
 ##
-## 上流 pkgsrc への当て物 (overlay) をツリーに焼き込む。
+## 以前は overlay/<カテゴリ>/<パッケージ> を上流の同じ場所へ上書きしていた。
+## あれは上流の package そのものを差し替えるので、それに依存する側にも効いた。
+## 平らにしたことでその性質は無くなっている。zakinko/augeas を入れても
+## sysutils/augeas は素のままなので、素から建てたときに依存で引かれるのは
+## 上流の方になる。効かせたい相手には先に zakinko/<pkg> を入れること。
 ##
-## 実体は pkgsrc-zakinko の overlay/ に置く。pkgsrc に関するものは向こうに
-## 集める、という分担。zakinko/ はカテゴリとして展開されるので、overlay/ は
-## package と間違われないよう、当てたあとツリーから取り除く。
-##
-## ここで焼き込むのは、キャッシュの効き方のため。pkgsrc.tar.gz の鍵には
-## pkgsrc-zakinko の HEAD が入っているので、向こうを直せば必ず作り直される。
-## 別便で渡していた頃は overlay だけ鍵に入らず、直しても古いまま走った。
-##
-## 当てた場所は .overlay-dirs に残す。ゲスト側はそれを見て makepatchsum を
-## 走らせる (patch を足したら distinfo に SHA1 が要るため)。
-##
-overlay_src=
-if [ -d "$tmp/pkgsrc/zakinko/overlay" ]; then
-	overlay_src=$tmp/pkgsrc/zakinko/overlay
-	echo "=== overlay: pkgsrc-zakinko のものを使う"
-elif [ -d overlay ]; then
-	overlay_src=$PWD/overlay
-	echo "!! overlay: pkgsrc-zakinko に無いので、この repo のものを使う" >&2
-	echo "   (移行が済んだらこちらの overlay/ は消すこと)" >&2
-fi
-
-# overlay がどこにも無いときに黙って先へ進ませない。ここで当てているのは
-# augeas の CVE-2025-2588 のような、上流のパッケージそのものを差し替える
-# 当て物である。当たらなくても pkgsrc は建つので、素通りすると「通ったのに
-# 当て物の入っていないもの」が出来上がり、それと気づけない。
-#
-# pkgsrc-zakinko の overlay/ を zakinko/<pkg> へ平坦化する話が出ている。
-# 平坦化するとカテゴリが失われるので、どの上流パッケージを差し替えるのかを
-# 別の形で持たせない限り、この段は成り立たない。移すときはここも直すこと。
-if [ -z "$overlay_src" ]; then
-	echo "!! overlay の置き場が見つからない。" >&2
-	echo "   pkgsrc-zakinko の overlay/ も、この repo の overlay/ も無い。" >&2
-	echo "   平坦化したのなら、どの上流パッケージへ当てるかの対応を" >&2
-	echo "   持たせたうえで、この段を書き直すこと。" >&2
+if [ ! -d "$tmp/pkgsrc/zakinko" ]; then
+	echo "!! zakinko カテゴリが無い。当て物の入っていないものが出来上がる。" >&2
+	echo "   ZAKINKO_PKGSRC_URL を確かめること。" >&2
 	exit 1
 fi
-
-: >"$tmp/pkgsrc/.overlay-dirs"
-if [ -n "$overlay_src" ]; then
-	for d in $(cd "$overlay_src" && find . -mindepth 2 -maxdepth 2 -type d |
-	           sed 's|^\./||' | sort); do
-		if [ ! -d "$tmp/pkgsrc/$d" ]; then
-			echo "!! overlay: $d が pkgsrc に無い。飛ばす。" >&2
-			continue
-		fi
-		( cd "$overlay_src/$d" && tar cf - . ) |
-		    ( cd "$tmp/pkgsrc/$d" && tar xf - )
-		echo "$d" >>"$tmp/pkgsrc/.overlay-dirs"
-		echo "    $d"
-	done
-	rm -rf "$tmp/pkgsrc/zakinko/overlay"
-fi
-echo "=== overlay を当てた: $(wc -l <"$tmp/pkgsrc/.overlay-dirs" | tr -d ' ') 件"
+echo "=== zakinko カテゴリ: $(ls -d "$tmp"/pkgsrc/zakinko/*/ 2>/dev/null | wc -l | tr -d ' ') 件"
 
 echo "=== 固める"
 # macOS で作ると全ファイルに com.apple.provenance が付き、NetBSD 側の tar が

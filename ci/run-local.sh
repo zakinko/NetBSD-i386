@@ -43,8 +43,9 @@ cp "$ROLES" "$SEED_DIR/roles"
 tar_noxattr -czf "$SEED_DIR/sbin.tar.gz" sbin
 echo "    roles: $(grep -cvE '^[[:space:]]*(#|$)' "$ROLES") 行"
 
-# overlay は pkgsrc ツリーに焼き込まれて渡る (ci/make-pkgsrc-tarball.sh)。
-# 実体は pkgsrc-zakinko の overlay/。ここでは何もしない。
+# 当て物は pkgsrc-zakinko の zakinko/<pkg> にあり、ツリーごと渡る
+# (ci/make-pkgsrc-tarball.sh)。ここでは何もしない。overlay.tar.gz を別便で
+# 渡していた頃の置き土産が残っていれば消す。
 rm -f "$SEED_DIR/overlay.tar.gz"
 
 # 手元では前回分を使わない。毎回まっさらから確かめたいので。
