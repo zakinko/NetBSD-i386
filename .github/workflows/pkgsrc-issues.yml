@@ -298,6 +298,17 @@ jobs:
     if: inputs.target == 'all' || inputs.target == 'hpux'
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # -d nochain は TCG の TB 連結を切る debug 用の指定で、実行が
+          # 桁で遅くなる。配布元の .sh に入っていたので最初はそのまま
+          # 残したが、19 分沈黙した原因がこれである見込みがある。
+          - name: nochain
+            dbg: '-d nochain'
+          - name: plain
+            dbg: ''
     steps:
       - name: qemu と lzip を入れる
         run: |
@@ -368,6 +379,11 @@ jobs:
           #   -display none -serial file:  画面が無いので console を採る
           #   hostfwd                      後で ssh で入れるなら要る
           #   -d nochain                   配布元のものをそのまま残す
+          # B160L は UART を二つ持つ (LASI と DINO)。SeaBIOS が喋るのと
+          # HP-UX が console にするのが同じとは限らないので、両方採る。
+          # 一本しか採らずに「何も出ない」と読むと、出ているのに見えて
+          # いないだけ、を見落とす。
+          : > /tmp/console1.log
           qemu-system-hppa \
             -machine B160L \
             -smp cpus=4 \
@@ -375,10 +391,11 @@ jobs:
             -boot c -boot menu=off \
             -drive if=scsi,bus=0,index=6,file=disk.img,format=qcow2 \
             -m 512 \
-            -d nochain \
+            ${{ matrix.dbg }} \
             -nic user,model=tulip,hostfwd=tcp:127.0.0.1:2222-:22 \
             -display none \
             -serial file:/tmp/console.log \
+            -serial file:/tmp/console1.log \
             -pidfile /tmp/qemu.pid &
           QPID=$!
 
@@ -395,19 +412,22 @@ jobs:
 
           # ここから先は hppa が TCG で遅いだけなので、どこまで進んだかを
           # 残せれば足りる。login: に届かなくても job は落とさない。
-          for i in $(seq 1 20); do
+          for i in $(seq 1 45); do
             sleep 60
-            printf '=== %d 分経過  console %s バイト ===\n' \
-              "$i" "$(wc -c < /tmp/console.log)"
-            tail -5 /tmp/console.log
+            printf '=== %d 分経過  serial0 %s / serial1 %s バイト ===\n' \
+              "$i" "$(wc -c < /tmp/console.log)" "$(wc -c < /tmp/console1.log)"
+            tail -3 /tmp/console.log
+            [ -s /tmp/console1.log ] && { echo '--- serial1 ---'; tail -3 /tmp/console1.log; }
             if ! kill -0 "$QPID" 2>/dev/null; then
               echo 'RESULT #126: qemu が途中で終了した'; break
             fi
-            if grep -q 'login:' /tmp/console.log; then
+            if grep -qs 'login:' /tmp/console.log /tmp/console1.log; then
               echo 'RESULT #126: login: まで来た'; break
             fi
           done
 
           kill "$QPID" 2>/dev/null || true
-          echo '##### console の全文 #####'
+          echo '##### serial0 の全文 #####'
           cat /tmp/console.log
+          echo '##### serial1 の全文 #####'
+          cat /tmp/console1.log
