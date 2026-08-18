@@ -177,7 +177,7 @@ audit は `~/.sbin` の `make audit` (`pkgsrc-audit.sh`) を使う。
 | 何を作るか (`list.pkg.*`) | **`~/.sbin`**。ここは写しを読むだけ |
 | `/etc/mk.conf` の中身と配布 | **`~/.sbin`** (`pkgsrc-fix-mkconf.sh`) |
 | audit | **`~/.sbin`** (`pkgsrc-audit.sh`) |
-| 上流 pkgsrc への当て物 | **[pkgsrc-zakinko](https://github.com/zakinko/pkgsrc-zakinko) の `overlay/`**。CI が clone して当てる |
+| 上流 pkgsrc への当て物 | **[pkgsrc-zakinko](https://github.com/zakinko/pkgsrc-zakinko) の `zakinko/<pkg>`**。CI が clone してカテゴリごと重ねる |
 | 上流へ送る diff とメール | ここ (`doc/upstream/`) |
 | ソースから建てる | **`~/.sbin`** (`pkgsrc-bootstrap.sh`) |
 | 外でバイナリを作る | ここ |

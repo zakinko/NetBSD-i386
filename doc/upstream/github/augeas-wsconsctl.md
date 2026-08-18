@@ -7,7 +7,7 @@
 | 触るもの | `lenses/simplevars.aug` |
 | 大きさ | 1 ファイル、1 行 |
 | PR | [#887](https://github.com/hercules-team/augeas/pull/887) |
-| pkgsrc 側 | `overlay/sysutils/augeas/patches/patch-lenses_simplevars.aug` (#893 と同居) |
+| pkgsrc 側 | `zakinko/augeas/patches/patch-lenses_simplevars.aug` (#893 と同居) |
 
 ## なぜ
 
@@ -67,6 +67,6 @@ NetBSD には `/etc/wsconsctl.conf` が無い。あるのは `/etc/wscons.conf` 
 論じる変更で議論になりうる。こちらは読めば終わる。束ねると後者が前者の
 人質になる。
 
-pkgsrc の overlay では両方を当てるので、patch は当たる順に気を付けること
+pkgsrc の zakinko/augeas では両方を当てるので、patch は当たる順に気を付けること
 (`patch-adduser-...` → `patch-wsconsctl-...` の順で、名前の並びがそのまま
 正しい順になっている)。

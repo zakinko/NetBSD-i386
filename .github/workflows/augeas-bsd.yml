@@ -1,6 +1,6 @@
 name: augeas-bsd
 
-# pkgsrc を OpenBSD と FreeBSD で bootstrap し、そこで sysutils/augeas を
+# pkgsrc を OpenBSD と FreeBSD で bootstrap し、そこで zakinko/augeas を
 # 建てる。手元の CI が見ているのは NetBSD だけなので、そこでは確かめようの
 # ない三つを見るためのもの。
 #
@@ -86,15 +86,15 @@ jobs:
             cc --version | head -2
             df -h
 
-            echo '##### 1. pkgsrc と overlay を取る #####'
+            echo '##### 1. pkgsrc と zakinko カテゴリを取る #####'
             # / は 986M しかない。作業は /home でする。
             mkdir -p "$WORK" && cd "$WORK"
             ftp -o pkgsrc.tar.gz https://cdn.NetBSD.org/pub/pkgsrc/${{ inputs.pkgsrc }}/pkgsrc.tar.gz
             tar xzf pkgsrc.tar.gz
-            ftp -o overlay.tar.gz https://codeload.github.com/zakinko/pkgsrc-zakinko/tar.gz/refs/heads/main
-            tar xzf overlay.tar.gz
-            cp -Rf pkgsrc-zakinko-main/overlay/sysutils/augeas/. pkgsrc/sysutils/augeas/
-            ls pkgsrc/sysutils/augeas/patches
+            ftp -o zakinko.tar.gz https://codeload.github.com/zakinko/pkgsrc-zakinko/tar.gz/refs/heads/main
+            tar xzf zakinko.tar.gz
+            mv pkgsrc-zakinko-main pkgsrc/zakinko
+            ls pkgsrc/zakinko/augeas/patches
             df -h
 
             echo '##### 2. bootstrap #####'
@@ -128,7 +128,7 @@ jobs:
             df -h
 
             echo '##### 3. augeas を建てる #####'
-            cd "$WORK/pkgsrc/sysutils/augeas"
+            cd "$WORK/pkgsrc/zakinko/augeas"
             # 当て物の SHA1 を distinfo に入れる。pkgsrc 標準の的。
             bmake makepatchsum
             if bmake >/tmp/build.log 2>&1; then
@@ -140,10 +140,10 @@ jobs:
             fi
 
             echo '##### 4. -fexceptions はどう扱われたか #####'
-            find "$WORK/pkgsrc/sysutils/augeas/work" -name config.log -maxdepth 3 2>/dev/null | head -1 | while read l; do
+            find "$WORK/pkgsrc/zakinko/augeas/work" -name config.log -maxdepth 3 2>/dev/null | head -1 | while read l; do
               grep -i 'fexceptions\|asynchronous-unwind' "$l" | head -5
             done
-            grep -rn 'common_flags=' "$WORK"/pkgsrc/sysutils/augeas/work/augeas-*/configure 2>/dev/null | head -2
+            grep -rn 'common_flags=' "$WORK"/pkgsrc/zakinko/augeas/work/augeas-*/configure 2>/dev/null | head -2
 
             echo '##### 5. make test (= augeas の make check) #####'
             bmake install >/tmp/install.log 2>&1 || { echo '!! install に失敗'; tail -20 /tmp/install.log; }
@@ -213,13 +213,13 @@ jobs:
             uname -a
             cc --version | head -2
 
-            echo '##### 1. pkgsrc と overlay を取る #####'
+            echo '##### 1. pkgsrc と zakinko カテゴリを取る #####'
             cd /root
             fetch -o pkgsrc.tar.gz https://cdn.NetBSD.org/pub/pkgsrc/${{ inputs.pkgsrc }}/pkgsrc.tar.gz
             tar xzf pkgsrc.tar.gz
-            fetch -o overlay.tar.gz https://codeload.github.com/zakinko/pkgsrc-zakinko/tar.gz/refs/heads/main
-            tar xzf overlay.tar.gz
-            cp -Rf pkgsrc-zakinko-main/overlay/sysutils/augeas/. pkgsrc/sysutils/augeas/
+            fetch -o zakinko.tar.gz https://codeload.github.com/zakinko/pkgsrc-zakinko/tar.gz/refs/heads/main
+            tar xzf zakinko.tar.gz
+            mv pkgsrc-zakinko-main pkgsrc/zakinko
 
             echo '##### 2. bootstrap #####'
             # README.FreeBSD: base の compiler のみ対応。ports の gcc は不可。
@@ -239,7 +239,7 @@ jobs:
             done
 
             echo '##### 3. augeas を建てて試す #####'
-            cd /root/pkgsrc/sysutils/augeas
+            cd /root/pkgsrc/zakinko/augeas
             bmake makepatchsum
             if bmake >/tmp/build.log 2>&1; then echo 'RESULT build: 通った'; else
               echo 'RESULT build: 落ちた'; tail -30 /tmp/build.log; fi

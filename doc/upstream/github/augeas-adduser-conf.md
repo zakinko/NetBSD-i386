@@ -7,7 +7,7 @@
 | 触るもの | `lenses/shellvars.aug` / `lenses/simplevars.aug` / `lenses/tests/test_simplevars.aug` |
 | 大きさ | 3 ファイル、30 行 (うち 29 行はテスト) |
 | PR | [#893](https://github.com/hercules-team/augeas/pull/893) |
-| pkgsrc 側 | `overlay/sysutils/augeas/patches/patch-lenses_shellvars.aug` ほか 2 本 |
+| pkgsrc 側 | `zakinko/augeas/patches/patch-lenses_shellvars.aug` ほか 2 本 |
 
 ## なぜ
 

@@ -76,5 +76,5 @@ CVS HEAD が動いたら、当たるかどうかを確認し直すこと。
 
 ## 取り込まれたら
 
-`overlay/textproc/libxml2` と `overlay/sysutils/augeas` を消す。消し忘れると、
+`overlay/textproc/libxml2` と `zakinko/augeas` を消す。消し忘れると、
 上流が直したあとも古い写しを使い続けることになる。

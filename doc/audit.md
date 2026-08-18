@@ -148,7 +148,7 @@ Debian / SUSE / Mageia は独自パッチを出荷している。
 
 ### どこを直すか
 
-**[pkgsrc-zakinko の overlay/sysutils/augeas](https://github.com/zakinko/pkgsrc-zakinko/tree/main/overlay/sysutils/augeas) に入れてある。**
+**[pkgsrc-zakinko の zakinko/augeas](https://github.com/zakinko/pkgsrc-zakinko/tree/main/augeas) に入れてある。**
 CI がビルド前に pkgsrc へ被せる。手元では次の更新で `augeas-1.14.1nb2` として
 入れ替わる。
 
@@ -169,7 +169,7 @@ pkgsrc 本体に入れてもらうことで、送るものは
 [doc/upstream/augeas.diff](upstream/augeas.diff) と
 [augeas.mail](upstream/augeas.mail) に用意した。`sysutils/augeas` の
 MAINTAINER は bsiegert@NetBSD.org。取り込まれたら
-pkgsrc-zakinko の `overlay/sysutils/augeas` は消す。
+pkgsrc-zakinko の `zakinko/augeas` は消す。
 
 ## emacs26-nox11 / CVE-2022-45939, CVE-2024-39331 — 設定一行
 
@@ -231,7 +231,7 @@ IGNORE_URL=https://nvd.nist.gov/vuln/detail/CVE-2024-39331
 
 ### 根治するなら
 
-[pkgsrc-zakinko の overlay/inputmethod/anthy-elisp](https://github.com/zakinko/pkgsrc-zakinko/tree/main/overlay/inputmethod/anthy-elisp) で
+[pkgsrc-zakinko の zakinko/anthy-elisp](https://github.com/zakinko/pkgsrc-zakinko/tree/main/anthy-elisp) で
 `EMACS_VERSIONS_ACCEPTED` に emacs26〜30 を足してある。塞いでいるのはこの
 一行だけで、patch も無く Makefile 自体は 2024 年に触られているので、単に誰も
 新しい Emacs で試していないだけに見える。CI で実際に byte-compile が通るかを
@@ -348,8 +348,8 @@ audit の表示は **21 件 → 17 件**になる。
 
 | やること | 件数 | 手間 |
 |---|---|---|
-| libxml2 を 2.15.3 へ (overlay 済) + エントリを絞ってもらう | 5 | メールを送るだけ |
-| augeas の patch (overlay 済) + pkgsrc へ送る | 1 | メールを送るだけ |
+| libxml2 を 2.15.3 へ (手元済) + エントリを絞ってもらう | 5 | メールを送るだけ |
+| augeas の patch (手元済) + pkgsrc へ送る | 1 | メールを送るだけ |
 | lua53 → lua54 か削除 | eol 1 | 依存次第 |
 | certbot を webroot 化 → augeas と libxml2 を落とす | (上と重複) | 設定変更 |
 | python313 / expat | 9 | 上流待ち。何もできない |

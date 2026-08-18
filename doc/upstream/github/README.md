@@ -13,7 +13,7 @@ INFORMATION" にこうある。
 > upstream and the upstream tracker URL included in the patch file or
 > Makefile.
 
-だから overlay の patch header には、上流へ出したものの参照を書く。番号が
+だから当て物の patch header には、上流へ出したものの参照を書く。番号が
 決まる前は fork の枝名を書いておき、PR を開いたら番号に差し替える。
 
 ## 決まりごと
@@ -47,7 +47,7 @@ master から 1 commit で、互いに独立している。
 出す順は、小さく明白なものから、議論になりうるものへ、という並びにした。
 
 対応する pkgsrc 側の当て物は
-[pkgsrc-zakinko の overlay/sysutils/augeas](https://github.com/zakinko/pkgsrc-zakinko/tree/main/overlay/sysutils/augeas)
+[pkgsrc-zakinko の zakinko/augeas](https://github.com/zakinko/pkgsrc-zakinko/tree/main/augeas)
 にあり、Makefile の頭に patch と PR 番号の対応表が置いてある。
 
 ## どうやって確かめているか
@@ -68,7 +68,7 @@ build: The job has exceeded the maximum execution time
 用意してある。
 
 **一つめが NetBSD 側。** [pkgsrc-zakinko の
-overlay/sysutils/augeas](https://github.com/zakinko/pkgsrc-zakinko/tree/main/overlay/sysutils/augeas)
+zakinko/augeas](https://github.com/zakinko/pkgsrc-zakinko/tree/main/augeas)
 に上流へ出すものと同じ patch を置き、`TEST_TARGET=check` があるので
 [build.yml](../../../.github/workflows/build.yml) の `make test` が augeas
 自身の `make check` を回す。9.4 / 10.1 / 11.0 の i386 三つで走る。
