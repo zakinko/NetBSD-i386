@@ -316,7 +316,7 @@ jobs:
         env:
           MEDIA_BASE: ${{ secrets.MEDIA_BASE }}
           MEDIA_DIR: /mnt/media
-          MEDIA_PATHS: /mnt/media-paths.conf
+          MEDIA_PATHS: ${{ runner.temp }}/media-paths.conf
           MEDIA_SUBDIR: ${{ secrets.MEDIA_HPUX_DIR }}
           MEDIA_FILE: ${{ secrets.MEDIA_HPUX_FILE }}
         run: |
