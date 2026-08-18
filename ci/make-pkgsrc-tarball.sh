@@ -72,6 +72,22 @@ elif [ -d overlay ]; then
 	echo "   (移行が済んだらこちらの overlay/ は消すこと)" >&2
 fi
 
+# overlay がどこにも無いときに黙って先へ進ませない。ここで当てているのは
+# augeas の CVE-2025-2588 のような、上流のパッケージそのものを差し替える
+# 当て物である。当たらなくても pkgsrc は建つので、素通りすると「通ったのに
+# 当て物の入っていないもの」が出来上がり、それと気づけない。
+#
+# pkgsrc-zakinko の overlay/ を zakinko/<pkg> へ平坦化する話が出ている。
+# 平坦化するとカテゴリが失われるので、どの上流パッケージを差し替えるのかを
+# 別の形で持たせない限り、この段は成り立たない。移すときはここも直すこと。
+if [ -z "$overlay_src" ]; then
+	echo "!! overlay の置き場が見つからない。" >&2
+	echo "   pkgsrc-zakinko の overlay/ も、この repo の overlay/ も無い。" >&2
+	echo "   平坦化したのなら、どの上流パッケージへ当てるかの対応を" >&2
+	echo "   持たせたうえで、この段を書き直すこと。" >&2
+	exit 1
+fi
+
 : >"$tmp/pkgsrc/.overlay-dirs"
 if [ -n "$overlay_src" ]; then
 	for d in $(cd "$overlay_src" && find . -mindepth 2 -maxdepth 2 -type d |
