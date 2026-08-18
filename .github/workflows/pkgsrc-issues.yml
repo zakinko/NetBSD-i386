@@ -342,7 +342,7 @@ jobs:
           # 中立な名前へ移す。以後の段は secret 由来の名前を一切扱わないので、
           # 展開でも起動でも出しようがなくなる。
           mv "/mnt/media/HPUX/qemu/$MEDIA_FILE" /mnt/work/media.tar.lz
-          rm -rf /mnt/media "$MEDIA_PATHS"
+          sudo rm -rf /mnt/media && rm -f "$MEDIA_PATHS"
           echo "取れた大きさ: $(wc -c < /mnt/work/media.tar.lz) バイト"
 
       - name: 展開する
