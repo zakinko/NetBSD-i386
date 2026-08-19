@@ -343,41 +343,33 @@ jobs:
             grep -E '^(FAIL|ERROR):' /tmp/chk.log | sort -u
             grep -E '^# (TOTAL|PASS|SKIP|XFAIL|FAIL|XPASS|ERROR):' /tmp/chk.log
 
-            echo '##### 2c. test の bash と sed を直したら変わるか #####'
-            # 落ちる四件のうち三件は #!/bin/bash で、BSD に /bin/bash は無い。
-            # test-augprint.sh に bashism は無く、test-createfile.sh の [[ ]] は
-            # 四箇所とも -e と -z なので [ ] にできる。test-augtool.sh は
-            # GSED=sed; type gsed && GSED=gsed という仕組みを既に持っているのに
-            # 一箇所だけ素の sed を呼んでいる。直して通るのか、起動するように
-            # なるだけで別の理由で落ちるのかを見る。
-            for f in test-augprint.sh test-createfile.sh test-augtool.sh; do
-              sed -i 's|^#!/bin/bash$|#!/bin/sh|' "tests/$f"
-            done
-            sed -i -e 's|\[\[ ! -e \(.*\) \]\]|[ ! -e "\1" ]|' \
-                   -e 's|\[\[ -z \(.*\) \]\]|[ -z \1 ]|' tests/test-createfile.sh
-            sed -i 's#| sed #| $GSED #' tests/test-augtool.sh
-            echo '--- 直したあと ---'
+            echo '##### 2c. test の移植性を直したら通るか #####'
+            # 落ちる四件のうち三件は GNU の道具を前提にしている。
+            #   test-augprint.sh   cp --no-preserve=mode --recursive, diff -B
+            #   test-createfile.sh [[ ]] と <(...)
+            #   test-augtool.sh    #!/bin/bash
+            # 256 本のうち bash を求めているのはこの三本だけで、残りは
+            # #!/bin/sh である。上流に出す形 (zakinko/augeas の
+            # tests-without-gnu-tools) を落として当て、通るかを見る。
+            #
+            # diff -B を外すのは比較を厳しくする方向なので、差を隠して
+            # 通したことにはならない。
+            ftp -o /tmp/testfix.patch \
+              https://github.com/zakinko/augeas/commit/ed4e497c0701f4587d24e591b2794de55415ba52.patch
+            patch -p1 < /tmp/testfix.patch
+            echo '--- 当てたあと ---'
             head -1 tests/test-augprint.sh tests/test-createfile.sh tests/test-augtool.sh
-            echo "  残った [[ : $(grep -c '\[\[' tests/test-createfile.sh)"
-            grep -n 'GSED' tests/test-augtool.sh
+            grep -c '\[\[\|<(' tests/test-createfile.sh || true
             if gmake check >/tmp/chk2.log 2>&1; then
-              echo 'RESULT check(直した後): 通った'
+              echo 'RESULT check(移植性を直した後): 通った'
             else
-              echo 'RESULT check(直した後): 落ちた'
+              echo 'RESULT check(移植性を直した後): 落ちた'
             fi
             grep -E '^(FAIL|ERROR):' /tmp/chk2.log | sort -u
             grep -E '^# (TOTAL|PASS|SKIP|FAIL):' /tmp/chk2.log
-
-            echo '##### 2d. では何が原因なのか #####'
-            # bash と sed の見立ては外れた。直しても同じ四件が落ちる。
-            # そもそも bash が居るのかどうかから見て、automake が残す
-            # 各テストの .log を読む。
-            echo '--- bash はあるか ---'
-            ls -l /bin/bash /usr/local/bin/bash 2>&1 | head -3
-            command -v bash gsed 2>&1 | head -3
             for t in test-augprint test-augtool test-createfile test-idempotent; do
               echo "--- tests/$t.sh.log ---"
-              tail -25 "tests/$t.sh.log" 2>/dev/null || echo '  (log が無い)'
+              tail -20 "tests/$t.sh.log" 2>/dev/null || echo '  (log 無し)'
             done
 
             echo '##### 3. 結論 #####'
