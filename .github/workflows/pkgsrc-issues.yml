@@ -41,7 +41,7 @@ on:
       target:
         description: 'どれを回すか'
         type: choice
-        options: [all, freebsd, openbsd, musl, hpux]
+        options: [all, freebsd, openbsd, musl, hpux, fix130]
         default: all
       pkgsrc:
         description: 'pkgsrc の配布物 (current か stable)'
@@ -431,3 +431,96 @@ jobs:
           cat /tmp/console.log
           echo '##### serial1 の全文 #####'
           cat /tmp/console1.log
+
+  # ------------------------------------------------------------------
+  # #130 #132 #141  の直しを検証する
+  # ------------------------------------------------------------------
+  #
+  # 原因は bootstrap/bootstrap の awk 判定が配布物名 (/etc/debian_version,
+  # /etc/arch-release, CHROMEOS_RELEASE_NAME) のハードコードだけで、musl や
+  # busybox の箱を拾えないこと。gawk を持たない Alpine 等では
+  # mk/tools/tools.Linux.mk:289 の
+  #
+  #   TOOLS_PLATFORM.awk?= ${TOOLS_PLATFORM.gawk}
+  #
+  # が空になり、awk が $PREFIX/bin/nawk に落ちるが、それは need_awk=yes の
+  # ときにしか建たない。よって nawk: not found で止まる。
+  #
+  # 直しは Linux の分岐に一つ足すだけ。既知マーカーに当たらず、かつ gawk が
+  # 無いときだけ need_awk=yes にする。tools.Linux.mk が Linux で gawk を
+  # awk に使う以上、gawk の有無で判定するのが筋が通る。
+  #
+  #   Alpine (busybox, gawk 無し) -> need_awk=yes -> nawk を建てる -> 直る
+  #   Enterprise Linux (gawk あり) -> need_awk=no のまま -> 退行なし
+  #   Debian (mawk)               -> /etc/debian_version で従来どおり yes
+  #
+  # alarixnia@ が issue で釘を刺した「Enterprise Linux を壊すな」に応える形。
+  # Fedora を Enterprise Linux の代役にして、直しても need_awk が no のままな
+  # ことを確かめる。
+  fix130:
+    if: inputs.target == 'all' || inputs.target == 'fix130'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: alpine-fixed        # 直る側
+            image: alpine:3.21
+            setup: apk add --no-cache build-base file zlib-dev
+            expect: pass
+          - name: fedora-noregress    # gawk あり。need_awk は no のまま
+            image: fedora:41
+            setup: dnf -y install gcc make file zlib-devel gawk diffutils >/dev/null
+            expect: no-nawk
+          - name: debian-unchanged    # mawk。従来どおり yes
+            image: debian:12
+            setup: apt-get update && apt-get install -y build-essential file zlib1g-dev curl
+            expect: pass
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - name: ${{ matrix.name }} で直しを当てて bootstrap する
+        run: |
+          set -x
+          ${{ matrix.setup }}
+          command -v gawk >/dev/null 2>&1 && echo "gawk: あり" || echo "gawk: 無し"
+
+          cd /tmp
+          (wget -q -O pkgsrc.tar.gz https://cdn.NetBSD.org/pub/pkgsrc/${{ inputs.pkgsrc }}/pkgsrc.tar.gz \
+            || curl -fsSL -o pkgsrc.tar.gz https://cdn.NetBSD.org/pub/pkgsrc/${{ inputs.pkgsrc }}/pkgsrc.tar.gz)
+          tar xzf pkgsrc.tar.gz
+          cd /tmp/pkgsrc/bootstrap
+
+          echo '##### 直しを当てる (gawk 無しの Linux で need_awk=yes) #####'
+          # ChromeOS の判定の直後、次の "Some distros, eg. OpenWRT" コメントの
+          # 手前に一段はさむ。アンカーが安定しているので sed で入れる。
+          awk '
+            /# Some distros, eg\. OpenWRT provide no groups/ && !done {
+              print "\t# mk/tools/tools.Linux.mk uses gawk as awk on Linux; distros whose"
+              print "\t# only awk is busybox/mawk and which ship no gawk (Alpine, OpenWrt,"
+              print "\t# Adelie, ...) otherwise leave awk pointing at an unbuilt nawk."
+              print "\tif [ \"$need_awk\" = no ] && ! command -v gawk >/dev/null 2>&1; then"
+              print "\t\tneed_awk=yes"
+              print "\tfi"
+              done=1
+            }
+            { print }
+          ' bootstrap > bootstrap.new && mv bootstrap.new bootstrap && chmod +x bootstrap
+          grep -n -A2 "only awk is busybox" bootstrap
+
+          echo '##### bootstrap #####'
+          if ./bootstrap --prefix /opt/pkg --workdir /tmp/bs >/tmp/bootstrap.log 2>&1; then
+            echo "RESULT ${{ matrix.name }}: bootstrap 完走"
+          else
+            echo "RESULT ${{ matrix.name }}: bootstrap が途中で止まった"
+          fi
+          echo '--- nawk: not found が消えたか (#130 の症状) ---'
+          if grep -q 'nawk: not found' /tmp/bootstrap.log; then
+            echo "!! まだ nawk: not found が出ている (直っていない)"
+          else
+            echo "ok: nawk: not found は出ていない"
+          fi
+          echo '--- need_awk がどうなったか ---'
+          grep -n 'Bootstrapping awk' /tmp/bootstrap.log && echo "=> nawk を建てた (need_awk=yes)" || echo "=> nawk は建てていない (need_awk=no)"
+          tail -25 /tmp/bootstrap.log
