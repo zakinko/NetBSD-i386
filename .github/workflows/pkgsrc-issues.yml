@@ -41,7 +41,7 @@ on:
       target:
         description: 'どれを回すか'
         type: choice
-        options: [all, freebsd, openbsd, musl, hpux, fix130]
+        options: [all, freebsd, openbsd, musl, hpux, fix130, fix165]
         default: all
       pkgsrc:
         description: 'pkgsrc の配布物 (current か stable)'
@@ -524,3 +524,69 @@ jobs:
           echo '--- need_awk がどうなったか ---'
           grep -n 'Bootstrapping awk' /tmp/bootstrap.log && echo "=> nawk を建てた (need_awk=yes)" || echo "=> nawk は建てていない (need_awk=no)"
           tail -25 /tmp/bootstrap.log
+
+  # ------------------------------------------------------------------
+  # #165  libLLVM (llvm-13) が musl で ::lseek64 未宣言で落ちる
+  # ------------------------------------------------------------------
+  #
+  # llvm/lib/Support/raw_ostream.cpp の raw_fd_ostream::seek は
+  #
+  #   #elif defined(HAVE_LSEEK64)
+  #     pos = ::lseek64(FD, off, SEEK_SET);
+  #
+  # と書く。HAVE_LSEEK64 は cmake がシンボルの有無で立てる。musl は lseek64 を
+  # シンボルとしては持つ (だから HAVE_LSEEK64 が立つ) が、unistd.h は
+  # _GNU_SOURCE / _LARGEFILE64_SOURCE が無いと lseek64 を宣言しない。よって
+  # ::lseek64 が「未宣言」で compile error になる。glibc は既定で宣言するので
+  # 起きない。llvm-13 を全部建てず、その一文だけを同じ条件で compile して
+  # 再現する。
+  fix165:
+    if: inputs.target == 'all' || inputs.target == 'fix165'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: alpine-musl
+            image: alpine:3.21
+            setup: apk add --no-cache build-base
+          - name: debian-glibc
+            image: debian:12
+            setup: apt-get update && apt-get install -y g++
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - name: ${{ matrix.name }} で ::lseek64 を試す
+        run: |
+          set -x
+          ${{ matrix.setup }}
+          cat /etc/os-release | head -1
+          # raw_ostream.cpp:807 と同じ使い方を最小で再現
+          cat > seek.cpp <<'CPP'
+          #include <unistd.h>
+          // llvm-13 の cmake が HAVE_LSEEK64 を立てた状況を模す
+          #define HAVE_LSEEK64
+          long test_seek(int FD, long off) {
+          #ifdef HAVE_LSEEK64
+            return ::lseek64(FD, off, SEEK_SET);
+          #else
+            return ::lseek(FD, off, SEEK_SET);
+          #endif
+          }
+          CPP
+          echo '##### 1. 素の compile (llvm-13 と同じ条件) #####'
+          if g++ -c seek.cpp -o seek.o 2>seek.err; then
+            echo "RESULT ${{ matrix.name }}: compile 通った (::lseek64 宣言あり)"
+          else
+            echo "RESULT ${{ matrix.name }}: compile 落ちた"
+            grep -i "lseek64" seek.err | head -3
+          fi
+          echo '##### 2. _GNU_SOURCE を足すと通るか (直しの方向) #####'
+          if g++ -D_GNU_SOURCE -c seek.cpp -o seek.o 2>/dev/null; then
+            echo "  _GNU_SOURCE 付き: 通る"
+          else
+            echo "  _GNU_SOURCE 付き: それでも落ちる"
+          fi
+          echo '##### 3. _LARGEFILE64_SOURCE では #####'
+          g++ -D_LARGEFILE64_SOURCE -c seek.cpp -o seek.o 2>/dev/null && echo "  _LARGEFILE64_SOURCE 付き: 通る" || echo "  _LARGEFILE64_SOURCE 付き: 落ちる"
