@@ -37,7 +37,7 @@ on:
       target:
         description: 'どちらを回すか'
         type: choice
-        options: [both, openbsd, freebsd, openbsd-tarball, openbsd-probe, netbsd-i386]
+        options: [both, openbsd, freebsd, openbsd-tarball, openbsd-probe, netbsd-i386, netbsd-augeas]
         default: both
       pkgsrc:
         description: 'pkgsrc の配布物 (current か stable)'
@@ -272,7 +272,8 @@ jobs:
   openbsd-tarball:
     if: inputs.target == 'both' || inputs.target == 'openbsd' || inputs.target == 'openbsd-tarball'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # gmake check を素の状態と直した状態で二回回すので 60 分では足りない。
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
 
@@ -514,3 +515,32 @@ jobs:
 
       - name: NetBSD/i386 で -Wformat を見る
         run: sh ci/netbsd-i386-format.sh i386-11.0
+
+  # NetBSD/i386 で sysutils/augeas だけを建てて make test まで回す。
+  # build.yml は roles に並んだもの全部を建てるので、他の package が転けたり
+  # rust の依存を取り続けたりすると augeas まで順番が回らない。send-pr に
+  # 書く数字が要るだけなので、一つに絞る。
+  netbsd-augeas:
+    if: inputs.target == 'netbsd-augeas'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [i386-9.4, i386-10.1, i386-11.0]
+    name: netbsd-augeas ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: qemu を入れて KVM を通す
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-x86 qemu-utils netcat-openbsd
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+          [ -w /dev/kvm ] && echo "KVM あり" || echo "::warning::KVM 無し。相当遅い"
+
+      - name: ${{ matrix.image }} で augeas を建てて試す
+        run: sh ci/netbsd-augeas.sh '${{ matrix.image }}'

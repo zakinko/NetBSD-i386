@@ -1,0 +1,105 @@
+#!/bin/sh
+#
+# NetBSD/i386 の実機で sysutils/augeas だけを建てて make test まで回す。
+#
+#	sh ci/netbsd-augeas.sh [イメージ名]
+#	例: sh ci/netbsd-augeas.sh i386-11.0
+#
+# build.yml は roles に並んだもの全部を建てるので、他の package が転けたり
+# rust の依存を取り続けたりすると augeas まで順番が回らない。send-pr に
+# 書く数字が要るだけなので、augeas 一つに絞って回す。
+#
+# イメージは netbsd-ci-images の release から落とす。起動と停止はあちらの
+# スクリプトをそのまま使う。
+
+set -eu
+
+NAME=${1:-i386-11.0}
+IMGREPO=${IMGREPO:-zakinko/netbsd-ci-images}
+IMGTAG=${IMGTAG:-images}
+IMGREF=${IMGREF:-main}
+PORT=${PORT:-2225}
+WORK=${WORK:-$PWD/.vm-augeas}
+OVERLAY=${OVERLAY:-https://codeload.github.com/zakinko/pkgsrc-zakinko/tar.gz/refs/heads/main}
+
+mkdir -p "$WORK"
+cd "$WORK"
+
+echo "=== $NAME を用意する ==="
+RAW=https://raw.githubusercontent.com/$IMGREPO/$IMGREF
+for f in runvm.sh stopvm.sh; do
+	[ -s "$f" ] || curl -fsSL -o "$f" "$RAW/$f"
+done
+REL=https://github.com/$IMGREPO/releases/download/$IMGTAG
+for f in $NAME.qcow2 $NAME.qemu; do
+	[ -s "$f" ] || { echo "--- $f を落とす ---"; curl -fsSL -o "$f" "$REL/$f"; }
+done
+
+SSH="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+     -o BatchMode=yes -o LogLevel=ERROR -i $WORK/$NAME.id -p $PORT root@127.0.0.1"
+
+cleanup() {
+	rc=$?
+	DIR=. sh stopvm.sh "$NAME" > /dev/null 2>&1 || true
+	exit $rc
+}
+
+echo "=== 起動 ==="
+DIR=. sh runvm.sh "$NAME" "$PORT"
+trap cleanup EXIT INT TERM
+
+$SSH "OVERLAY='$OVERLAY' sh -s" <<'GUEST'
+set -e
+PATH=/sbin:/usr/sbin:/bin:/usr/bin:/usr/pkg/bin:/usr/pkg/sbin
+export PATH
+
+echo "=== 素性 ==="
+uname -a
+df -h / /usr | sed 's/^/  /'
+
+echo "=== pkgsrc を用意する ==="
+if [ ! -d /usr/pkgsrc/mk ]; then
+	ftp -o /tmp/pkgsrc.tar.gz http://cdn.netbsd.org/pub/pkgsrc/current/pkgsrc.tar.gz
+	tar xzf /tmp/pkgsrc.tar.gz -C /usr
+	rm -f /tmp/pkgsrc.tar.gz
+fi
+
+echo "=== overlay を被せる ==="
+cd /tmp
+ftp -o overlay.tar.gz "$OVERLAY"
+tar xzf overlay.tar.gz
+cp -Rf pkgsrc-zakinko-main/overlay/sysutils/augeas/. /usr/pkgsrc/sysutils/augeas/
+ls /usr/pkgsrc/sysutils/augeas/patches | sed 's/^/  /'
+
+echo "=== 当て物の SHA1 を distinfo に入れる ==="
+cd /usr/pkgsrc/sysutils/augeas
+make makepatchsum
+
+echo "=== 建てる ==="
+if make >/tmp/build.log 2>&1; then
+	echo 'RESULT build: 通った'
+	grep -m1 '^dist_lens_DATA' work/augeas-*/Makefile | cut -c1-60 || true
+else
+	echo 'RESULT build: 落ちた'
+	tail -30 /tmp/build.log
+	exit 1
+fi
+
+echo "=== make test ==="
+if make test >/tmp/test.log 2>&1; then
+	echo 'RESULT test: 通った'
+else
+	echo 'RESULT test: 落ちた'
+fi
+grep -E '^(FAIL|ERROR):' /tmp/test.log | sort -u
+grep -E '^# (TOTAL|PASS|SKIP|XFAIL|FAIL|XPASS|ERROR):' /tmp/test.log
+echo '--- lens のテスト ---'
+grep -E '(PASS|FAIL): lens-(simplevars|shellvars)' /tmp/test.log | sort -u
+
+echo "=== 入れて augtool が lens を見つけるか ==="
+make install >/tmp/install.log 2>&1 || { echo '!! install に失敗'; tail -20 /tmp/install.log; }
+echo "  入った lens: $(ls /usr/pkg/share/augeas/lenses/dist/*.aug 2>/dev/null | wc -l) 本"
+/usr/pkg/bin/augtool print /files/etc/hosts 2>&1 | head -5 | sed 's/^/  /'
+echo "  man の /usr/share/augeas: $(cat /usr/pkg/share/man/man1/aug*.1 2>/dev/null | grep -c '/usr/share/augeas')"
+echo "  man の /usr/pkg/share/augeas: $(cat /usr/pkg/share/man/man1/aug*.1 2>/dev/null | grep -c '/usr/pkg/share/augeas')"
+GUEST
