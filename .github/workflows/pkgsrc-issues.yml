@@ -41,7 +41,7 @@ on:
       target:
         description: 'どれを回すか'
         type: choice
-        options: [all, freebsd, openbsd, musl, hpux, fix130, fix165]
+        options: [all, freebsd, openbsd, musl, hpux, fix130, fix165, fix178]
         default: all
       pkgsrc:
         description: 'pkgsrc の配布物 (current か stable)'
@@ -590,3 +590,53 @@ jobs:
           fi
           echo '##### 3. _LARGEFILE64_SOURCE では #####'
           g++ -D_LARGEFILE64_SOURCE -c seek.cpp -o seek.o 2>/dev/null && echo "  _LARGEFILE64_SOURCE 付き: 通る" || echo "  _LARGEFILE64_SOURCE 付き: 落ちる"
+
+  # ------------------------------------------------------------------
+  # #178  lang/gnucobol の CBL_OC_DUMP が macOS で .dylib になり PLIST と食い違う
+  # ------------------------------------------------------------------
+  #
+  # PLIST は lib/gnucobol/CBL_OC_DUMP.so を期待するが、macOS では libtool が
+  # このローダブルモジュールを .dylib で作るため、pkg_create が
+  #
+  #   Files in the PLIST but not in .../CBL_OC_DUMP.so
+  #   Files in ... but not in the PLIST: .../CBL_OC_DUMP.dylib
+  #
+  # で止まる。macOS でしか起きないので、GitHub の macOS runner で pkgsrc を
+  # bootstrap して gnucobol を建て、症状を採る。
+  fix178:
+    if: inputs.target == 'all' || inputs.target == 'fix178'
+    runs-on: macos-latest
+    timeout-minutes: 180
+    steps:
+      - name: pkgsrc を bootstrap して gnucobol を建てる
+        run: |
+          set -x
+          sw_vers; uname -m
+          W="$RUNNER_TEMP/pkgsrc-work"; mkdir -p "$W"; cd "$W"
+          echo '##### pkgsrc を取る #####'
+          curl -fsSL -o pkgsrc.tar.gz https://cdn.NetBSD.org/pub/pkgsrc/current/pkgsrc.tar.gz
+          tar xzf pkgsrc.tar.gz
+
+          echo '##### 非特権 bootstrap #####'
+          cd pkgsrc/bootstrap
+          ./bootstrap --unprivileged --prefix "$W/pkg" --workdir "$W/bs" >"$W/bootstrap.log" 2>&1 || {
+            echo '!! bootstrap 失敗'; tail -30 "$W/bootstrap.log"; exit 1; }
+          BM="$W/pkg/bin/bmake"
+          "$BM" --version >/dev/null 2>&1 || { echo '!! bmake 無し'; exit 1; }
+          echo "bmake ok"
+
+          echo '##### gnucobol を package まで建てる #####'
+          cd "$W/pkgsrc/lang/gnucobol"
+          # PLIST チェックで止まる想定。ログを採る。
+          if "$BM" package >"$W/gnucobol.log" 2>&1; then
+            echo 'RESULT #178: gnucobol は通ってしまった (症状再現せず)'
+          else
+            echo 'RESULT #178: gnucobol が止まった'
+          fi
+
+          echo '##### CBL_OC_DUMP が .so か .dylib か #####'
+          find "$W/pkgsrc/lang/gnucobol/work" -name 'CBL_OC_DUMP.*' 2>/dev/null
+          echo '##### PLIST の食い違い (#178 の症状) #####'
+          grep -nE "CBL_OC_DUMP|Files in the PLIST but not|but not in the PLIST|\.dylib|\.so" "$W/gnucobol.log" | tail -25
+          echo '##### PLIST が何を期待しているか #####'
+          grep -n "CBL_OC_DUMP" "$W/pkgsrc/lang/gnucobol/PLIST"
