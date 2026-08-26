@@ -184,10 +184,31 @@ echo
 echo "##### 5. 実際に打てるか #####"
 # helper の protocol を直に叩く。n i h o n g o を送って preedit を見る。
 # emacs を介さないぶん、出力がそのまま引用できる。
+#
+# root では測れない。mozc は base/run_level.cc:268 の
+#
+#	if (::geteuid() == 0) { ... return RunLevel::DENY; }
+#
+# で root を拒む。root のまま試すと server が入っていても
+#
+#	((error . session-error)(message . "Session failed"))
+#
+# になり、server が無いときとまったく同じ見え方になる。VM の中は root なので
+# 一般ユーザを作ってそちらで測る。両方出して、区別がつかないことも示す。
+id mozctest >/dev/null 2>&1 || useradd -m -s /bin/sh mozctest
+cat > /tmp/conv.sh <<'EOS'
 printf '(1 CreateSession)\n(2 SendKey 1 110)\n(3 SendKey 1 105)\n(4 SendKey 1 104)\n(5 SendKey 1 111)\n(6 SendKey 1 110)\n(7 SendKey 1 103)\n(8 SendKey 1 111)\n' \
-	| /usr/pkg/bin/mozc_emacs_helper > /tmp/conv.out 2>&1 || true
-echo "--- helper の応答 (末尾) ---"
-tail -2 /tmp/conv.out | sed 's/^/  /'
+	| /usr/pkg/bin/mozc_emacs_helper
+EOS
+chmod 755 /tmp/conv.sh
+
+echo "--- 参考: root で叩くと (RunLevel::DENY で拒まれる) ---"
+sh /tmp/conv.sh > /tmp/conv-root.out 2>&1 || true
+tail -2 /tmp/conv-root.out | sed 's/^/  /'
+
+echo "--- 一般ユーザで叩く ---"
+su - mozctest -c 'sh /tmp/conv.sh' > /tmp/conv.out 2>&1 || true
+tail -3 /tmp/conv.out | sed 's/^/  /'
 if grep -q 'にほんご' /tmp/conv.out; then
 	echo 'RESULT 変換: にほんご が出た'
 else
