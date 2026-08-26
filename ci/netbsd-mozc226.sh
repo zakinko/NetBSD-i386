@@ -72,12 +72,38 @@ sysctl -n hw.ncpu
 df -h / /usr | sed 's/^/  /'
 
 echo "=== pkgsrc を用意する ==="
+# cdn の current/pkgsrc.tar.gz ではなく GitHub の mirror の trunk を使う。
+# cdn の tarball は数日遅れる。editors/emacs31-nox11 が入ったのは
+# 2026-08-25 で、2026-08-22 版の tarball にはまだ無く、EMACS_TYPE を
+# emacs31nox にすると _EMACS_PKGDIR_MAP が空に解決されて
+#   make: editors/emacs/modules.mk:299: Cannot open /version.mk
+# で全部落ちる。emacs31 を登録しているのは modules.mk の rev 1.40
+# (2026-08-25) である。三つの job で違う木を使うと比べられなくなるので、
+# 三つとも mirror に揃える。
+#
+# mirror は変換されたものなので pkgsrc の正ではない (正は CVS)。ここは
+# 建てるためだけに使う。送る diff は CVS から取ること。
 if [ ! -d /usr/pkgsrc/mk ]; then
-	ftp -o /tmp/pkgsrc.tar.gz http://cdn.netbsd.org/pub/pkgsrc/current/pkgsrc.tar.gz
+	ftp -o /tmp/pkgsrc.tar.gz \
+		https://codeload.github.com/NetBSD/pkgsrc/tar.gz/refs/heads/trunk
 	tar xzf /tmp/pkgsrc.tar.gz -C /usr
 	rm -f /tmp/pkgsrc.tar.gz
+	# codeload の tarball は pkgsrc-trunk/ に展開される。/usr/pkgsrc が
+	# 空で先に在ることがあるので、消してから移す。中身があるなら触らない。
+	rmdir /usr/pkgsrc 2>/dev/null || true
+	if [ -d /usr/pkgsrc-trunk ]; then mv /usr/pkgsrc-trunk /usr/pkgsrc; fi
 fi
+[ -d /usr/pkgsrc/mk ] || { echo "!! /usr/pkgsrc/mk が無い"; ls /usr | head; exit 1; }
 echo "  mozc-elisp226 の版: $(grep -m1 '\$NetBSD' /usr/pkgsrc/inputmethod/mozc-elisp226/Makefile)"
+echo "  modules.mk の版:    $(grep -m1 '\$NetBSD' /usr/pkgsrc/editors/emacs/modules.mk)"
+
+# EMACS_TYPE が木に無いと、落ちるのは modules.mk の奥で、出るのは
+# Cannot open /version.mk という読めない文になる。先に見て止める。
+if ! grep -q "${ETYPE}@" /usr/pkgsrc/editors/emacs/modules.mk; then
+	echo "!! この pkgsrc に EMACS_TYPE=$ETYPE が無い"
+	sed -n '/^_EMACS_VERSIONS_ALL=/,/^$/p' /usr/pkgsrc/editors/emacs/modules.mk
+	exit 1
+fi
 
 echo "=== overlay を被せる ==="
 cd /tmp
