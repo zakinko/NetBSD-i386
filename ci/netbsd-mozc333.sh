@@ -133,8 +133,24 @@ echo "##### 1. gyp の configure が通るか #####"
 cd /usr/pkgsrc/zakinko/mozc-server333
 V=$(make show-var VARNAME=PKGNAME 2>/dev/null)
 [ -n "$V" ] || { echo "!! PKGNAME が取れない。ここで止める"; exit 1; }
-echo "  PKGNAME = $V"
-echo "  OSDEST  = [$(make show-var VARNAME=OSDEST 2>/dev/null)]"
+echo "  PKGNAME     = $V"
+echo "  PKG_OPTIONS = [$(make show-var VARNAME=PKG_OPTIONS 2>/dev/null)]"
+echo "  OSDEST      = [$(make show-var VARNAME=OSDEST 2>/dev/null)]"
+
+# options.mk が LP32PLATFORMS を見て gyp を既定にする。i386 でそれが効いて
+# いなければ bazel を建てにいってしまい、devel/bazel は 32bit で建たないので
+# 何時間か走った末に落ちる。先に見て止める。
+case $(uname -p) in
+i386)
+	case "$(make show-var VARNAME=PKG_OPTIONS 2>/dev/null)" in
+	*gyp*)	echo "  (i386 で gyp が既定になっている)" ;;
+	*)	echo "!! i386 なのに gyp が既定になっていない"
+		echo "   LP32PLATFORMS = $(make show-var VARNAME=LP32PLATFORMS 2>/dev/null)"
+		echo "   MACHINE_PLATFORM = $(make show-var VARNAME=MACHINE_PLATFORM 2>/dev/null)"
+		exit 1 ;;
+	esac
+	;;
+esac
 if make configure >/tmp/conf.log 2>&1; then
 	echo 'RESULT configure: 通った'
 else
