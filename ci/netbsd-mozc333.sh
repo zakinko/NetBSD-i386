@@ -200,17 +200,41 @@ grep -ciE 'gtk|qt6-qtbase|/usr/X11R7' /tmp/elisp.log
 echo
 echo "##### 4. 実際に打てるか #####"
 # helper の protocol を直に叩く。n i h o n g o を送って preedit を見る。
+#
+# root では測れない。mozc は base/run_level.cc:268 の
+#
+#	if (::geteuid() == 0) { ... return RunLevel::DENY; }
+#
+# で root を拒む。root のまま試すと server が入っていても
+#
+#	((error . session-error)(message . "Session failed"))
+#
+# になり、server が無いときとまったく同じ見え方になる。VM の中は root なので
+# 一般ユーザを作ってそちらで測る。両方出して、区別がつかないことも示す。
+# (ci/netbsd-mozc226.sh が先に踏んだ。同じ道を二度通らないために書いておく。)
+id mozctest >/dev/null 2>&1 || useradd -m -s /bin/sh mozctest
+cat > /tmp/conv.sh <<'EOS'
 printf '(1 CreateSession)\n(2 SendKey 1 110)\n(3 SendKey 1 105)\n(4 SendKey 1 104)\n(5 SendKey 1 111)\n(6 SendKey 1 110)\n(7 SendKey 1 103)\n(8 SendKey 1 111)\n' \
-	| /usr/pkg/bin/mozc_emacs_helper > /tmp/conv.out 2>&1 || true
-echo "--- helper の応答 (末尾) ---"
-tail -2 /tmp/conv.out | sed 's/^/  /'
-if grep -q '日本語' /tmp/conv.out; then
-	echo 'RESULT 変換: 通った'
+	| /usr/pkg/bin/mozc_emacs_helper
+EOS
+chmod 755 /tmp/conv.sh
+
+echo "--- 参考: root で叩くと (RunLevel::DENY で拒まれる) ---"
+sh /tmp/conv.sh > /tmp/conv-root.out 2>&1 || true
+tail -2 /tmp/conv-root.out | sed 's/^/  /'
+
+echo "--- 一般ユーザで叩く ---"
+su - mozctest -c 'sh /tmp/conv.sh' > /tmp/conv.out 2>&1 || true
+tail -3 /tmp/conv.out | sed 's/^/  /'
+if grep -q 'にほんご' /tmp/conv.out; then
+	echo 'RESULT 変換: にほんご が出た'
 else
-	echo 'RESULT 変換: 落ちた'
+	echo 'RESULT 変換: にほんご が出ない'
 	cat /tmp/conv.out | sed 's/^/  /'
 	echo "--- helper の log ---"
-	cat ~/.config/mozc/mozc_emacs_helper.log 2>/dev/null | tail -20 | sed 's/^/  /'
+	cat /home/mozctest/.config/mozc/mozc_emacs_helper.log 2>/dev/null | tail -20 | sed 's/^/  /'
 	exit 1
 fi
+echo "--- 変換候補に 日本語 があるか ---"
+if grep -q '日本語' /tmp/conv.out; then echo '  ある'; else echo '  ない'; fi
 GUEST
