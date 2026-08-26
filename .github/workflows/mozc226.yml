@@ -1,0 +1,75 @@
+name: mozc226
+
+# inputmethod/mozc-elisp226 の直しを NetBSD/amd64 で測る。
+#
+# 手元 (techne) では測れない。emacs は bin/ctags などが衝突して複数版を
+# 同時に入れられず、mozc-server も 2.26 と 2.29 が PKGBASE を共有していて
+# 同居できない。一つの箱で三版を測るには入れ替えを繰り返すことになり、
+# 同じ箱で動いている他の作業を巻き込む。job ごとに別の VM なら消える話。
+#
+# 測るのは四つ。
+#
+#   1. 上流の mozc-elisp226 が GTK2 と Qt5 を実行時依存に持つこと
+#   2. 直したものはそれを持たず、代わりに mozc-server226 を持つこと
+#   3. MOZC_NO_GUI を書かない他の四つが何も変わらないこと
+#      (make show-all を突き合わせて 0 行差)
+#   4. 実際に日本語が打てること
+#
+# 手で起動する。押すまで何もしない。qemu で NetBSD を起動して mozc を
+# 二回組むので、一 job あたり数時間かかる。
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: 'どのイメージで回すか'
+        type: choice
+        options: [amd64-11.0, amd64-10.1, i386-11.0]
+        default: amd64-11.0
+      emacs:
+        description: 'どの emacs で測るか (all は三版を並行)'
+        type: choice
+        options: [all, emacs29nox, emacs30nox, emacs31nox]
+        default: all
+
+# 押し直したら前のは捨てる。VM を三つ抱えたまま二周させない。
+concurrency:
+  group: mozc226-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mozc226:
+    runs-on: ubuntu-latest
+    # mozc_server と mozc_emacs_helper で protobuf と abseil を二回組む。
+    # techne (実機 3 core) で一本 30 分だったので、qemu では数倍を見る。
+    timeout-minutes: 350
+    strategy:
+      # 一つの版で落ちても他の版の結果は見たい。emacs の版ごとの違いを
+      # 見るのが目的なので、途中で止めると何も分からなくなる。
+      fail-fast: false
+      matrix:
+        emacs: ${{ inputs.emacs == 'all' && fromJSON('["emacs29nox","emacs30nox","emacs31nox"]') || fromJSON(format('["{0}"]', inputs.emacs)) }}
+    name: ${{ inputs.image }} ${{ matrix.emacs }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: qemu を入れて KVM を通す
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-x86 qemu-utils netcat-openbsd
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+          [ -w /dev/kvm ] && echo "KVM あり" || echo "::warning::KVM 無し。相当遅い"
+
+      - name: 空きを作る
+        run: |
+          # mozc は distfile と work で数 GB 使う。runner の / は狭いので
+          # 使わないものを先に落としておく。
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+          df -h /
+
+      - name: ${{ inputs.image }} で ${{ matrix.emacs }} を測る
+        run: sh ci/netbsd-mozc226.sh '${{ inputs.image }}' '${{ matrix.emacs }}'
