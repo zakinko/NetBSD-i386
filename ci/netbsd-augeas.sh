@@ -101,7 +101,17 @@ echo '--- lens のテスト ---'
 grep -E '(PASS|FAIL): lens-(simplevars|shellvars)' /tmp/test.log | sort -u
 
 echo "=== 入れて augtool が lens を見つけるか ==="
-make install >/tmp/install.log 2>&1 || { echo '!! install に失敗'; tail -20 /tmp/install.log; }
+if make install >/tmp/install.log 2>&1; then
+	echo 'RESULT install: 通った'
+else
+	echo '!! install に失敗'
+	# PLIST の食い違いは「書いてあるのに入っていない」のか「入っている
+	# のに書いていない」のかで直し方が逆になる。見出しごと出す。
+	grep -nE 'PLIST|check-files|Files? (in|missing)|ERROR|WARNING' /tmp/install.log \
+	  | head -40
+	echo '--- install.log の末尾 60 行 ---'
+	tail -60 /tmp/install.log
+fi
 echo "  入った lens: $(ls /usr/pkg/share/augeas/lenses/dist/*.aug 2>/dev/null | wc -l) 本"
 /usr/pkg/bin/augtool print /files/etc/hosts 2>&1 | head -5 | sed 's/^/  /'
 echo "  man の /usr/share/augeas: $(cat /usr/pkg/share/man/man1/aug*.1 2>/dev/null | grep -c '/usr/share/augeas')"
