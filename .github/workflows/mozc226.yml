@@ -34,7 +34,9 @@ on:
 
 # 押し直したら前のは捨てる。VM を三つ抱えたまま二周させない。
 concurrency:
-  group: mozc226-${{ github.ref }}
+  # image と emacs まで含める。含めないと amd64 を回した瞬間に i386 が
+  # 打ち消される。押し直しで古いものを捨てたいのは同じ組み合わせのときだけ。
+  group: mozc226-${{ github.ref }}-${{ inputs.image }}-${{ inputs.emacs }}
   cancel-in-progress: true
 
 jobs:
