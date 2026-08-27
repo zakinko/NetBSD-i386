@@ -126,6 +126,35 @@ else
 fi
 echo "  入った lens: $(ls /usr/pkg/share/augeas/lenses/dist/*.aug 2>/dev/null | wc -l) 本"
 /usr/pkg/bin/augtool print /files/etc/hosts 2>&1 | head -5 | sed 's/^/  /'
-echo "  man の /usr/share/augeas: $(cat /usr/pkg/share/man/man1/aug*.1 2>/dev/null | grep -c '/usr/share/augeas')"
-echo "  man の /usr/pkg/share/augeas: $(cat /usr/pkg/share/man/man1/aug*.1 2>/dev/null | grep -c '/usr/pkg/share/augeas')"
+
+# man は前回どちらの数え方でも 0 だった。入っていないのか、置き場所が
+# 違うのか、数え方が誤っているのかを分けて見る。
+echo "--- man がどこに入ったか ---"
+find /usr/pkg -name 'aug*.1*' 2>/dev/null | head -6 | sed 's/^/    /'
+echo "    man1 の中身: $(ls /usr/pkg/share/man/man1 2>/dev/null | head -5 | tr '\n' ' ')"
+for f in $(find /usr/pkg -name 'augtool.1*' 2>/dev/null | head -1); do
+	echo "    $f を見る"
+	case "$f" in
+	*.gz) zcat "$f" 2>/dev/null | grep -c '/usr/share/augeas' | sed 's/^/      \/usr\/share\/augeas: /'
+	      zcat "$f" 2>/dev/null | grep -c '/usr/pkg/share/augeas' | sed 's/^/      \/usr\/pkg\/share\/augeas: /' ;;
+	*)    grep -c '/usr/share/augeas' "$f" | sed 's/^/      \/usr\/share\/augeas: /'
+	      grep -c '/usr/pkg/share/augeas' "$f" | sed 's/^/      \/usr\/pkg\/share\/augeas: /' ;;
+	esac
+done
+
+echo "=== 当て物なしの make test と比べる ==="
+# 落ちた八件が配布物自身のものか、こちらが持ち込んだものかは、素の状態の
+# 集合が無いと言えない。当て物を外して同じ木で測り直す。
+cd /usr/pkgsrc/sysutils/augeas
+make clean >/dev/null 2>&1
+rm -rf patches
+cp distinfo /tmp/distinfo.patched
+grep -v '^SHA1 (patch' /tmp/distinfo.patched > distinfo
+if make test >/tmp/test-plain.log 2>&1; then
+	echo 'RESULT test(当て物なし): 通った'
+else
+	echo 'RESULT test(当て物なし): 落ちた'
+fi
+grep -E '^(FAIL|ERROR):' /tmp/test-plain.log | sort -u
+grep -E '^# (TOTAL|PASS|SKIP|FAIL):' /tmp/test-plain.log
 GUEST
