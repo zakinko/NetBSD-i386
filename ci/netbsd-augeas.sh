@@ -75,9 +75,21 @@ tar xzf overlay.tar.gz
 cp -Rf pkgsrc-zakinko-main/augeas/. /usr/pkgsrc/sysutils/augeas/
 ls /usr/pkgsrc/sysutils/augeas/patches | sed 's/^/  /'
 
+echo "=== digest を用意する ==="
+# 素のイメージに digest は入っていない。makepatchsum はこれを呼ぶので、
+# 無いと SHA1 が書けず distinfo が空のまま通ってしまう。すると pkgsrc は
+# 当て物を無視して建て、lens が一本も入らない。build は通るので気付き
+# にくい。OpenBSD の bootstrap でも同じところを踏んだ。
+if [ ! -x /usr/pkg/bin/digest ]; then
+	( cd /usr/pkgsrc/pkgtools/digest && make install ) >/tmp/digest.log 2>&1 \
+	  || { echo '!! digest を建てられなかった'; tail -20 /tmp/digest.log; exit 1; }
+fi
+ls -l /usr/pkg/bin/digest
+
 echo "=== 当て物の SHA1 を distinfo に入れる ==="
 cd /usr/pkgsrc/sysutils/augeas
 make makepatchsum
+echo "  distinfo の patch 行: $(grep -c '^SHA1 (patch' distinfo)"
 
 echo "=== 建てる ==="
 if make >/tmp/build.log 2>&1; then
