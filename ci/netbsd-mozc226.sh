@@ -127,6 +127,21 @@ echo "  MAKE_JOBS=$J  ($(uname -m))"
 mount | grep -E ' /tmp | /var/tmp ' | sed 's/^/  /'
 # 一時ファイルは tmpfs ではなくディスクへ。
 mkdir -p /var/tmp/ccbuild && chmod 1777 /var/tmp/ccbuild
+
+# swap が無いと cc1plus が殺される。i386 は PAE 無しで物理が 3.5GB 程度に
+# 頭打ちなので、qemu に MEM を積んでも届かない。イメージの fstab に swap の
+# 行は無いので、/ の空きから作る。
+#
+#   g++: fatal error: Killed signal terminated program cc1plus
+#
+# VM は job の終わりに消えるので、外す後始末は要らない。
+echo "  物理: $(sysctl -n hw.physmem64 2>/dev/null || sysctl -n hw.physmem)"
+if [ "$(swapctl -l 2>/dev/null | grep -c /)" = "0" ]; then
+	dd if=/dev/zero of=/var/tmp/swapfile bs=1m count=4096 2>/dev/null
+	chmod 600 /var/tmp/swapfile
+	swapctl -a /var/tmp/swapfile && echo "  swap を 4G 足した"
+fi
+swapctl -l 2>/dev/null | sed 's/^/  /'
 cat >> /etc/mk.conf <<EOF
 MAKE_JOBS=	$J
 MAKE_ENV+=	TMPDIR=/var/tmp/ccbuild
