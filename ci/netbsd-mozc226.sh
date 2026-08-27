@@ -274,6 +274,23 @@ else
 	find "$MH/prof" -name '*.log' 2>/dev/null | while read f; do
 		echo "  == $f"; tail -20 "$f" | sed 's/^/    /'
 	done
+	# 226 は MOZC_NO_LOGGING で建つので log は出ない。core の有無で
+	# 「起動して落ちた」と「そもそも起動していない」を分ける。
+	echo "  --- core ---"
+	found=no
+	for c in "$MH"/*core* /*core* /var/tmp/*core*; do
+		[ -f "$c" ] || continue
+		found=yes
+		ls -l "$c" | sed 's/^/    /'
+		# INSTALL_PROGRAM は -s で入れるので、bt は work の未 strip を使う。
+		B=$(find /usr/pkgsrc/zakinko/mozc-server226/work \
+			/usr/pkgsrc/inputmethod/mozc-server226/work \
+			-name mozc_server -type f -path '*out_bsd/Release*' 2>/dev/null | head -1)
+		[ -n "$B" ] || B=/usr/pkg/libexec/mozc_server
+		echo "    (bt は $B から)"
+		gdb -batch -ex 'set pagination off' -ex bt "$B" "$c" 2>&1 | head -20 | sed 's/^/    /'
+	done
+	[ "$found" = yes ] || echo "    core は無い = server が起動していない"
 fi
 echo "--- 変換候補に 日本語 があるか ---"
 if grep -q '日本語' /tmp/conv.out; then echo '  ある'; else echo '  ない'; fi
