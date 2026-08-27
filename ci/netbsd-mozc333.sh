@@ -330,6 +330,15 @@ else
 	ls -a /tmp | grep -E '^\.mozc\.' | sed 's/^/  /' || echo "  (無い)"
 	echo "--- core ---"
 	ls -l /*core* /home/mozctest/*core* /usr/pkg/libexec/*core* 2>/dev/null | sed 's/^/  /' || echo "  (無い)"
+	# core があるなら中身を見る。mozc は MOZC_NO_LOGGING で建っているので log は
+	# 出ないが、bt はどこで落ちたかを一行で教えてくれる。VM は job が終わると
+	# 消えるので、その場で取っておかないと後から見られない。
+	for c in /home/mozctest/mozc_server.core /home/mozctest/*.core; do
+		[ -f "$c" ] || continue
+		echo "--- bt ($c) ---"
+		gdb -batch -ex bt /usr/pkg/libexec/mozc_server "$c" 2>&1 | head -30 | sed 's/^/  /'
+		break
+	done
 	echo "--- helper の log ---"
 	find /home/mozctest -name 'mozc_emacs_helper.log' 2>/dev/null | \
 		xargs -r tail -20 2>/dev/null | sed 's/^/  /'
