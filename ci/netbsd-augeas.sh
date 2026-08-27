@@ -59,16 +59,20 @@ df -h / /usr | sed 's/^/  /'
 
 echo "=== pkgsrc を用意する ==="
 if [ ! -d /usr/pkgsrc/mk ]; then
-	ftp -o /tmp/pkgsrc.tar.gz http://cdn.netbsd.org/pub/pkgsrc/current/pkgsrc.tar.gz
+	# ゲストに IPv6 の経路が無いのに ftp(1) が AAAA を掴んで
+	# "No route to host" になる。-4 で塞ぐ。
+	ftp -4 -o /tmp/pkgsrc.tar.gz http://cdn.netbsd.org/pub/pkgsrc/current/pkgsrc.tar.gz
 	tar xzf /tmp/pkgsrc.tar.gz -C /usr
 	rm -f /tmp/pkgsrc.tar.gz
 fi
 
 echo "=== overlay を被せる ==="
 cd /tmp
-ftp -o overlay.tar.gz "$OVERLAY"
+ftp -4 -o overlay.tar.gz "$OVERLAY"
 tar xzf overlay.tar.gz
-cp -Rf pkgsrc-zakinko-main/overlay/sysutils/augeas/. /usr/pkgsrc/sysutils/augeas/
+# pkgsrc-zakinko の構成が変わり、当て物は repo 直下の augeas/ にある。
+# 以前は overlay/sysutils/augeas/ だった。
+cp -Rf pkgsrc-zakinko-main/augeas/. /usr/pkgsrc/sysutils/augeas/
 ls /usr/pkgsrc/sysutils/augeas/patches | sed 's/^/  /'
 
 echo "=== 当て物の SHA1 を distinfo に入れる ==="
