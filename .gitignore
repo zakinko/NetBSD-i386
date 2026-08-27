@@ -8,3 +8,5 @@ notes.md
 .DS_Store
 vm10
 vm-amd64
+vm-riscv64
+vm-sparc64
