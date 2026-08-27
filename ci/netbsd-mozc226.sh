@@ -123,8 +123,19 @@ DEPENDS_TARGET=	package-install
 FETCH_TIMEOUT=	60
 PKG_DEVELOPER=	no
 EMACS_TYPE=	$ETYPE
+# distfile は NetBSD の CDN からだけ取る。上流の配布元に直接行くと、
+# 届かない先が混ざって落ちる。実際 emacs30nox の回はここで死んだ。
+#
+#	=> Fetching cmake-4.4.3.tar.gz
+#	ftp: Can't connect to \`66.194.253.25:443': Connection refused
+#	ftp: Can't connect to \`2a04:4e42:94::262:443': No route to host
+#
+# ninja-build -> re2c -> cmake の連鎖で cmake.org に行こうとしたもので、
+# 建てているものとは関係がない。CDN は pkgsrc が配る distfile を一通り
+# 持っているので、そこに寄せる。
+MASTER_SITE_OVERRIDE=	https://cdn.NetBSD.org/pub/pkgsrc/distfiles/
 EOF
-tail -8 /etc/mk.conf | sed 's/^/  /'
+tail -12 /etc/mk.conf | sed 's/^/  /'
 
 echo
 echo "##### 1. 上流の mozc-elisp226 は何を引くか #####"
