@@ -249,6 +249,16 @@ fi
 echo "--- 変換候補に 日本語 があるか ---"
 if grep -q '日本語' /tmp/conv.out; then echo '  ある'; else echo '  ない'; fi
 
+# socket の名前。NetBSD の sockaddr_un は sun_family の手前に 1 バイトの
+# sun_len を持つので、sizeof(sun_family) では offsetof に 1 足りず、path の
+# 末尾が落ちて .session が .sessio になっていた。直っていれば .session。
+echo "--- socket の名前 ---"
+ls -a /tmp | grep '^\.mozc\.' | sed 's/^/  /' || echo "  (無い)"
+n_ok=$(ls -a /tmp | grep -c '\.session$' || true)
+n_ng=$(ls -a /tmp | grep -c '\.sessio$' || true)
+echo "  .session で終わるもの: $n_ok"
+echo "  .sessio  で終わるもの: $n_ng   (0 でなければ当て物が効いていない)"
+
 echo
 echo "##### 6. Emacs から見えるか #####"
 # mozc.elc が入っていること、(require 'mozc) で japanese-mozc が
