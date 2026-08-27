@@ -356,7 +356,7 @@ jobs:
             # diff -B を外すのは比較を厳しくする方向なので、差を隠して
             # 通したことにはならない。
             ftp -o /tmp/testfix.patch \
-              https://github.com/zakinko/augeas/commit/ed4e497c0701f4587d24e591b2794de55415ba52.patch
+              https://github.com/zakinko/augeas/commit/92e08c5f022a48ba478df093c4aba44cb24373d9.patch
             patch -p1 < /tmp/testfix.patch
             echo '--- 当てたあと ---'
             head -1 tests/test-augprint.sh tests/test-createfile.sh tests/test-augtool.sh
