@@ -196,24 +196,44 @@ echo "##### 5. 実際に打てるか #####"
 # になり、server が無いときとまったく同じ見え方になる。VM の中は root なので
 # 一般ユーザを作ってそちらで測る。両方出して、区別がつかないことも示す。
 id mozctest >/dev/null 2>&1 || useradd -m -s /bin/sh mozctest
-cat > /tmp/conv.sh <<'EOS'
-printf '(1 CreateSession)\n(2 SendKey 1 110)\n(3 SendKey 1 105)\n(4 SendKey 1 104)\n(5 SendKey 1 111)\n(6 SendKey 1 110)\n(7 SendKey 1 103)\n(8 SendKey 1 111)\n' \
-	| /usr/pkg/bin/mozc_emacs_helper
-EOS
-chmod 755 /tmp/conv.sh
+MH=$(getent passwd mozctest 2>/dev/null | cut -d: -f6)
+[ -n "$MH" ] || MH=/home/mozctest
+mkdir -p "$MH/prof"
+chown -R mozctest "$MH"
+echo "  mozctest の home: $MH  ($(ls -ld "$MH" | awk '{print $1, $3}'))"
+
+# 鍵の並びはファイルに置く。server は daemon 化して stdout を握るので、
+# printf からの pipe ではなくファイルを stdin にする。
+cat > /tmp/keys.txt <<'EOT'
+(1 CreateSession)
+(2 SendKey 1 110)
+(3 SendKey 1 105)
+(4 SendKey 1 104)
+(5 SendKey 1 111)
+(6 SendKey 1 110)
+(7 SendKey 1 103)
+(8 SendKey 1 111)
+EOT
+chmod 644 /tmp/keys.txt
 
 echo "--- 参考: root で叩くと (RunLevel::DENY で拒まれる) ---"
-sh /tmp/conv.sh > /tmp/conv-root.out 2>&1 || true
-tail -2 /tmp/conv-root.out | sed 's/^/  /'
+timeout 60 /usr/pkg/bin/mozc_emacs_helper < /tmp/keys.txt > /tmp/conv-root.out 2>&1 || true
+tail -1 /tmp/conv-root.out | cut -c1-120 | sed 's/^/  /'
 
 echo "--- 一般ユーザで叩く ---"
-su - mozctest -c 'sh /tmp/conv.sh' > /tmp/conv.out 2>&1 || true
-tail -3 /tmp/conv.out | sed 's/^/  /'
+su - mozctest -c "env XDG_CONFIG_HOME=$MH/prof timeout 60 /usr/pkg/bin/mozc_emacs_helper < /tmp/keys.txt" \
+	> /tmp/conv.out 2>&1 || true
+head -2 /tmp/conv.out | cut -c1-120 | sed 's/^/  /'
 if grep -q 'にほんご' /tmp/conv.out; then
 	echo 'RESULT 変換: にほんご が出た'
+	grep -o '(value . "[^"]*")' /tmp/conv.out | tail -4 | sed 's/^/  /'
 else
 	echo 'RESULT 変換: にほんご が出ない'
-	cat /tmp/conv.out | sed 's/^/  /'
+	cut -c1-160 /tmp/conv.out | sed 's/^/  /'
+	echo "  --- mozc の log ---"
+	find "$MH/prof" -name '*.log' 2>/dev/null | while read f; do
+		echo "  == $f"; tail -20 "$f" | sed 's/^/    /'
+	done
 fi
 echo "--- 変換候補に 日本語 があるか ---"
 if grep -q '日本語' /tmp/conv.out; then echo '  ある'; else echo '  ない'; fi
