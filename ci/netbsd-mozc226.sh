@@ -115,8 +115,22 @@ ls -d /usr/pkgsrc/zakinko/mozc-server226 /usr/pkgsrc/zakinko/mozc-elisp226
 
 echo "=== mk.conf ==="
 J=$(sysctl -n hw.ncpu)
+# i386 の VM で devel/cmake を建てている途中に溢れた。
+#   g++: fatal error: Killed signal terminated program cc1plus
+#   fatal error: error writing to /tmp//cc5QZPPb.s: No space left on device
+# / は 11G 中 9.0G 空いていたので、溢れたのは tmpfs の /tmp である。32bit は
+# 一プロセスあたりの上限も低いので、並列度も落とす。
+case $(uname -m) in
+i386|earm*)	J=2 ;;
+esac
+echo "  MAKE_JOBS=$J  ($(uname -m))"
+mount | grep -E ' /tmp | /var/tmp ' | sed 's/^/  /'
+# 一時ファイルは tmpfs ではなくディスクへ。
+mkdir -p /var/tmp/ccbuild && chmod 1777 /var/tmp/ccbuild
 cat >> /etc/mk.conf <<EOF
 MAKE_JOBS=	$J
+MAKE_ENV+=	TMPDIR=/var/tmp/ccbuild
+CONFIGURE_ENV+=	TMPDIR=/var/tmp/ccbuild
 BATCH=		yes
 ALLOW_VULNERABLE_PACKAGES=	yes
 DEPENDS_TARGET=	package-install
