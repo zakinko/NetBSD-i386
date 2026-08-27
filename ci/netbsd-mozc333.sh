@@ -84,6 +84,10 @@ df -h / /usr | sed 's/^/  /'
 # 数時間後の見当違いな場所になる。先に見て止める。
 AVAIL=$(df -k / | awk 'NR==2 {print int($4/1024)}')
 echo "  / の空き: ${AVAIL}MB"
+# 素の NetBSD で procfs が mount されるか。mozc の IPC は
+# ipc_path_manager.cc が /proc/<pid>/exe を読む当て物を持っているので、
+# 無ければ照合が失敗する側に倒れる。
+echo "  procfs: $(mount | grep -c procfs) 個 mount / fstab に $(grep -c proc /etc/fstab 2>/dev/null || echo 0) 行"
 if [ "$AVAIL" -lt 4000 ]; then
 	echo "!! / の空きが ${AVAIL}MB しかない。4000MB は要る"
 	exit 1
@@ -133,15 +137,17 @@ echo "=== 道具を binary package で入れる ==="
 # i386 の binary set に道具は全部在るので、先に入れて pkgsrc には
 # 「found」と言わせる。mozc 本体はソースから建てるので、測るものは変わらない。
 REL=$(uname -r | sed 's/_.*//')
-PKG_PATH=https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$(uname -p)/$REL/All
-export PKG_PATH
-echo "  PKG_PATH=$PKG_PATH"
+BINPKG=https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$(uname -p)/$REL/All
+echo "  $BINPKG"
 # EMACS_TYPE (emacs30nox) から package 名 (emacs30-nox11) を作る
 EPKG=$(echo "$ETYPE" | sed -e 's/nox$/-nox11/')
+# PKG_PATH は pkg_add に渡すときだけ立てる。export したまま make を走らせると
+# bsd.pkg.mk が「Please unset PKG_PATH before doing pkgsrc work!」で止める。
 for p in ninja-build py313-gyp py313-six "$EPKG"; do
-	if pkg_add -U "$p" 2>&1 | grep -vE '^$' | head -2 | sed "s/^/    $p: /"; then :; fi
+	env PKG_PATH="$BINPKG" pkg_add -U "$p" 2>&1 | grep -vE '^$' | head -2 | sed "s/^/    $p: /"
 	pkg_info -e "$p" >/dev/null 2>&1 || { echo "!! $p を binary で入れられなかった"; exit 1; }
 done
+unset PKG_PATH
 pkg_info | egrep -i 'ninja|gyp|six|emacs' | sed 's/^/  /'
 df -h / | sed 's/^/  /'
 
