@@ -286,19 +286,21 @@ cat > /tmp/mib.c <<'EOT'
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
-int main(void) {
-  pid_t pid = getpid();
+#include <stdlib.h>
+int main(int argc, char **argv) {
+  pid_t pid = (argc > 1) ? (pid_t)atoi(argv[1]) : getpid();
   size_t len; int rc;
   int n4p[] = { CTL_KERN, KERN_PROC_ARGS, (int)pid, KERN_PROC_PATHNAME };
   char buf[1024]; len = sizeof(buf);
   rc = sysctl(n4p, 4, buf, &len, NULL, 0);
-  printf("KERN_PROC_PATHNAME rc=%d errno=%s len=%zu path=\"%s\"\n",
-         rc, rc<0?strerror(errno):"-", len, rc==0?buf:"");
+  printf("pid=%d KERN_PROC_PATHNAME rc=%d errno=%s len=%zu path=\"%s\"\n",
+         (int)pid, rc, rc<0?strerror(errno):"-", len, rc==0?buf:"");
   return 0;
 }
 EOT
 echo "--- sysctl KERN_PROC_PATHNAME はこの箱で効くか ---"
-cc -o /tmp/mib /tmp/mib.c && /tmp/mib | sed 's/^/  /'
+cc -o /tmp/mib /tmp/mib.c || echo "  mib.c が建たない"
+echo "  自分の pid で:"; /tmp/mib | sed 's/^/    /'
 
 echo "--- 参考: root で叩くと (RunLevel::DENY で拒まれる) ---"
 sh /tmp/conv.sh > /tmp/conv-root.out 2>&1 || true
@@ -312,6 +314,22 @@ if grep -q 'にほんご' /tmp/conv.out; then
 else
 	echo 'RESULT 変換: にほんご が出ない'
 	cat /tmp/conv.out | sed 's/^/  /'
+	# 見え方が同じ Session failed でも原因が違う。まずここで分ける。
+	#   server が生きている + socket がある → 照合で拒まれた
+	#   server が居ない + socket も無い     → 起動できずに死んだ
+	#   server が居ない + core がある       → i386 で落ちている (当て物と無関係)
+	echo "--- server は生きているか ---"
+	if pgrep -lf 'libexec/mozc_server' 2>/dev/null | sed 's/^/  /'; then
+		spid=$(pgrep -f 'libexec/mozc_server' | head -1)
+		echo "  その pid で sysctl を引けるか (helper がやること):"
+		/tmp/mib "$spid" 2>/dev/null | sed 's/^/    /'
+	else
+		echo "  server は生きていない"
+	fi
+	echo "--- socket ---"
+	ls -a /tmp | grep -E '^\.mozc\.' | sed 's/^/  /' || echo "  (無い)"
+	echo "--- core ---"
+	ls -l /*core* /home/mozctest/*core* /usr/pkg/libexec/*core* 2>/dev/null | sed 's/^/  /' || echo "  (無い)"
 	echo "--- helper の log ---"
 	find /home/mozctest -name 'mozc_emacs_helper.log' 2>/dev/null | \
 		xargs -r tail -20 2>/dev/null | sed 's/^/  /'
