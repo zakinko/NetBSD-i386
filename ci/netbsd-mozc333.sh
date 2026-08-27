@@ -84,6 +84,21 @@ df -h / /usr | sed 's/^/  /'
 # 数時間後の見当違いな場所になる。先に見て止める。
 AVAIL=$(df -k / | awk 'NR==2 {print int($4/1024)}')
 echo "  / の空き: ${AVAIL}MB"
+# この image には swap が無い (/dev/dk0 の一区画だけ)。mozc は protobuf と
+# abseil を丸ごと組むので、3GB の箱で cc1plus が並ぶと OOM で殺される。
+#
+#	c++: fatal error: Killed signal terminated program cc1plus
+#
+# ディスクは 9GB 空いているので、ファイル swap を足しておく。並列度も
+# MAKE_JOBS で絞るが、片方だけでは足りないことがある。
+if [ "$(swapctl -l 2>/dev/null | grep -c /)" = "0" ]; then
+	echo "  swap が無いので 4GB 足す"
+	dd if=/dev/zero of=/swap bs=1m count=4096 2>/dev/null
+	chmod 600 /swap
+	swapctl -a /swap
+fi
+swapctl -l 2>/dev/null | sed 's/^/  /'
+
 # 素の NetBSD で procfs が mount されるか。mozc の IPC は
 # ipc_path_manager.cc が /proc/<pid>/exe を読む当て物を持っているので、
 # 無ければ照合が失敗する側に倒れる。
@@ -152,7 +167,10 @@ pkg_info | egrep -i 'ninja|gyp|six|emacs' | sed 's/^/  /'
 df -h / | sed 's/^/  /'
 
 echo "=== mk.conf ==="
+# cc1plus は protobuf の descriptor.cc で 1 本あたり数百 MB 食う。CPU 数を
+# そのまま渡すと 3GB の箱では OOM になるので、2 で頭を打つ。
 J=$(sysctl -n hw.ncpu)
+[ "$J" -gt 2 ] && J=2
 cat >> /etc/mk.conf <<EOF
 MAKE_JOBS=	$J
 BATCH=		yes
