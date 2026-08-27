@@ -80,6 +80,14 @@ uname -a
 sysctl -n hw.ncpu
 sysctl -n hw.machine hw.machine_arch
 df -h / /usr | sed 's/^/  /'
+# mozc は distfile と work で数 GB 使う。足りないまま走ると、落ちるのは
+# 数時間後の見当違いな場所になる。先に見て止める。
+AVAIL=$(df -k / | awk 'NR==2 {print int($4/1024)}')
+echo "  / の空き: ${AVAIL}MB"
+if [ "$AVAIL" -lt 4000 ]; then
+	echo "!! / の空きが ${AVAIL}MB しかない。4000MB は要る"
+	exit 1
+fi
 
 echo "=== pkgsrc を用意する ==="
 # cdn の current/pkgsrc.tar.gz は数日遅れる。GitHub の mirror の trunk を
@@ -114,6 +122,28 @@ for d in mozc-server333 mozc-elisp333; do
 	[ -d /usr/pkgsrc/zakinko/$d ] || { echo "!! overlay に $d が無い"; exit 1; }
 done
 ls -d /usr/pkgsrc/zakinko/mozc-server333 /usr/pkgsrc/zakinko/mozc-elisp333
+
+echo "=== 道具を binary package で入れる ==="
+# ソースから建てると devel/ninja-build が devel/re2c を、re2c が
+# devel/cmake を引き、cmake の bootstrap でゲストの / が溢れる。
+#
+#	fatal error: error writing to /tmp//ccTu0Mse.s: No space left on device
+#	Error when bootstrapping CMake
+#
+# i386 の binary set に道具は全部在るので、先に入れて pkgsrc には
+# 「found」と言わせる。mozc 本体はソースから建てるので、測るものは変わらない。
+REL=$(uname -r | sed 's/_.*//')
+PKG_PATH=https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$(uname -p)/$REL/All
+export PKG_PATH
+echo "  PKG_PATH=$PKG_PATH"
+# EMACS_TYPE (emacs30nox) から package 名 (emacs30-nox11) を作る
+EPKG=$(echo "$ETYPE" | sed -e 's/nox$/-nox11/')
+for p in ninja-build py313-gyp py313-six "$EPKG"; do
+	if pkg_add -U "$p" 2>&1 | grep -vE '^$' | head -2 | sed "s/^/    $p: /"; then :; fi
+	pkg_info -e "$p" >/dev/null 2>&1 || { echo "!! $p を binary で入れられなかった"; exit 1; }
+done
+pkg_info | egrep -i 'ninja|gyp|six|emacs' | sed 's/^/  /'
+df -h / | sed 's/^/  /'
 
 echo "=== mk.conf ==="
 J=$(sysctl -n hw.ncpu)
