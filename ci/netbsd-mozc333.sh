@@ -273,6 +273,33 @@ printf '(1 CreateSession)\n(2 SendKey 1 110)\n(3 SendKey 1 105)\n(4 SendKey 1 10
 EOS
 chmod 755 /tmp/conv.sh
 
+# 変換が落ちたとき、原因は三つある (どれも同じ応答になる)。
+#   1. server が入っていない
+#   2. root で叩いている              base/run_level.cc の geteuid()==0
+#   3. server の照合に失敗している    ipc_path_manager.cc
+# 3 は当て物が sysctl KERN_PROC_PATHNAME で server の path を取るので、
+# その sysctl がこの箱で効くかを先に測っておく。
+cat > /tmp/mib.c <<'EOT'
+#include <sys/param.h>
+#include <sys/sysctl.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+#include <unistd.h>
+int main(void) {
+  pid_t pid = getpid();
+  size_t len; int rc;
+  int n4p[] = { CTL_KERN, KERN_PROC_ARGS, (int)pid, KERN_PROC_PATHNAME };
+  char buf[1024]; len = sizeof(buf);
+  rc = sysctl(n4p, 4, buf, &len, NULL, 0);
+  printf("KERN_PROC_PATHNAME rc=%d errno=%s len=%zu path=\"%s\"\n",
+         rc, rc<0?strerror(errno):"-", len, rc==0?buf:"");
+  return 0;
+}
+EOT
+echo "--- sysctl KERN_PROC_PATHNAME はこの箱で効くか ---"
+cc -o /tmp/mib /tmp/mib.c && /tmp/mib | sed 's/^/  /'
+
 echo "--- 参考: root で叩くと (RunLevel::DENY で拒まれる) ---"
 sh /tmp/conv.sh > /tmp/conv-root.out 2>&1 || true
 tail -2 /tmp/conv-root.out | sed 's/^/  /'
@@ -286,7 +313,15 @@ else
 	echo 'RESULT 変換: にほんご が出ない'
 	cat /tmp/conv.out | sed 's/^/  /'
 	echo "--- helper の log ---"
-	cat /home/mozctest/.config/mozc/mozc_emacs_helper.log 2>/dev/null | tail -20 | sed 's/^/  /'
+	find /home/mozctest -name 'mozc_emacs_helper.log' 2>/dev/null | \
+		xargs -r tail -20 2>/dev/null | sed 's/^/  /'
+	echo "--- server の log ---"
+	find /home/mozctest -name 'mozc_server.log' 2>/dev/null | \
+		xargs -r tail -20 2>/dev/null | sed 's/^/  /'
+	echo "--- server はどこから起動されるか ---"
+	ls -l /usr/pkg/libexec/mozc_server | sed 's/^/  /'
+	echo "--- この起動で出来た socket ---"
+	ls -a /tmp | grep -E '^\.mozc\.' | sed 's/^/  /'
 	exit 1
 fi
 echo "--- 変換候補に 日本語 があるか ---"
