@@ -336,7 +336,15 @@ else
 	for c in /home/mozctest/mozc_server.core /home/mozctest/*.core; do
 		[ -f "$c" ] || continue
 		echo "--- bt ($c) ---"
-		gdb -batch -ex bt /usr/pkg/libexec/mozc_server "$c" 2>&1 | head -30 | sed 's/^/  /'
+		# /usr/pkg/libexec/mozc_server は INSTALL_PROGRAM が -s で入れるので
+		# stripped で、bt が ?? だらけになる。work に未 strip のものが残って
+		# いるので、在ればそちらを使う。
+		B=/usr/pkgsrc/zakinko/mozc-server333/work/mozc-3.33.6089/src/out_bsd/Release/mozc_server
+		[ -f "$B" ] || B=/usr/pkg/libexec/mozc_server
+		echo "  binary: $B"
+		file "$B" | sed 's/^/  /'
+		gdb -batch -ex 'set pagination off' -ex bt -ex 'info registers eip' \
+			"$B" "$c" 2>&1 | head -40 | sed 's/^/  /'
 		break
 	done
 	echo "--- helper の log ---"
