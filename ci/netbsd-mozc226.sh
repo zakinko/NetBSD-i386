@@ -61,7 +61,17 @@ echo "=== 起動 ==="
 MEM=${MEM:-8192} DIR=. sh runvm.sh "$NAME" "$PORT"
 trap cleanup EXIT INT TERM
 
-$SSH "OVERLAY='$OVERLAY' ETYPE='$ETYPE' sh -s" <<'GUEST'
+# 送る diff そのものを VM へ入れる。overlay の写しではなく、これを当てて
+# 建てる。写しは zakinko/ に置くので ${PKGPATH} が変わり、PKGPATH で分ける
+# 仕掛けを手元では確かめられない。VM の中なら本来の path で試せる。
+DIFF=${DIFF:-$(cd "$(dirname "$0")/.." && pwd)/doc/upstream/pr/mozc-elisp226.diff}
+[ -f "$DIFF" ] || { echo "$0: $DIFF が無い" >&2; exit 1; }
+echo "=== 送る diff を入れる: $DIFF ($(wc -l < "$DIFF") 行) ==="
+scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -o BatchMode=yes -o LogLevel=ERROR -i "$WORK/$NAME.id" -P "$PORT" \
+    "$DIFF" root@127.0.0.1:/tmp/mozc226.diff
+
+$SSH "ETYPE='$ETYPE' sh -s" <<'GUEST'
 set -e
 PATH=/sbin:/usr/sbin:/bin:/usr/bin:/usr/pkg/bin:/usr/pkg/sbin
 export PATH
@@ -105,13 +115,25 @@ if ! grep -q "${ETYPE}@" /usr/pkgsrc/editors/emacs/modules.mk; then
 	exit 1
 fi
 
-echo "=== overlay を被せる ==="
-cd /tmp
-ftp -o overlay.tar.gz "$OVERLAY"
-tar xzf overlay.tar.gz
-rm -rf /usr/pkgsrc/zakinko
-mv pkgsrc-zakinko-main /usr/pkgsrc/zakinko
-ls -d /usr/pkgsrc/zakinko/mozc-server226 /usr/pkgsrc/zakinko/mozc-elisp226
+# 当てる前に上流の姿を控える。当てたあとでは比べられない。
+echo "=== 当てる前の上流 ==="
+for p in mozc-elisp226 mozc-server226; do
+	echo "  --- $p ---"
+	( cd /usr/pkgsrc/inputmethod/$p
+	  echo "    USE_X11 = [$(make show-var VARNAME=USE_X11 2>/dev/null)]"
+	  make show-depends 2>/dev/null | sed 's/^/      /' )
+done
+for p in ibus-mozc226 mozc-renderer226 mozc-tool226 uim-mozc226; do
+	( cd /usr/pkgsrc/inputmethod/$p && make show-all 2>/dev/null ) > /tmp/before.$p
+done
+
+echo "=== 送る diff を当てる ==="
+cd /usr/pkgsrc
+patch -p0 -C < /tmp/mozc226.diff || { echo "!! 当たらない"; exit 1; }
+patch -p0    < /tmp/mozc226.diff
+find /usr/pkgsrc/inputmethod -name '*.orig' -delete
+echo "  当てたファイル:"
+grep '^--- ' /tmp/mozc226.diff | sed 's/^--- /    /'
 
 echo "=== mk.conf ==="
 J=$(sysctl -n hw.ncpu)
@@ -173,25 +195,28 @@ echo "USE_X11 = [$(make show-var VARNAME=USE_X11 2>/dev/null)]"
 make show-depends 2>/dev/null | sed 's/^/  /'
 
 echo
-echo "##### 2. MOZC_NO_GUI を書かない四つは変わらないか #####"
-# 手元と同じ測り方。patched な Makefile.common を読む写しを作り、本家側と
-# make show-all を突き合わせる。package の path だけ揃えて diff を取る。
+echo "##### 2. GUI を切らない四つは変わらないか #####"
+# 当てる前に控えた show-all と、当てたあとの同じ package を直に比べる。
+# 写しを作らないので ${PKGPATH} が本物のままで、PKGPATH で分ける仕掛けが
+# 本当に効いているかどうかまで一緒に測れる。
 for p in ibus-mozc226 mozc-renderer226 mozc-tool226 uim-mozc226; do
-	rm -rf /usr/pkgsrc/zakinko/chk-$p
-	cp -R /usr/pkgsrc/inputmethod/$p /usr/pkgsrc/zakinko/chk-$p
-	sed -e 's,\.\./\.\./inputmethod/mozc-server226/Makefile.common,../../zakinko/mozc-server226/Makefile.common,' \
-	    /usr/pkgsrc/zakinko/chk-$p/Makefile > /tmp/m && mv /tmp/m /usr/pkgsrc/zakinko/chk-$p/Makefile
-	( cd /usr/pkgsrc/inputmethod/$p && make show-all 2>/dev/null ) | sed "s,inputmethod/$p,PKG,g" > /tmp/a
-	( cd /usr/pkgsrc/zakinko/chk-$p    && make show-all 2>/dev/null ) | sed "s,zakinko/chk-$p,PKG,g" > /tmp/b
-	n=$(wc -l < /tmp/a); d=$(diff /tmp/a /tmp/b | grep -c '^[<>]' || true)
+	( cd /usr/pkgsrc/inputmethod/$p && make show-all 2>/dev/null ) > /tmp/after.$p
+	n=$(wc -l < /tmp/before.$p)
+	d=$(diff /tmp/before.$p /tmp/after.$p | grep -c '^[<>]' || true)
 	printf '  %-18s %5s 行中 差 %s 行\n' "$p" "$n" "$d"
-	[ "$d" = "0" ] || diff /tmp/a /tmp/b | grep '^[<>]' | head -10
-	rm -rf /usr/pkgsrc/zakinko/chk-$p
+	if [ "$d" != "0" ]; then
+		diff /tmp/before.$p /tmp/after.$p | grep '^[<>]' | head -12 | sed 's/^/    /'
+	fi
+done
+echo "--- PKGPATH で分ける仕掛けが効いているか (六つとも) ---"
+for p in mozc-server226 mozc-elisp226 ibus-mozc226 mozc-renderer226 mozc-tool226 uim-mozc226; do
+	printf '  %-18s USE_X11=[%s] MOZC_GYP_ARGS=[%s]\n' "$p" \
+	  "$(cd /usr/pkgsrc/inputmethod/$p && make show-var VARNAME=USE_X11 2>/dev/null)" \
+	  "$(cd /usr/pkgsrc/inputmethod/$p && make show-var VARNAME=MOZC_GYP_ARGS 2>/dev/null)"
 done
 
-echo
 echo "##### 3. 直した mozc-elisp226 を建てる #####"
-cd /usr/pkgsrc/zakinko/mozc-elisp226
+cd /usr/pkgsrc/inputmethod/mozc-elisp226
 echo "USE_X11 = [$(make show-var VARNAME=USE_X11 2>/dev/null)]"
 echo "DEPENDS:"; make show-depends 2>/dev/null | sed 's/^/  /'
 if make package-install >/tmp/build.log 2>&1; then
@@ -283,7 +308,7 @@ else
 		found=yes
 		ls -l "$c" | sed 's/^/    /'
 		# INSTALL_PROGRAM は -s で入れるので、bt は work の未 strip を使う。
-		B=$(find /usr/pkgsrc/zakinko/mozc-server226/work \
+		B=$(find /usr/pkgsrc/inputmethod/mozc-server226/work \
 			/usr/pkgsrc/inputmethod/mozc-server226/work \
 			-name mozc_server -type f -path '*out_bsd/Release*' 2>/dev/null | head -1)
 		[ -n "$B" ] || B=/usr/pkg/libexec/mozc_server
