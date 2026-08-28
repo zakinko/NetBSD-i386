@@ -318,6 +318,19 @@ else
 	#   server が生きている + socket がある → 照合で拒まれた
 	#   server が居ない + socket も無い     → 起動できずに死んだ
 	#   server が居ない + core がある       → i386 で落ちている (当て物と無関係)
+	# af が amd64 で再現させたのは「profile が作れない HOME で起こすと落ちる」
+	# という条件だった。CI は useradd -m で home を作っているので profile は
+	# 作れるはずで、そこが食い違っている。server を直に起こして stderr を見る。
+	echo "--- profile は作れているか ---"
+	su - mozctest -c 'ls -la ~/.config/ 2>&1; ls -la ~/.config/mozc/ 2>&1' \
+		| head -20 | sed 's/^/  /'
+	echo "--- server を直に起こして stderr を見る ---"
+	su - mozctest -c '/usr/pkg/libexec/mozc_server' > /tmp/srv.out 2>&1 &
+	sleep 8
+	echo "  exit を待たずに 8 秒後の出力:"
+	head -20 /tmp/srv.out | sed 's/^/    /'
+	pkill -f 'libexec/mozc_server' 2>/dev/null || true
+
 	echo "--- server は生きているか ---"
 	if pgrep -lf 'libexec/mozc_server' 2>/dev/null | sed 's/^/  /'; then
 		spid=$(pgrep -f 'libexec/mozc_server' | head -1)
