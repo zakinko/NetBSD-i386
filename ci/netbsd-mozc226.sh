@@ -223,6 +223,20 @@ MASTER_SITE_OVERRIDE=	https://cdn.NetBSD.org/pub/pkgsrc/distfiles/
 EOF
 tail -12 /etc/mk.conf | sed 's/^/  /'
 
+# 建てたいのは mozc だけ。道具は binary で入れる。ninja-build は re2c を、
+# re2c は cmake を引き、その cmake の bootstrap で /tmp を数 GB 使う。二度
+# そこで潰した (一度は No space left on device、一度は cc1plus が Killed)。
+# 測る対象はソースから建てるので、測るものは変わらない。
+echo "=== 道具を binary で入れる ==="
+A=$(uname -m); R=$(uname -r | sed 's/_.*//')
+export PKG_PATH="https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$A/$R/All"
+echo "  PKG_PATH=$PKG_PATH"
+for p in $( ( cd /usr/pkgsrc/inputmethod/mozc-server226 && make show-var VARNAME=TOOL_DEPENDS 2>/dev/null ) \
+            | tr ' ' '\n' | sed 's/:.*//;s/[<>=].*//;s/-\[0-9\].*//' | grep . | sort -u ); do
+	printf '  %-16s ' "$p"
+	pkg_add -U "$p" >/dev/null 2>&1 && echo "入った" || echo "取れず (ソースから建つ)"
+done
+
 echo
 echo "##### 1. 上流の mozc-elisp226 は何を引くか #####"
 cd /usr/pkgsrc/inputmethod/mozc-elisp226
