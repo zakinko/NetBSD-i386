@@ -23,6 +23,10 @@
 
 set -eu
 
+# cd する前に確定させる。あとで $WORK へ移るので、相対のままだと
+# .vm-mozc226/doc/... を探しに行く (実際そうなって四本落とした)。
+SRCROOT=$(cd "$(dirname "$0")/.." && pwd)
+
 NAME=${1:-amd64-11.0}
 ETYPE=${2:-emacs30nox}
 IMGREPO=${IMGREPO:-zakinko/netbsd-ci-images}
@@ -64,7 +68,7 @@ trap cleanup EXIT INT TERM
 # 送る diff そのものを VM へ入れる。overlay の写しではなく、これを当てて
 # 建てる。写しは zakinko/ に置くので ${PKGPATH} が変わり、PKGPATH で分ける
 # 仕掛けを手元では確かめられない。VM の中なら本来の path で試せる。
-DIFF=${DIFF:-$(cd "$(dirname "$0")/.." && pwd)/doc/upstream/pr/mozc-elisp226.diff}
+DIFF=${DIFF:-$SRCROOT/doc/upstream/pr/mozc-elisp226.diff}
 [ -f "$DIFF" ] || { echo "$0: $DIFF が無い" >&2; exit 1; }
 echo "=== 送る diff を入れる: $DIFF ($(wc -l < "$DIFF") 行) ==="
 scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
