@@ -67,7 +67,17 @@ case $NAME in
 i386-*)	MEM=${MEM:-3072} ;;
 *)	MEM=${MEM:-8192} ;;
 esac
-MEM=$MEM DIR=. sh runvm.sh "$NAME" "$PORT"
+# ディスクは既定が ide のエミュレーションで遅い。使い捨ての箱なので virtio を
+# 試し、起動しなければ ide に落とす。NetBSD はディスクを vioblk として見るので、
+# image の fstab が /dev/dk0 のままだと上がってこない可能性がある。
+if [ "${DISKIF:-}" = "" ] && MEM=$MEM DISKIF=virtio DIR=. sh runvm.sh "$NAME" "$PORT" 2>/dev/null; then
+	echo "  disk: virtio"
+else
+	echo "  disk: virtio が駄目だったので ide に落とす"
+	DIR=. sh stopvm.sh "$NAME" > /dev/null 2>&1 || true
+	MEM=$MEM DIR=. sh runvm.sh "$NAME" "$PORT"
+	echo "  disk: ide"
+fi
 trap cleanup EXIT INT TERM
 
 $SSH "OVERLAY='$OVERLAY' ETYPE='$ETYPE' sh -s" <<'GUEST'
@@ -167,10 +177,10 @@ pkg_info | egrep -i 'ninja|gyp|six|emacs' | sed 's/^/  /'
 df -h / | sed 's/^/  /'
 
 echo "=== mk.conf ==="
-# cc1plus は protobuf の descriptor.cc で 1 本あたり数百 MB 食う。CPU 数を
-# そのまま渡すと 3GB の箱では OOM になるので、2 で頭を打つ。
+# 一度 OOM で落として 2 に絞ったが、あれは swap が無かったためだった。
+# いまは 4GB 足してある。bambi (物理 1.0GB、-j1) の実測で cc1plus は
+# 1 本あたり 150MB 前後なので、3072MB なら CPU 数ぶん立てても収まる。
 J=$(sysctl -n hw.ncpu)
-[ "$J" -gt 2 ] && J=2
 cat >> /etc/mk.conf <<EOF
 MAKE_JOBS=	$J
 BATCH=		yes
@@ -278,6 +288,15 @@ echo "##### 4. 実際に打てるか #####"
 # 一般ユーザを作ってそちらで測る。両方出して、区別がつかないことも示す。
 # (ci/netbsd-mozc226.sh が先に踏んだ。同じ道を二度通らないために書いておく。)
 id mozctest >/dev/null 2>&1 || useradd -m -s /bin/sh mozctest
+# profile を先に作る。useradd -m は home を作るだけで .config は作らない。
+# mozc は profile が無いと
+#   system_util.cc     User profile directory doesn't exist
+#   process_mutex.cc   open() failed
+#   mozc_server.cc:99  Mozc Server is already running   <- 誤判定
+# と進んで Finalize() に入り、FinalizeSingletons で null を呼んで落ちる。
+# server が入っていないときと同じ応答になるので、出力だけでは分からない。
+su - mozctest -c 'mkdir -p ~/.config/mozc'
+su - mozctest -c 'ls -ld ~/.config/mozc' | sed 's/^/  profile: /'
 cat > /tmp/conv.sh <<'EOS'
 printf '(1 CreateSession)\n(2 SendKey 1 110)\n(3 SendKey 1 105)\n(4 SendKey 1 104)\n(5 SendKey 1 111)\n(6 SendKey 1 110)\n(7 SendKey 1 103)\n(8 SendKey 1 111)\n' \
 	| /usr/pkg/bin/mozc_emacs_helper
