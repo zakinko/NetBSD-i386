@@ -185,11 +185,18 @@ mkdir -p /var/tmp/ccbuild && chmod 1777 /var/tmp/ccbuild
 #   g++: fatal error: Killed signal terminated program cc1plus
 #
 # VM は job の終わりに消えるので、外す後始末は要らない。
-echo "  物理: $(sysctl -n hw.physmem64 2>/dev/null || sysctl -n hw.physmem)"
-if [ "$(swapctl -l 2>/dev/null | grep -c /)" = "0" ]; then
-	dd if=/dev/zero of=/var/tmp/swapfile bs=1m count=4096 2>/dev/null
+PHYS=$(sysctl -n hw.physmem64 2>/dev/null || sysctl -n hw.physmem)
+echo "  物理: $PHYS  空き: $(df -k / | awk 'NR==2{printf "%.1f GB", $4/1048576}')"
+# / は 11G しかなく mozc の展開と build で埋まる。swap を無条件に 4G 取ると
+# amd64 の回が展開の途中で No space left on device になった。物理が足りない
+# ときだけ、空きを見て控えめに取る。
+if [ "$(swapctl -l 2>/dev/null | grep -c /)" = "0" ] && [ "$PHYS" -lt 2147483648 ]; then
+	free=$(df -k / | awk 'NR==2{print int($4/1024)}')
+	sz=2048
+	[ "$free" -gt 8000 ] || sz=1024
+	dd if=/dev/zero of=/var/tmp/swapfile bs=1m count=$sz 2>/dev/null
 	chmod 600 /var/tmp/swapfile
-	swapctl -a /var/tmp/swapfile && echo "  swap を 4G 足した"
+	swapctl -a /var/tmp/swapfile && echo "  swap を ${sz}M 足した (空き ${free}M)"
 fi
 swapctl -l 2>/dev/null | sed 's/^/  /'
 cat >> /etc/mk.conf <<EOF
