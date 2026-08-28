@@ -180,6 +180,17 @@ FETCH_TIMEOUT=	60
 PKG_DEVELOPER=	no
 EMACS_TYPE=	$ETYPE
 EOF
+# i386 では options.mk が gyp を既定にする。それが効いているかを測るのが
+# この script の目的なので、i386 では何も足さない。
+#
+# 64bit の箱で回すと既定は bazel になり、TOOL_DEPENDS が zakinko/bazel9 を
+# 引く。あれは bootstrap に二時間から三時間かかるので、測りたいものと
+# 関係のない時間を CI が払うことになる。i386 以外では gyp を明示する。
+case $(uname -m) in
+i386|earm*)	;;
+*)		echo 'PKG_OPTIONS.mozc=	gyp' >> /etc/mk.conf
+		echo "  $(uname -m) なので PKG_OPTIONS.mozc=gyp を明示した (bazel9 を建てない)" ;;
+esac
 tail -8 /etc/mk.conf | sed 's/^/  /'
 
 echo

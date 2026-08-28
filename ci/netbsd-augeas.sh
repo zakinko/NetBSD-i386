@@ -75,6 +75,22 @@ tar xzf overlay.tar.gz
 cp -Rf pkgsrc-zakinko-main/augeas/. /usr/pkgsrc/sysutils/augeas/
 ls /usr/pkgsrc/sysutils/augeas/patches | sed 's/^/  /'
 
+echo "=== 道具と依存を binary package で入れる ==="
+# augeas が引くのは libxml2 と readline と libtool-base ほかで、ソースから
+# 建てると VM の中で二十分から三十分かかる。測っているのは augeas の当て物と
+# lens であって依存の build ではないので、先に binary で入れて pkgsrc には
+# 「found」と言わせる。augeas 本体はソースから建てるので測るものは変わらない。
+REL=$(uname -r | sed 's/_.*//')
+BINPKG=https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$(uname -p)/$REL/All
+echo "  $BINPKG"
+# PKG_PATH は pkg_add に渡すときだけ立てる。export したまま make を走らせると
+# bsd.pkg.mk が「Please unset PKG_PATH before doing pkgsrc work!」で止める。
+for p in digest mktools pkgconf libtool-base readline libxml2; do
+	env PKG_PATH="$BINPKG" pkg_add -U "$p" 2>&1 | grep -vE '^$' | head -2 | sed "s/^/    $p: /"
+	pkg_info -e "$p" >/dev/null 2>&1 || echo "  !! $p は binary で入らなかった (ソースから建てることになる)"
+done
+unset PKG_PATH
+
 echo "=== digest を用意する ==="
 # 素のイメージに digest は入っていない。makepatchsum はこれを呼ぶので、
 # 無いと SHA1 が書けず distinfo が空のまま通ってしまう。すると pkgsrc は
