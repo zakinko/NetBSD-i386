@@ -229,12 +229,15 @@ tail -12 /etc/mk.conf | sed 's/^/  /'
 # 測る対象はソースから建てるので、測るものは変わらない。
 echo "=== 道具を binary で入れる ==="
 A=$(uname -m); R=$(uname -r | sed 's/_.*//')
-export PKG_PATH="https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$A/$R/All"
-echo "  PKG_PATH=$PKG_PATH"
+# export したままにしないこと。pkgsrc は
+#   ERROR: [bsd.pkg.mk] Please unset PKG_PATH before doing pkgsrc work!
+# で止まる。pkg_add に env で渡すだけにする。
+BINPKG="https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$A/$R/All"
+echo "  $BINPKG"
 for p in $( ( cd /usr/pkgsrc/inputmethod/mozc-server226 && make show-var VARNAME=TOOL_DEPENDS 2>/dev/null ) \
             | tr ' ' '\n' | sed 's/:.*//;s/[<>=].*//;s/-\[0-9\].*//' | grep . | sort -u ); do
 	printf '  %-16s ' "$p"
-	pkg_add -U "$p" >/dev/null 2>&1 && echo "入った" || echo "取れず (ソースから建つ)"
+	env PKG_PATH="$BINPKG" pkg_add -U "$p" >/dev/null 2>&1 && echo "入った" || echo "取れず (ソースから建つ)"
 done
 
 echo
