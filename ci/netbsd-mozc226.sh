@@ -320,6 +320,28 @@ else
 		gdb -batch -ex 'set pagination off' -ex bt "$B" "$c" 2>&1 | head -20 | sed 's/^/    /'
 	done
 	[ "$found" = yes ] || echo "    core は無い = server が起動していない"
+
+	# helper 越しだと Session failed しか見えない。server を直に起こすと
+	# stderr が読める。MOZC_NO_LOGGING で log は出ないが stderr は別。
+	echo "  --- server を直に起こす ---"
+	echo "    profile:"
+	su - mozctest -c 'ls -la $HOME $HOME/.config $HOME/.config/mozc 2>&1' \
+		| sed 's/^/      /' | head -20
+	su - mozctest -c '/usr/pkg/libexec/mozc_server' > /tmp/srv.out 2>&1 &
+	srvpid=$!
+	sleep 10
+	kill $srvpid 2>/dev/null || true
+	echo "    stderr:"
+	head -25 /tmp/srv.out | sed 's/^/      /'
+	[ -s /tmp/srv.out ] || echo "      (何も出ない)"
+	echo "    起こしたあとの socket:"
+	ls -a /tmp | grep '^\.mozc\.' | sed 's/^/      /' || echo "      (無い)"
+	echo "    ktrace で exec を見る:"
+	su - mozctest -c 'cd /tmp && ktrace -i -f /tmp/kt.out /usr/pkg/libexec/mozc_server' \
+		>/dev/null 2>&1 &
+	sleep 8; pkill -f 'libexec/mozc_server' 2>/dev/null || true
+	kdump -f /tmp/kt.out 2>/dev/null | grep -E 'NAMI|RET.*-1|CALL  exit' | head -15 \
+		| sed 's/^/      /' || echo "      (kdump 取れず)"
 fi
 echo "--- 変換候補に 日本語 があるか ---"
 if grep -q '日本語' /tmp/conv.out; then echo '  ある'; else echo '  ない'; fi
