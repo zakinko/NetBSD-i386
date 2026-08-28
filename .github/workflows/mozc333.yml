@@ -22,10 +22,10 @@ on:
   workflow_dispatch:
     inputs:
       image:
-        description: 'どのイメージで回すか'
+        description: 'どのイメージで回すか (all は i386 の三版を並行)'
         type: choice
-        options: [i386-11.0, i386-10.1, amd64-11.0]
-        default: i386-11.0
+        options: [all, i386-11.0, i386-10.1, i386-9.4, amd64-11.0, amd64-10.1, amd64-9.4]
+        default: all
       emacs:
         description: 'どの emacs で測るか'
         type: choice
@@ -34,7 +34,8 @@ on:
 
 # 押し直したら前のは捨てる。VM を二つ抱えたまま二周させない。
 concurrency:
-  group: mozc333-${{ github.ref }}
+  # image まで含める。含めないと一版を回した瞬間に他が打ち消される。
+  group: mozc333-${{ github.ref }}-${{ inputs.image }}-${{ inputs.emacs }}
   cancel-in-progress: true
 
 jobs:
@@ -43,7 +44,15 @@ jobs:
     # techne (実機 3 core) で server 690 ターゲットに 40 分、elisp 379 に
     # 25 分だった。qemu の i386 では数倍を見る。
     timeout-minutes: 350
-    name: ${{ inputs.image }} ${{ inputs.emacs }}
+    strategy:
+      # 一版で落ちても他の結果は見たい。どの版で落ちてどの版で通るかが
+      # 分からないと切り分けにならない。11.0 だけで測っていたときは
+      # gyp の ld = $cc が base の libstdc++ に助けられて通っていて、
+      # 10.1 で建てるまで気づかなかった。
+      fail-fast: false
+      matrix:
+        image: ${{ inputs.image == 'all' && fromJSON('["i386-11.0","i386-10.1","i386-9.4"]') || fromJSON(format('["{0}"]', inputs.image)) }}
+    name: ${{ matrix.image }} ${{ inputs.emacs }}
     steps:
       - uses: actions/checkout@v4
 
@@ -64,5 +73,5 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
           df -h /
 
-      - name: ${{ inputs.image }} で ${{ inputs.emacs }} を測る
-        run: sh ci/netbsd-mozc333.sh '${{ inputs.image }}' '${{ inputs.emacs }}'
+      - name: ${{ matrix.image }} で ${{ inputs.emacs }} を測る
+        run: sh ci/netbsd-mozc333.sh '${{ matrix.image }}' '${{ inputs.emacs }}'
