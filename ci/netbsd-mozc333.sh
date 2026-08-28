@@ -306,7 +306,15 @@ id mozctest >/dev/null 2>&1 || useradd -m -s /bin/sh mozctest
 #   system_util.cc     User profile directory doesn't exist
 #   process_mutex.cc   open() failed
 #   mozc_server.cc:99  Mozc Server is already running   <- 誤判定
-# と進んで Finalize() に入り、FinalizeSingletons で null を呼んで落ちる。
+# と進んで Run() が -1 で戻る。main() は戻り値に関係なく Finalize() を呼ぶ。
+#
+# ここで落ちていた。patch-base_singleton.cc を入れる前の 3.33 は
+# FinalizeSingletons が 256 個の配列を全部まわって、埋まっていない
+# スロットの null を呼んでいた。i386 で追っていた core はこれで、
+# amd64 でも同じ backtrace が出る。i386 固有ではない。
+#
+# 当て物が入った今は -1 で静かに戻るだけになる。それでも profile は
+# 要る。無ければ server は起動しないので、変換はどのみち通らない。
 # server が入っていないときと同じ応答になるので、出力だけでは分からない。
 su - mozctest -c 'mkdir -p ~/.config/mozc'
 su - mozctest -c 'ls -ld ~/.config/mozc' | sed 's/^/  profile: /'
@@ -360,10 +368,14 @@ else
 	# 見え方が同じ Session failed でも原因が違う。まずここで分ける。
 	#   server が生きている + socket がある → 照合で拒まれた
 	#   server が居ない + socket も無い     → 起動できずに死んだ
-	#   server が居ない + core がある       → i386 で落ちている (当て物と無関係)
-	# af が amd64 で再現させたのは「profile が作れない HOME で起こすと落ちる」
-	# という条件だった。CI は useradd -m で home を作っているので profile は
-	# 作れるはずで、そこが食い違っている。server を直に起こして stderr を見る。
+	#   server が居ない + core がある       → singleton の当て物が効いていない
+	#
+	# 「照合で拒まれた」は ipc_path_manager が sysctl KERN_PROC_PATHNAME で
+	# 取った server の実 path を、client が期待する
+	# base/system_util.cc の MOZC_SERVER_DIR (= /usr/pkg/libexec) と
+	# 突き合わせて弾く形。work の binary を直に起こすと必ずこれになるので、
+	# 変換は install したものでしか測れない。CI がその唯一の場所になる。
+	# server を直に起こして stderr を見る。
 	echo "--- profile は作れているか ---"
 	su - mozctest -c 'ls -la ~/.config/ 2>&1; ls -la ~/.config/mozc/ 2>&1' \
 		| head -20 | sed 's/^/  /'
