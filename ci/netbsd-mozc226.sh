@@ -291,7 +291,14 @@ echo "##### 5. 実際に打てるか #####"
 id mozctest >/dev/null 2>&1 || useradd -m -s /bin/sh mozctest
 MH=$(getent passwd mozctest 2>/dev/null | cut -d: -f6)
 [ -n "$MH" ] || MH=/home/mozctest
-mkdir -p "$MH/prof"
+# useradd -m は home を作るだけで .config は作らない。profile が無いと
+# mozc_server は
+#   system_util   User profile directory doesn't exist
+#   process_mutex open() failed
+#   mozc_server.cc  "Mozc Server is already running"   <- 誤報
+# と進んで早期に Finalize へ抜け、FinalizeSingletons で null を踏む。
+# 起動しないのも落ちるのも、元はここである。
+mkdir -p "$MH/prof/mozc"
 chown -R mozctest "$MH"
 echo "  mozctest の home: $MH  ($(ls -ld "$MH" | awk '{print $1, $3}'))"
 
@@ -348,10 +355,10 @@ else
 	# helper 越しだと Session failed しか見えない。server を直に起こすと
 	# stderr が読める。MOZC_NO_LOGGING で log は出ないが stderr は別。
 	echo "  --- server を直に起こす ---"
-	echo "    profile:"
-	su - mozctest -c 'ls -la $HOME $HOME/.config $HOME/.config/mozc 2>&1' \
-		| sed 's/^/      /' | head -20
-	su - mozctest -c '/usr/pkg/libexec/mozc_server' > /tmp/srv.out 2>&1 &
+	echo "    profile ($MH/prof/mozc):"
+	ls -la "$MH/prof" "$MH/prof/mozc" 2>&1 | sed 's/^/      /' | head -20
+	su - mozctest -c "env XDG_CONFIG_HOME=$MH/prof /usr/pkg/libexec/mozc_server" \
+		> /tmp/srv.out 2>&1 &
 	srvpid=$!
 	sleep 10
 	kill $srvpid 2>/dev/null || true
@@ -361,7 +368,7 @@ else
 	echo "    起こしたあとの socket:"
 	ls -a /tmp | grep '^\.mozc\.' | sed 's/^/      /' || echo "      (無い)"
 	echo "    ktrace で exec を見る:"
-	su - mozctest -c 'cd /tmp && ktrace -i -f /tmp/kt.out /usr/pkg/libexec/mozc_server' \
+	su - mozctest -c "cd /tmp && env XDG_CONFIG_HOME=$MH/prof ktrace -i -f /tmp/kt.out /usr/pkg/libexec/mozc_server" \
 		>/dev/null 2>&1 &
 	sleep 8; pkill -f 'libexec/mozc_server' 2>/dev/null || true
 	kdump -f /tmp/kt.out 2>/dev/null | grep -E 'NAMI|RET.*-1|CALL  exit' | head -15 \
