@@ -34,6 +34,11 @@ IMGREPO=${IMGREPO:-zakinko/netbsd-ci-images}
 IMGTAG=${IMGTAG:-images}
 IMGREF=${IMGREF:-main}
 PORT=${PORT:-2333}
+# pkgsrc は四半期枝に固定する。trunk だと回した日で結果が変わり、NetBSD の
+# 版差を見たいのに pkgsrc 側の版差が混ざる。binary package も同じ枝の set が
+# 在るので、木と道具の版が揃う。
+PKGSRC_BRANCH=${PKGSRC_BRANCH:-pkgsrc-2026Q2}
+PKGSRC_QUARTER=${PKGSRC_QUARTER:-2026Q2}
 WORK=${WORK:-$PWD/.vm-mozc333}
 OVERLAY=${OVERLAY:-https://codeload.github.com/zakinko/pkgsrc-zakinko/tar.gz/refs/heads/main}
 
@@ -124,11 +129,13 @@ echo "=== pkgsrc を用意する ==="
 # 建てるためだけに使い、送る diff は CVS から取ること。
 if [ ! -d /usr/pkgsrc/mk ]; then
 	ftp -o /tmp/pkgsrc.tar.gz \
-		https://codeload.github.com/NetBSD/pkgsrc/tar.gz/refs/heads/trunk
+		"https://codeload.github.com/NetBSD/pkgsrc/tar.gz/refs/heads/$PKGSRC_BRANCH"
 	tar xzf /tmp/pkgsrc.tar.gz -C /usr
 	rm -f /tmp/pkgsrc.tar.gz
 	rmdir /usr/pkgsrc 2>/dev/null || true
-	if [ -d /usr/pkgsrc-trunk ]; then mv /usr/pkgsrc-trunk /usr/pkgsrc; fi
+	for d in /usr/pkgsrc-trunk /usr/pkgsrc-$PKGSRC_BRANCH; do
+		[ -d "$d" ] && mv "$d" /usr/pkgsrc
+	done
 fi
 [ -d /usr/pkgsrc/mk ] || { echo "!! /usr/pkgsrc/mk が無い"; ls /usr | head; exit 1; }
 
@@ -162,7 +169,13 @@ echo "=== 道具を binary package で入れる ==="
 # i386 の binary set に道具は全部在るので、先に入れて pkgsrc には
 # 「found」と言わせる。mozc 本体はソースから建てるので、測るものは変わらない。
 REL=$(uname -r | sed 's/_.*//')
-BINPKG=https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$(uname -p)/$REL/All
+# 木と同じ枝の set を使う。無ければ枝なしに落ちる (古い release には
+# 四半期の set が無いことがある)。
+BINPKG=https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$(uname -p)/${REL}_${PKGSRC_QUARTER}/All
+if ! ftp -o /dev/null "$BINPKG/" 2>/dev/null; then
+	echo "  ${REL}_${PKGSRC_QUARTER} の set が無いので $REL に落ちる"
+	BINPKG=https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$(uname -p)/$REL/All
+fi
 echo "  $BINPKG"
 # EMACS_TYPE (emacs30nox) から package 名 (emacs30-nox11) を作る
 EPKG=$(echo "$ETYPE" | sed -e 's/nox$/-nox11/')
