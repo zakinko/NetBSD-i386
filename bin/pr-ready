@@ -1,0 +1,164 @@
+#!/bin/sh
+#
+# send-pr へ出す前に、当て物が本当に足りているかを機械で見る。
+#
+#	pr-ready <pkgdir> [<pkgdir> ...]
+#	pr-ready --diff <差分>		本文に貼る diff そのものを見る
+#
+# 散文の規則は、書く瞬間には効かない。実際に外していたのは次の四つで、
+# どれも人の注意力ではなく確認の手順が抜けていた。
+#
+#   - 当て物を素の distfile に当ててみていない
+#   - distinfo の値が当て物と合っていない
+#   - 変えた変数を木の中で grep していない (他にも使う側が居る)
+#   - 値の置き場を変えたのに、その値を shell へ渡している所を見ていない
+#   - fork の $NetBSD$ を書き換えたまま、上流への差分に混ぜた
+#
+# math/calc で最後の一つを踏んだ。/tmp から $HOME の下へ移したが、その名前を
+#
+#	"-c" (format "cat %s >/dev/tty; rm %s" output output)
+#
+# へ引用符なしで渡す関数が在り、/tmp の頃は絶対に壊れなかったものが、home の
+# path に空白が入ると壊れる形になっていた。移す変更が、別の潜在バグを踏ませた。
+#
+# 落ちたら送らない。通っても「建てた」ことにはならないので、build の確認は
+# 別に要る。ここが見るのは静的に見えるところだけである。
+
+# --diff は五つめのために在る。こちらの fork は新しい file として作るので
+# $NetBSD$ と書くが、上流の file はその位置に展開済みの Id 行を持っている。
+# そのまま差分を取ると Id 行が全部 hunk になり、当たらないうえに雑に見える。
+# 実際に 17 個を並べたとき 36 file がそうなっていた。
+#
+# あわせて、patch は file を消せないことも見る。中身が空になる hunk は
+# 「消す」意図なので、本文に cvs rm と書いていなければ committer に伝わらない。
+
+set -eu
+
+: "${PKGSRCDIR:=/usr/pkgsrc}"
+: "${PKGLINT:=/usr/pkg/bin/pkglint}"
+
+fail=0
+note() { printf '  %s\n' "$*"; }
+bad()  { printf '  ★ %s\n' "$*"; fail=1; }
+
+check_one() {
+	pkg=$1
+	printf '=== %s\n' "$pkg"
+	[ -d "$pkg" ] || { bad "そんなディレクトリは無い"; return; }
+
+	# 1. 当て物に説明があるか
+	if [ -d "$pkg/patches" ]; then
+		for p in "$pkg"/patches/patch-*; do
+			[ -f "$p" ] || continue
+			if ! awk 'NR>1 && /^--- /{exit} NR>1 && /[A-Za-z]/{f=1} END{exit !f}' "$p"
+			then bad "説明が無い: ${p##*/}"; fi
+		done
+	fi
+
+	# 2. distinfo の値が当て物と合っているか
+	if [ -f "$pkg/distinfo" ] && [ -d "$pkg/patches" ]; then
+		for p in "$pkg"/patches/patch-*; do
+			[ -f "$p" ] || continue
+			n=${p##*/}
+			want=$(sed -n "s|^SHA1 ($n) = ||p" "$pkg/distinfo")
+			got=$(grep -v '^\$NetBSD' "$p" | shasum | cut -d' ' -f1)
+			[ -n "$want" ] || { bad "distinfo に $n が無い"; continue; }
+			[ "$want" = "$got" ] || bad "distinfo の値が違う: $n"
+		done
+	fi
+
+	# 3. 当て物が触る変数と関数を挙げ、木の中の使う側を数える。
+	#    ここは落とすためではなく、見ないまま進めないためにある。
+	if [ -d "$pkg/patches" ]; then
+		# BSD の sed は BRE の \| を解さないので grep -E で拾う。
+		syms=$(cat "$pkg"/patches/patch-* 2>/dev/null \
+			| grep -oE '^[-+]\(def(var|custom|un|macro|subst) [a-zA-Z0-9_-]+' \
+			| sed 's/.* //' | sort -u)
+		for s in $syms; do
+			c=$(grep -rl -- "$s" "$PKGSRCDIR"/*/*/ 2>/dev/null | wc -l | tr -d ' ')
+			note "触る名前 $s -- 木の中で $c ファイルが持つ"
+		done
+	fi
+
+	# 4. 値の置き場を変えたなら、shell へ渡す所を見たか。
+	#    当て物が defvar の値を書き換えていて、かつ元の木に shell へ流す
+	#    書き方が在れば、引用の有無を人が見るまで通さない。
+	if [ -d "$pkg/patches" ] && \
+	   grep -qE '^\+\(defvar|^\+\s*\(defcustom' "$pkg"/patches/patch-* 2>/dev/null
+	then
+		w=$(grep -rlE 'shell-file-name|shell-command|call-process-region.*-c' \
+			"$pkg" 2>/dev/null | wc -l | tr -d ' ')
+		if [ "$w" -gt 0 ]; then
+			bad "値の置き場を変えていて、shell へ渡す所が $w 件ある。"
+			note "   引用してあるか見て、見たなら PR_READY_SHELL_OK=1 を付けて通す"
+			[ "${PR_READY_SHELL_OK:-}" = 1 ] && { fail=0; note "   見たと言われたので通す"; }
+		fi
+	fi
+
+	# 5. pkglint
+	if [ -x "$PKGLINT" ]; then
+		n=$("$PKGLINT" -Wall "$pkg" 2>&1 \
+			| grep -cE '^(ERROR|WARN)' || true)
+		[ "$n" = 0 ] || note "pkglint が $n 件言っている (理由を書いたものを含む)"
+	fi
+}
+
+check_diff() {
+	d=$1
+	printf '=== %s\n' "$d"
+	[ -f "$d" ] || { bad "そんな差分は無い"; return; }
+
+	# 6. 上流の Id 行を書き換えていないか。file を丸ごと消すときは Id 行も
+	#    消えるので、それは数えない。同じ file の中で消えて足されたものだけ。
+	awk '
+		/^--- /{ f=$2; sub(/\.orig$/,"",f); del=0; add=0; next }
+		/^\+\+\+ /{ next }
+		/^-.*\$NetBSD: /{ del=1 }
+		/^\+.*\$NetBSD/{ if (del) print f }
+	' "$d" | sort -u > /tmp/pr-ready-id.$$ || true
+	if [ -s /tmp/pr-ready-id.$$ ]; then
+		bad "上流の Id 行を書き換えている:"
+		sed 's/^/     /' /tmp/pr-ready-id.$$
+		note "   fork の \$NetBSD\$ を上流の Id 行へ戻してから取り直す"
+	fi
+	rm -f /tmp/pr-ready-id.$$
+
+	# 7. 中身が空になる file。patch は file を消せないので、本文に cvs rm と
+	#    書いていなければ committer には伝わらない。
+	awk '
+		/^--- /{ if (f != "" && add == 0 && del > 0) print f;
+			 f=$2; sub(/\.orig$/,"",f); add=0; del=0; next }
+		/^\+\+\+ /{ next }
+		/^\+/{ add++ }
+		/^-/{ del++ }
+		END{ if (f != "" && add == 0 && del > 0) print f }
+	' "$d" > /tmp/pr-ready-rm.$$ || true
+	if [ -s /tmp/pr-ready-rm.$$ ]; then
+		note "空になる file (本文に cvs rm と書いたか):"
+		sed 's/^/     /' /tmp/pr-ready-rm.$$
+	fi
+	rm -f /tmp/pr-ready-rm.$$
+
+	# 8. 新しい file は cvs add が要る
+	grep '^--- ' "$d" | sed -n 's/\.orig$//p' | sed 's/^--- //' > /tmp/pr-ready-add.$$ || true
+	if [ -s /tmp/pr-ready-add.$$ ]; then
+		note "新しい file (本文に cvs add と書いたか):"
+		sed 's/^/     /' /tmp/pr-ready-add.$$
+	fi
+	rm -f /tmp/pr-ready-add.$$
+}
+
+for d in "$@"; do
+	case $d in
+	--diff) mode=diff ;;
+	*) if [ "${mode:-pkg}" = diff ]; then check_diff "$d"; mode=pkg
+	   else check_one "$d"; fi ;;
+	esac
+done
+
+if [ "$fail" = 0 ]; then
+	echo "OK: 静的に見える範囲では足りている。建てたかどうかは別に確かめること。"
+else
+	echo "NG: このまま send-pr へ出さない。"
+	exit 1
+fi
