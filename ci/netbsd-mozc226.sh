@@ -34,6 +34,9 @@ IMGTAG=${IMGTAG:-images}
 IMGREF=${IMGREF:-main}
 PORT=${PORT:-2226}
 WORK=${WORK:-$PWD/.vm-mozc226}
+# DEEP=1 で、送る PR が主張するうち追加ビルドを要する分も測る。
+# 既定では測らない。四本の GUI 版と未修正 server を建てるので二時間ほど延びる。
+DEEP=${DEEP:-0}
 OVERLAY=${OVERLAY:-https://codeload.github.com/zakinko/pkgsrc-zakinko/tar.gz/refs/heads/main}
 
 mkdir -p "$WORK"
@@ -78,7 +81,7 @@ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o BatchMode=yes -o LogLevel=ERROR -i "$WORK/$NAME.id" -P "$PORT" \
     "$DIFF" root@127.0.0.1:/tmp/mozc226.diff
 
-$SSH "ETYPE='$ETYPE' sh -s" <<'GUEST'
+$SSH "ETYPE='$ETYPE' DEEP='$DEEP' sh -s" <<'GUEST'
 set -e
 PATH=/sbin:/usr/sbin:/bin:/usr/bin:/usr/pkg/bin:/usr/pkg/sbin
 export PATH
@@ -251,6 +254,24 @@ echo "##### 1. 上流の mozc-elisp226 は何を引くか #####"
 cd /usr/pkgsrc/inputmethod/mozc-elisp226
 echo "USE_X11 = [$(make show-var VARNAME=USE_X11 2>/dev/null)]"
 make show-depends 2>/dev/null | sed 's/^/  /'
+
+# 送る PR は「直す前の server と直した後の helper は出会えない」と書いている。
+# それを測るには未修正の server の binary が要る。木がまだ未修正のいまだけ
+# 取れるので、ここで建てて退避しておく。あとで対にする。
+if [ "$DEEP" = 1 ]; then
+	echo
+	echo "--- (DEEP) 未修正の mozc-server226 を建てて binary を退避する ---"
+	cd /usr/pkgsrc/inputmethod/mozc-server226
+	if make package-install > /tmp/b-unpatched.log 2>&1; then
+		cp /usr/pkg/libexec/mozc_server /root/mozc_server.unpatched
+		echo "  退避した: $(ls -l /root/mozc_server.unpatched | awk '{print $5}') バイト"
+		pkg_delete -f mozc-server-2.26.4282.100nb45 >/dev/null 2>&1 \
+			|| pkg_delete -f 'mozc-server-2.26*' >/dev/null 2>&1 || true
+		make clean > /dev/null 2>&1 || true
+	else
+		echo "  ★ 未修正 server が建たない"; tail -20 /tmp/b-unpatched.log | sed 's/^/    /'
+	fi
+fi
 
 echo
 echo "##### 2. GUI を切らない四つは変わらないか #####"
@@ -538,6 +559,78 @@ n_ok=$(ls -a /tmp | grep -c '\.session$' || true)
 n_ng=$(ls -a /tmp | grep -c '\.sessio$' || true)
 echo "  .session で終わるもの: $n_ok"
 echo "  .sessio  で終わるもの: $n_ng   (0 でなければ当て物が効いていない)"
+
+echo
+# 送る PR の一つ目の主張。server を退けると CreateSession は通り、
+# 最初の SendKey で落ちる。「入っているように見えて最初の一打で駄目」の
+# 実物がこれなので、引用する以上ここで取る。
+echo "--- server を退けると何が返るか (依存が要る理由) ---"
+pkill -f '/usr/pkg/libexec/mozc_server' 2>/dev/null || true
+sleep 1
+rm -f /tmp/.mozc.*
+if mv /usr/pkg/libexec/mozc_server /root/mozc_server.hidden 2>/dev/null; then
+	su - mozctest -c "env XDG_CONFIG_HOME=$MH/prof sh -c \
+		\"printf '(1 CreateSession)\n(2 SendKey 1 97)\n' | timeout 30 /usr/pkg/bin/mozc_emacs_helper\"" \
+		> /tmp/noserver.out 2>&1 || true
+	grep -E 'emacs-session-id|session-error' /tmp/noserver.out | sed 's/^/  /'
+	mv /root/mozc_server.hidden /usr/pkg/libexec/mozc_server
+	echo "  server を戻した: $(ls -l /usr/pkg/libexec/mozc_server | awk '{print $5}') バイト"
+else
+	echo "  ★ server を退けられない"
+fi
+
+if [ "$DEEP" = 1 ] && [ -s /root/mozc_server.unpatched ]; then
+	# 二つ目の主張。socket 名が変わるので、直す前の server と直した後の
+	# helper は出会えない。退避した未修正 binary を直に起こして対にする。
+	echo "--- (DEEP) 直す前の server と直した後の helper を対にする ---"
+	pkill -f 'mozc_server' 2>/dev/null || true
+	sleep 1
+	rm -f /tmp/.mozc.*
+	cp /root/mozc_server.unpatched /tmp/mozc_server.old
+	chmod 755 /tmp/mozc_server.old; chown mozctest /tmp/mozc_server.old
+	su - mozctest -c "env XDG_CONFIG_HOME=$MH/prof /tmp/mozc_server.old" \
+		> /tmp/oldsrv.out 2>&1 &
+	sleep 8
+	echo "  古い server が作った socket:"
+	ls -a /tmp | grep '^\.mozc\.' | sed 's/^/    /' || echo "    (無し)"
+	su - mozctest -c "env XDG_CONFIG_HOME=$MH/prof sh -c \
+		\"printf '(1 CreateSession)\n(2 SendKey 1 97)\n' | timeout 30 /usr/pkg/bin/mozc_emacs_helper\"" \
+		> /tmp/pair.out 2>&1 || true
+	echo "  新しい helper の返り:"
+	grep -E 'emacs-session-id|session-error' /tmp/pair.out | sed 's/^/    /' \
+		|| tail -2 /tmp/pair.out | sed 's/^/    /'
+	pkill -f 'mozc_server.old' 2>/dev/null || true
+	rm -f /tmp/mozc_server.old /tmp/.mozc.*
+fi
+
+if [ "$DEEP" = 1 ]; then
+	# 三つ目と四つ目の主張。PATCHDIR は共有なので当て物は六本に効く。
+	# 四本とも建つこと、ipc_path_manager.o を繋ぐこと、mozc-tool226 が
+	# Qt を保ったままであることを測る。
+	echo "--- (DEEP) GUI を切らない四本を建てる ---"
+	for p in mozc-tool226 mozc-renderer226 ibus-mozc226 uim-mozc226; do
+		cd /usr/pkgsrc/inputmethod/$p
+		printf "  %-18s " "$p"
+		if make package > /tmp/b-$p.log 2>&1; then
+			o=$(find work -name 'ipc.ipc_path_manager.o' 2>/dev/null | head -1)
+			q=$(grep -c 'use_qt=NO' /tmp/b-$p.log || true)
+			printf "建った  ipc_path_manager.o=%s  use_qt=NO の回数=%s\n" \
+				"$([ -n "$o" ] && echo あり || echo なし)" "$q"
+		else
+			echo "★ 建たない"; tail -15 /tmp/b-$p.log | sed 's/^/      /'
+		fi
+	done
+	echo "  --- 当て物が木に入っているか (四本とも) ---"
+	for p in mozc-tool226 mozc-renderer226 ibus-mozc226 uim-mozc226; do
+		d=/usr/pkgsrc/inputmethod/$p/work/mozc-2.26.4282.100/src
+		printf "    %-18s offsetof=%s KERN_PROC_PATHNAME=%s\n" "$p" \
+			"$(grep -c offsetof $d/ipc/unix_ipc.cc 2>/dev/null || echo -)" \
+			"$(grep -c KERN_PROC_PATHNAME $d/ipc/ipc_path_manager.cc 2>/dev/null || echo -)"
+	done
+	echo "  --- mozc-tool226 は Qt のオブジェクトを持つか ---"
+	find /usr/pkgsrc/inputmethod/mozc-tool226/work -name '*.o' -path '*gui*' 2>/dev/null \
+		| wc -l | sed 's/^/    gui の .o /'
+fi
 
 echo
 echo "##### 6. Emacs から見えるか #####"

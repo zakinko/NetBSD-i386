@@ -31,6 +31,10 @@ on:
         type: choice
         options: [all, emacs29nox, emacs30nox, emacs31nox]
         default: all
+      deep:
+        description: '追加ビルドを要する分も測るか (二時間ほど延びる)'
+        type: boolean
+        default: false
 
 # 押し直したら前のは捨てる。VM を三つ抱えたまま二周させない。
 concurrency:
@@ -74,4 +78,6 @@ jobs:
           df -h /
 
       - name: ${{ inputs.image }} で ${{ matrix.emacs }} を測る
+        env:
+          DEEP: ${{ inputs.deep && '1' || '0' }}
         run: sh ci/netbsd-mozc226.sh '${{ inputs.image }}' '${{ matrix.emacs }}'
