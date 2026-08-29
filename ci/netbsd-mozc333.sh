@@ -149,6 +149,31 @@ if [ ! -d /usr/pkgsrc/mk ]; then
 fi
 [ -d /usr/pkgsrc/mk ] || { echo "!! /usr/pkgsrc/mk が無い"; ls /usr | head; exit 1; }
 
+# pkgsrc-2026Q2 の editors/emacs30-nox11/version.mk が
+#
+#	_EMACS_REQD=	emacs30-no-x11>=30.1<31
+#
+# と書いている。同じ package の PKGNAME は
+#
+#	PKGNAME=	${DISTNAME:S/emacs/emacs30/:S/-/-nox11-/}   = emacs30-nox11-30.2
+#
+# なので、この依存は満たしようがない。EMACS_TYPE=emacs30nox を使う
+# package は emacs を建て終わったあとで
+#
+#	pkg_add: package `emacs30-nox11-30.2' already recorded as installed
+#	ERROR: [depends.mk] A package matching ``emacs30-no-x11>=30.1<31''
+#	ERROR:     should be installed, but one cannot be found.
+#
+# で落ちる。一時間建ててから落ちるので高くつく。emacs21/26/27/28/29 の
+# nox11 は揃っていて、壊れているのは emacs30 の一本だけ。trunk では直って
+# いるので、四半期枝を使う間だけの回避。直っている枝では何も起きない。
+V=/usr/pkgsrc/editors/emacs30-nox11/version.mk
+if grep -q 'emacs30-no-x11>' $V 2>/dev/null; then
+	echo "  pkgsrc-$PKGSRC_QUARTER の emacs30-nox11/version.mk を直す"
+	sed 's/emacs30-no-x11>/emacs30-nox11>/' $V > $V.new && mv $V.new $V
+	grep '_EMACS_REQD' $V | sed 's/^/    /'
+fi
+
 # EMACS_TYPE が木に無いと、落ちるのは modules.mk の奥で、出るのは
 # Cannot open /version.mk という読めない文になる。先に見て止める。
 if ! grep -q "${ETYPE}@" /usr/pkgsrc/editors/emacs/modules.mk; then
@@ -207,6 +232,17 @@ for p in ninja-build py313-gyp py313-six "$EPKG"; do
 	pkg_info -e "$p" >/dev/null 2>&1 || { echo "!! $p を binary で入れられなかった"; exit 1; }
 done
 unset PKG_PATH
+# 入れた emacs が、mozc-elisp333 が要求するものと同じ名前かを見る。
+# 名前が違っても pkg_info -e は通るので、上の輪では気づけない。ここで
+# 見ておかないと、emacs を一時間かけて建て終わったあとの depends.mk で
+# 落ちる。pkgsrc-2026Q2 の emacs30-nox11/version.mk がまさにそれだった。
+EREQ=$(cd /usr/pkgsrc/inputmethod/mozc-elisp333 && 	make show-var VARNAME=DEPENDS 2>/dev/null | tr ' ' '\n' | grep '^emacs')
+echo "  mozc-elisp333 が要る emacs: ${EREQ:-(取れなかった)}"
+if [ -n "$EREQ" ] && ! pkg_info -e "${EREQ%%:*}" >/dev/null 2>&1; then
+	echo "!! 入れた $EPKG は ${EREQ%%:*} を満たさない"
+	pkg_info -e 'emacs*' | sed 's/^/    入っている: /'
+	exit 1
+fi
 pkg_info | egrep -i 'ninja|gyp|six|emacs' | sed 's/^/  /'
 df -h / | sed 's/^/  /'
 
