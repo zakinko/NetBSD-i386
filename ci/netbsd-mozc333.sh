@@ -227,6 +227,27 @@ echo "  $BINPKG"
 EPKG=$(echo "$ETYPE" | sed -e 's/nox$/-nox11/')
 # PKG_PATH は pkg_add に渡すときだけ立てる。export したまま make を走らせると
 # bsd.pkg.mk が「Please unset PKG_PATH before doing pkgsrc work!」で止める。
+# 版で要るものが変わる。NetBSD 10.x は base gcc が 10.5 で
+# USE_CXX_FEATURES= c++20 を満たさないので、pkgsrc が lang/gcc12 を引く。
+# 入れておかないと、エミュレートされた i386 で gcc をフルビルドする。
+# 11.0 は base gcc が 12 なので何も起きない。GCC_REQD を package に訊いて、
+# 12 以上を要求していて base が足りないときだけ入れる。
+GREQD=$(cd /usr/pkgsrc/inputmethod/mozc-server333 && \
+	make show-var VARNAME=GCC_REQD PKG_OPTIONS.mozc=gyp 2>/dev/null)
+echo "  GCC_REQD = ${GREQD:-(空)}"
+case "$GREQD" in
+*1[2-9]*)
+	if ! cc --version 2>/dev/null | head -1 | grep -qE ' 1[2-9]\.'; then
+		echo "  base の cc が古いので gcc12 を binary で入れる"
+		env PKG_PATH="$BINPKG" pkg_add -U gcc12 2>&1 | head -2 | sed 's/^/    /'
+		pkg_info -e gcc12 >/dev/null 2>&1 || \
+			{ echo "!! gcc12 を binary で入れられなかった"; exit 1; }
+	else
+		echo "  base の cc が $(cc --version | head -1 | sed 's/.*) //') なので gcc12 は要らない"
+	fi
+	;;
+esac
+
 for p in ninja-build py313-gyp py313-six "$EPKG"; do
 	env PKG_PATH="$BINPKG" pkg_add -U "$p" 2>&1 | grep -vE '^$' | head -2 | sed "s/^/    $p: /"
 	pkg_info -e "$p" >/dev/null 2>&1 || { echo "!! $p を binary で入れられなかった"; exit 1; }
