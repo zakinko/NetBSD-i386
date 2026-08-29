@@ -55,6 +55,20 @@ check_one() {
 		done
 	fi
 
+	# 1b. pkgsrc が飛ばす名前になっていないか。~ で終わるものは編集器の
+	#     控えとみなされ、黙って無視される。改名でこれを二本作った。
+	if [ -d "$pkg/patches" ]; then
+		for p in "$pkg"/patches/*; do
+			[ -f "$p" ] || continue
+			case ${p##*/} in
+			*~|*.orig|*.rej|*.bak)
+				bad "pkgsrc が無視する名前: ${p##*/}" ;;
+			patch-*) : ;;
+			*)	note "当て物らしくない file: ${p##*/}" ;;
+			esac
+		done
+	fi
+
 	# 2. distinfo の値が当て物と合っているか
 	if [ -f "$pkg/distinfo" ] && [ -d "$pkg/patches" ]; then
 		for p in "$pkg"/patches/patch-*; do
