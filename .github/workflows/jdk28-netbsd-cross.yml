@@ -143,6 +143,7 @@ jobs:
             --disable-warnings-as-errors --disable-precompiled-headers \
             --disable-ccache --disable-javac-server \
             CC=x86_64-unknown-netbsd-clang CXX=x86_64-unknown-netbsd-clang++ \
+            BUILD_CC=/usr/bin/clang BUILD_CXX=/usr/bin/clang++ \
             > /tmp/conf.log 2>&1 || { tail -30 /tmp/conf.log; exit 1; }
           tail -20 /tmp/conf.log
 
