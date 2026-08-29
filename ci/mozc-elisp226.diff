@@ -1,6 +1,6 @@
 diff -urN a/inputmethod/ibus-mozc226/Makefile b/inputmethod/ibus-mozc226/Makefile
---- inputmethod/ibus-mozc226/Makefile
-+++ inputmethod/ibus-mozc226/Makefile
+--- inputmethod/ibus-mozc226/Makefile	2026-08-29 05:31:16.727866797 +0000
++++ inputmethod/ibus-mozc226/Makefile	2026-08-29 05:31:16.730604296 +0000
 @@ -1,7 +1,7 @@
  # $NetBSD: Makefile,v 1.22 2026/05/14 16:41:19 ryoon Exp $
  
@@ -11,9 +11,9 @@ diff -urN a/inputmethod/ibus-mozc226/Makefile b/inputmethod/ibus-mozc226/Makefil
  INSTALLATION_DIRS+=	libexec share/ibus share/ibus/component \
  			share/ibus-mozc
 diff -urN a/inputmethod/mozc-elisp226/Makefile b/inputmethod/mozc-elisp226/Makefile
---- inputmethod/mozc-elisp226/Makefile
-+++ inputmethod/mozc-elisp226/Makefile
-@@ -1,9 +1,27 @@
+--- inputmethod/mozc-elisp226/Makefile	2026-08-29 05:31:16.696008278 +0000
++++ inputmethod/mozc-elisp226/Makefile	2026-08-29 05:48:25.521055037 +0000
+@@ -1,9 +1,25 @@
  # $NetBSD: Makefile,v 1.25 2026/08/26 14:37:05 wiz Exp $
  
  PKGNAME=	${EMACS_PKGNAME_PREFIX}${DISTNAME:S/mozc-/mozc-elisp-/}
@@ -21,12 +21,10 @@ diff -urN a/inputmethod/mozc-elisp226/Makefile b/inputmethod/mozc-elisp226/Makef
 +PKGREVISION=	47
  CATEGORIES=	inputmethod editors
  
-+
 +# mozc.el is only a client of mozc_emacs_helper, which in turn talks to
 +# mozc_server; without the server, CreateSession succeeds and the first
-+# SendKey comes back as session-error.  The version is pinned because
-+# the client refuses a server whose version differs, so a >= dependency
-+# would be satisfied by mozc-server226 2.29 and still not work.
++# SendKey comes back as session-error.
++#
 +# Two patterns, both of which have to hold.  The first pins the version:
 +# the helper and the server exchange it at session setup and the client
 +# refuses a server whose version differs, so a >= dependency would be
@@ -43,8 +41,8 @@ diff -urN a/inputmethod/mozc-elisp226/Makefile b/inputmethod/mozc-elisp226/Makef
  
  # Package Requires >= 24.3 for cl-lib etc.
 diff -urN a/inputmethod/mozc-renderer226/Makefile b/inputmethod/mozc-renderer226/Makefile
---- inputmethod/mozc-renderer226/Makefile
-+++ inputmethod/mozc-renderer226/Makefile
+--- inputmethod/mozc-renderer226/Makefile	2026-08-29 05:31:16.722138415 +0000
++++ inputmethod/mozc-renderer226/Makefile	2026-08-29 05:31:16.724951342 +0000
 @@ -1,7 +1,7 @@
  # $NetBSD: Makefile,v 1.21 2026/05/14 16:41:20 ryoon Exp $
  
@@ -55,8 +53,8 @@ diff -urN a/inputmethod/mozc-renderer226/Makefile b/inputmethod/mozc-renderer226
  CONFLICTS+=	ibus-mozc<=1.13.1651.102
  
 diff -urN a/inputmethod/mozc-server226/Makefile b/inputmethod/mozc-server226/Makefile
---- inputmethod/mozc-server226/Makefile
-+++ inputmethod/mozc-server226/Makefile
+--- inputmethod/mozc-server226/Makefile	2026-08-29 05:31:16.701777727 +0000
++++ inputmethod/mozc-server226/Makefile	2026-08-29 05:31:16.709100166 +0000
 @@ -1,7 +1,8 @@
  # $NetBSD: Makefile,v 1.21 2026/05/14 16:41:20 ryoon Exp $
  
@@ -68,8 +66,8 @@ diff -urN a/inputmethod/mozc-server226/Makefile b/inputmethod/mozc-server226/Mak
  INSTALLATION_DIRS+=	libexec
  
 diff -urN a/inputmethod/mozc-server226/Makefile.common b/inputmethod/mozc-server226/Makefile.common
---- inputmethod/mozc-server226/Makefile.common
-+++ inputmethod/mozc-server226/Makefile.common
+--- inputmethod/mozc-server226/Makefile.common	2026-08-29 05:31:16.702673371 +0000
++++ inputmethod/mozc-server226/Makefile.common	2026-08-29 05:31:16.709813944 +0000
 @@ -78,12 +78,33 @@
  # Maybe fix this later.
  BUILDLINK_TRANSFORM+=	rm:-Werror=char-subscripts
@@ -114,8 +112,8 @@ diff -urN a/inputmethod/mozc-server226/Makefile.common b/inputmethod/mozc-server
  .include "../../lang/python/tool.mk"
  .include "../../mk/atomic64.mk"
 diff -urN a/inputmethod/mozc-server226/distinfo b/inputmethod/mozc-server226/distinfo
---- inputmethod/mozc-server226/distinfo
-+++ inputmethod/mozc-server226/distinfo
+--- inputmethod/mozc-server226/distinfo	2026-08-29 05:31:16.706055924 +0000
++++ inputmethod/mozc-server226/distinfo	2026-08-29 05:31:16.712940878 +0000
 @@ -33,10 +33,10 @@
  SHA1 (patch-gui_word__register__dialog_word__register__dialog.cc) = 218e3706b819855814ba8871504fc7ccb4e40b23
  SHA1 (patch-gyp_common.gypi) = ce27e8665b9dab4dc6d34d337a2cb8c985c9e6f4
@@ -130,8 +128,8 @@ diff -urN a/inputmethod/mozc-server226/distinfo b/inputmethod/mozc-server226/dis
  SHA1 (patch-renderer_renderer.gyp) = 83493259d6b8cd9ab6871512bebc9616d72132d1
  SHA1 (patch-session_session.cc) = 3ae2c8dd056aae4c92d9dbfdac53d9c45261aad2
 diff -urN a/inputmethod/mozc-server226/patches/patch-ipc_ipc__path__manager.cc b/inputmethod/mozc-server226/patches/patch-ipc_ipc__path__manager.cc
---- inputmethod/mozc-server226/patches/patch-ipc_ipc__path__manager.cc
-+++ inputmethod/mozc-server226/patches/patch-ipc_ipc__path__manager.cc
+--- inputmethod/mozc-server226/patches/patch-ipc_ipc__path__manager.cc	2026-08-29 05:31:16.705336838 +0000
++++ inputmethod/mozc-server226/patches/patch-ipc_ipc__path__manager.cc	2026-08-29 05:31:16.712274592 +0000
 @@ -2,7 +2,18 @@
  
  * NetBSD support
@@ -212,8 +210,8 @@ diff -urN a/inputmethod/mozc-server226/patches/patch-ipc_ipc__path__manager.cc b
 +   if (server_path == server_path_) {
 +     return true;
 diff -urN a/inputmethod/mozc-server226/patches/patch-ipc_unix__ipc.cc b/inputmethod/mozc-server226/patches/patch-ipc_unix__ipc.cc
---- inputmethod/mozc-server226/patches/patch-ipc_unix__ipc.cc
-+++ inputmethod/mozc-server226/patches/patch-ipc_unix__ipc.cc
+--- inputmethod/mozc-server226/patches/patch-ipc_unix__ipc.cc	2026-08-29 05:31:16.704723073 +0000
++++ inputmethod/mozc-server226/patches/patch-ipc_unix__ipc.cc	2026-08-29 05:31:16.711504661 +0000
 @@ -2,7 +2,19 @@
  
  * NetBSD support
@@ -305,8 +303,8 @@ diff -urN a/inputmethod/mozc-server226/patches/patch-ipc_unix__ipc.cc b/inputmet
   }  // namespace mozc
   
 diff -urN a/inputmethod/mozc-tool226/Makefile b/inputmethod/mozc-tool226/Makefile
---- inputmethod/mozc-tool226/Makefile
-+++ inputmethod/mozc-tool226/Makefile
+--- inputmethod/mozc-tool226/Makefile	2026-08-29 05:31:16.716252192 +0000
++++ inputmethod/mozc-tool226/Makefile	2026-08-29 05:31:16.719082440 +0000
 @@ -1,7 +1,7 @@
  # $NetBSD: Makefile,v 1.21 2026/05/14 16:41:20 ryoon Exp $
  
@@ -317,8 +315,8 @@ diff -urN a/inputmethod/mozc-tool226/Makefile b/inputmethod/mozc-tool226/Makefil
  INSTALLATION_DIRS+=	libexec
  
 diff -urN a/inputmethod/uim-mozc226/Makefile b/inputmethod/uim-mozc226/Makefile
---- inputmethod/uim-mozc226/Makefile
-+++ inputmethod/uim-mozc226/Makefile
+--- inputmethod/uim-mozc226/Makefile	2026-08-29 05:31:16.733830963 +0000
++++ inputmethod/uim-mozc226/Makefile	2026-08-29 05:31:16.736845871 +0000
 @@ -1,7 +1,7 @@
  # $NetBSD: Makefile,v 1.19 2026/05/14 16:41:21 ryoon Exp $
  
