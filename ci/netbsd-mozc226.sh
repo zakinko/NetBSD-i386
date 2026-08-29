@@ -217,6 +217,28 @@ for p in ibus-mozc226 mozc-renderer226 mozc-tool226 uim-mozc226; do
 	( cd /usr/pkgsrc/inputmethod/$p && make show-all 2>/dev/null ) > /tmp/before.$p
 done
 
+# 送る PR は「直す前の server と直した後の helper は出会えない」と書いている。
+# ここは diff を当てる「前」でなければならない。当てた後に建てると修正済みの
+# binary を「未修正」と呼ぶことになり、対の測定が成立しない。一度そうなった。
+# そのときも結果は session_error で主張どおりに見えたが、/tmp から起こした
+# server が path 照合に落ちただけで、socket 名が .session だったのが唯一の兆候。
+# それを測るには未修正の server の binary が要る。木がまだ未修正のいまだけ
+# 取れるので、ここで建てて退避しておく。あとで対にする。
+if [ "$DEEP" = 1 ]; then
+	echo
+	echo "--- (DEEP) 未修正の mozc-server226 を建てて binary を退避する ---"
+	cd /usr/pkgsrc/inputmethod/mozc-server226
+	if make package-install > /tmp/b-unpatched.log 2>&1; then
+		cp /usr/pkg/libexec/mozc_server /root/mozc_server.unpatched
+		echo "  退避した: $(ls -l /root/mozc_server.unpatched | awk '{print $5}') バイト"
+		pkg_delete -f mozc-server-2.26.4282.100nb45 >/dev/null 2>&1 \
+			|| pkg_delete -f 'mozc-server-2.26*' >/dev/null 2>&1 || true
+		make clean > /dev/null 2>&1 || true
+	else
+		echo "  ★ 未修正 server が建たない"; tail -20 /tmp/b-unpatched.log | sed 's/^/    /'
+	fi
+fi
+
 echo "=== 送る diff を当てる ==="
 cd /usr/pkgsrc
 patch -p0 -C < /tmp/mozc226.diff || { echo "!! 当たらない"; exit 1; }
@@ -254,24 +276,6 @@ echo "##### 1. 上流の mozc-elisp226 は何を引くか #####"
 cd /usr/pkgsrc/inputmethod/mozc-elisp226
 echo "USE_X11 = [$(make show-var VARNAME=USE_X11 2>/dev/null)]"
 make show-depends 2>/dev/null | sed 's/^/  /'
-
-# 送る PR は「直す前の server と直した後の helper は出会えない」と書いている。
-# それを測るには未修正の server の binary が要る。木がまだ未修正のいまだけ
-# 取れるので、ここで建てて退避しておく。あとで対にする。
-if [ "$DEEP" = 1 ]; then
-	echo
-	echo "--- (DEEP) 未修正の mozc-server226 を建てて binary を退避する ---"
-	cd /usr/pkgsrc/inputmethod/mozc-server226
-	if make package-install > /tmp/b-unpatched.log 2>&1; then
-		cp /usr/pkg/libexec/mozc_server /root/mozc_server.unpatched
-		echo "  退避した: $(ls -l /root/mozc_server.unpatched | awk '{print $5}') バイト"
-		pkg_delete -f mozc-server-2.26.4282.100nb45 >/dev/null 2>&1 \
-			|| pkg_delete -f 'mozc-server-2.26*' >/dev/null 2>&1 || true
-		make clean > /dev/null 2>&1 || true
-	else
-		echo "  ★ 未修正 server が建たない"; tail -20 /tmp/b-unpatched.log | sed 's/^/    /'
-	fi
-fi
 
 echo
 echo "##### 2. GUI を切らない四つは変わらないか #####"
@@ -591,8 +595,18 @@ if [ "$DEEP" = 1 ] && [ -s /root/mozc_server.unpatched ]; then
 	su - mozctest -c "env XDG_CONFIG_HOME=$MH/prof /tmp/mozc_server.old" \
 		> /tmp/oldsrv.out 2>&1 &
 	sleep 8
-	echo "  古い server が作った socket:"
-	ls -a /tmp | grep '^\.mozc\.' | sed 's/^/    /' || echo "    (無し)"
+	# 腕が違うことを先に示す。古い server は名前を一文字切るので .sessio を
+	# 作るはずで、.session が出たなら退避した binary が未修正ではない。
+	# 対の結果は session-error で主張どおりに見えるが、/tmp から起こした
+	# server が path 照合に落ちただけ、という別の理由でもそうなる。
+	sock=$(ls -a /tmp | grep '^\.mozc\.' | head -1)
+	echo "  古い server が作った socket: ${sock:-(無し)}"
+	case "$sock" in
+	*.sessio) echo "  測定は成立している (名前が一文字切れている)" ;;
+	*.session) echo "  ★ 測定が成立していない -- 退避した binary が未修正でない"
+	           echo "  ★ 以下の結果は使えない" ;;
+	*)         echo "  ★ 測定が成立していない -- socket が無い" ;;
+	esac
 	su - mozctest -c "env XDG_CONFIG_HOME=$MH/prof sh -c \
 		\"printf '(1 CreateSession)\n(2 SendKey 1 97)\n' | timeout 30 /usr/pkg/bin/mozc_emacs_helper\"" \
 		> /tmp/pair.out 2>&1 || true
@@ -611,13 +625,16 @@ if [ "$DEEP" = 1 ]; then
 	for p in mozc-tool226 mozc-renderer226 ibus-mozc226 uim-mozc226; do
 		cd /usr/pkgsrc/inputmethod/$p
 		printf "  %-18s " "$p"
-		if make package > /tmp/b-$p.log 2>&1; then
+		if make build > /tmp/b-$p.log 2>&1; then
 			o=$(find work -name 'ipc.ipc_path_manager.o' 2>/dev/null | head -1)
 			q=$(grep -c 'use_qt=NO' /tmp/b-$p.log || true)
 			printf "建った  ipc_path_manager.o=%s  use_qt=NO の回数=%s\n" \
 				"$([ -n "$o" ] && echo あり || echo なし)" "$q"
 		else
-			echo "★ 建たない"; tail -15 /tmp/b-$p.log | sed 's/^/      /'
+			echo "★ 建たない"
+			df -h / | sed 's/^/      /'
+			grep -nE 'No space|Error code|error:|cannot|failed' /tmp/b-$p.log \
+				| tail -25 | sed 's/^/      /'
 		fi
 	done
 	echo "  --- 当て物が木に入っているか (四本とも) ---"
