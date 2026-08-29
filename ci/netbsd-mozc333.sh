@@ -249,11 +249,23 @@ case "$GREQD" in
 		#   USE_PKGSRC_GCC_RUNTIME=yes のとき
 		#   _GCC_LIBDIRS から ${_GCC_PREFIX}lib を落とす
 		# ので、runtime は gcc12-libs が入れる側から来る前提になっている。
+		# 9.4 は 9.0 の set に落ちるので pkg_add が版違いを拒む。
+		#   gcc12-libs: pkg_add: NetBSD/i386 9.0 (pkg) vs. 9.4 (this host)
+		# -I で読み飛ばさせる。道具として入れるだけで測る対象ではない。
 		for g in gcc12 gcc12-libs; do
 			env PKG_PATH="$BINPKG" pkg_add -U "$g" 2>&1 | head -2 | sed "s/^/    $g: /"
 			pkg_info -e "$g" >/dev/null 2>&1 || \
+				env PKG_PATH="$BINPKG" pkg_add -I -U "$g" 2>&1 | head -2 | sed "s/^/    $g (-I): /"
+			pkg_info -e "$g" >/dev/null 2>&1 || \
 				{ echo "!! $g を binary で入れられなかった"; exit 1; }
 		done
+		# gcc12-libs が runtime を置く場所。Makefile.common の exists() が
+		# ここを見る。無いと -L が黙って足されず、リンクで
+		#   undefined reference to `std::__throw_bad_array_new_length()'
+		# になる。黙って進ませない。
+		GL=$(pkg_info -L gcc12-libs 2>/dev/null | grep -m1 'libstdc++\.so$')
+		echo "  gcc12-libs の libstdc++: ${GL:-(見つからない)}"
+		[ -n "$GL" ] || { echo "!! gcc12-libs が libstdc++ を置いていない"; exit 1; }
 		echo "  USE_PKGSRC_GCC_RUNTIME = $(cd /usr/pkgsrc/inputmethod/mozc-server333 && make show-var VARNAME=USE_PKGSRC_GCC_RUNTIME 2>/dev/null)"
 		echo "  LDFLAGS = $(cd /usr/pkgsrc/inputmethod/mozc-server333 && make show-var VARNAME=LDFLAGS PKG_OPTIONS.mozc=gyp 2>/dev/null)"
 	else
