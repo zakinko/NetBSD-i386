@@ -48,9 +48,11 @@ jobs:
         run: |
           U=https://cdn.netbsd.org/pub/NetBSD/NetBSD-11.0/amd64/binary/sets
           mkdir -p sysroot
+          # NetBSD 11.0 の amd64 は sets が .tar.xz で置かれている。riscv64 は
+          # .tgz なので、arch によって拡張子が違う。
           for s in base comp xbase xcomp; do
-            curl -fsSL -o $s.tgz $U/$s.tgz
-            sudo tar xzf $s.tgz -C sysroot
+            curl -fsSL -o $s.tar.xz $U/$s.tar.xz
+            sudo tar xJf $s.tar.xz -C sysroot
           done
           sudo chown -R "$USER" sysroot
           ls sysroot/usr/lib/libc.so* sysroot/lib/libc.so.12* | head -3
