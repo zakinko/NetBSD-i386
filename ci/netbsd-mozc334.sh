@@ -229,7 +229,15 @@ echo "  $BINPKG"
 EPKG=$(echo "$ETYPE" | sed -e 's/nox$/-nox11/')
 # PKG_PATH は pkg_add に渡すときだけ立てる。export したまま make を走らせると
 # bsd.pkg.mk が「Please unset PKG_PATH before doing pkgsrc work!」で止める。
-for p in ninja-build py313-gyp py313-six "$EPKG"; do
+# 9.4 と 10.1 は base の gcc が古く、GCC_REQD が lang/gcc12 を引く。ソースから
+# 建てるとゲストの 9.5GB を使い切って
+#
+#	gcc/emit-rtl.cc: fatal error: error writing to /tmp//ccjlUloH.s:
+#	No space left on device
+#
+# で落ちる。binary で入れる。11.0 は base が gcc 12 なので使われないが、
+# 入れておいても害は無い。
+for p in ninja-build py313-gyp py313-six gcc12 "$EPKG"; do
 	env PKG_PATH="$BINPKG" pkg_add -U "$p" 2>&1 | grep -vE '^$' | head -2 | sed "s/^/    $p: /"
 	pkg_info -e "$p" >/dev/null 2>&1 || { echo "!! $p を binary で入れられなかった"; exit 1; }
 done
