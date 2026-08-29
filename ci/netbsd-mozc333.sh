@@ -245,9 +245,17 @@ case "$GREQD" in
 *1[2-9]*)
 	if ! cc --version 2>/dev/null | head -1 | grep -qE ' 1[2-9]\.'; then
 		echo "  base の cc が古いので gcc12 を binary で入れる"
-		env PKG_PATH="$BINPKG" pkg_add -U gcc12 2>&1 | head -2 | sed 's/^/    /'
-		pkg_info -e gcc12 >/dev/null 2>&1 || \
-			{ echo "!! gcc12 を binary で入れられなかった"; exit 1; }
+		# gcc12-libs も要る。mk/compiler/gcc.mk は
+		#   USE_PKGSRC_GCC_RUNTIME=yes のとき
+		#   _GCC_LIBDIRS から ${_GCC_PREFIX}lib を落とす
+		# ので、runtime は gcc12-libs が入れる側から来る前提になっている。
+		for g in gcc12 gcc12-libs; do
+			env PKG_PATH="$BINPKG" pkg_add -U "$g" 2>&1 | head -2 | sed "s/^/    $g: /"
+			pkg_info -e "$g" >/dev/null 2>&1 || \
+				{ echo "!! $g を binary で入れられなかった"; exit 1; }
+		done
+		echo "  USE_PKGSRC_GCC_RUNTIME = $(cd /usr/pkgsrc/inputmethod/mozc-server333 && make show-var VARNAME=USE_PKGSRC_GCC_RUNTIME 2>/dev/null)"
+		echo "  LDFLAGS = $(cd /usr/pkgsrc/inputmethod/mozc-server333 && make show-var VARNAME=LDFLAGS PKG_OPTIONS.mozc=gyp 2>/dev/null)"
 	else
 		echo "  base の cc が $(cc --version | head -1 | sed 's/.*) //') なので gcc12 は要らない"
 	fi
