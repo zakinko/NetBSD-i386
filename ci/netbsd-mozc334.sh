@@ -290,8 +290,13 @@ for f in build_mozc.py gyp/common.gypi protobuf/protobuf.gyp protobuf/custom_pro
 	if [ -e "$S/$f" ]; then echo "  有 $f"; else echo "  !! 無い $f"; exit 1; fi
 done
 [ "$N" = 89 ] || echo "::warning::.gyp の数が 89 ではない ($N)"
-if grep -qiE 'ignoring|reject|hunk.*fail' /tmp/patch.log; then
-	echo '!! 当て物が当たっていない'; grep -iE 'ignoring|reject|hunk' /tmp/patch.log | head -10; exit 1
+# make patch は TOOL_DEPENDS も建てるので、この log には依存の configure の
+# 出力まで入る。'reject' で見ると "checking whether mkfifo rejects trailing
+# slashes... yes" に当たって誤検知する。pkgsrc が実際に出す文だけを見る。
+if grep -qE '^Ignoring patch file|Hunk #[0-9]+ FAILED|saving rejects to|\*\*\* Error code .* patch' /tmp/patch.log; then
+	echo '!! 当て物が当たっていない'
+	grep -E '^Ignoring patch file|Hunk #[0-9]+ FAILED|saving rejects to' /tmp/patch.log | head -10
+	exit 1
 fi
 echo "  当て物 $(ls /usr/pkgsrc/zakinko/mozc-server334/patches | wc -l) 本、reject 無し"
 
