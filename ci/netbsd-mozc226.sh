@@ -360,6 +360,17 @@ else
 	tail -40 /tmp/build.log
 	exit 1
 fi
+# 送る PR は「六本とも obj/ipc/ipc.ipc_path_manager.o を繋ぐ」と書いている。
+# GUI 四本は DEEP で測るが、この二本はここで建っているので、そのまま見る。
+# ipc.gyp の target 'ipc' は unix_ipc.cc と ipc_path_manager.cc を両方持つ
+# 一つの static_library なので、片方を繋いでいれば両方繋いでいる。
+echo "--- この二本は ipc_path_manager.o を繋ぐか ---"
+for p in mozc-server226 mozc-elisp226; do
+	d=/usr/pkgsrc/inputmethod/$p
+	o=$(find $d/work -name 'ipc.ipc_path_manager.o' 2>/dev/null | head -1)
+	printf "  %-16s %s\n" "$p" "${o:+あり}${o:-なし (work は片付いているかもしれない)}"
+done
+
 echo "--- 依存として mozc-server226 を先に建てたか ---"
 grep -n 'mozc-server226\|Installing binary package of mozc-server' /tmp/build.log | head -5 | sed 's/^/  /'
 echo "--- X11 を引いていないか (引いていれば gtk2 や qt5 が出る) ---"
