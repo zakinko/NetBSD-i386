@@ -85,7 +85,8 @@ else
 fi
 trap cleanup EXIT INT TERM
 
-$SSH "OVERLAY='$OVERLAY' ETYPE='$ETYPE' sh -s" <<'GUEST'
+$SSH "OVERLAY='$OVERLAY' ETYPE='$ETYPE' \
+	PKGSRC_BRANCH='$PKGSRC_BRANCH' PKGSRC_QUARTER='$PKGSRC_QUARTER' sh -s" <<'GUEST'
 set -e
 PATH=/sbin:/usr/sbin:/bin:/usr/bin:/usr/pkg/bin:/usr/pkg/sbin
 export PATH
@@ -124,9 +125,18 @@ if [ "$AVAIL" -lt 4000 ]; then
 fi
 
 echo "=== pkgsrc を用意する ==="
-# cdn の current/pkgsrc.tar.gz は数日遅れる。GitHub の mirror の trunk を
-# 使う。mirror は変換されたものなので pkgsrc の正ではない (正は CVS)。
-# 建てるためだけに使い、送る diff は CVS から取ること。
+# 空のまま進むと URL が refs/heads/ で終わり、ftp は 404 とだけ言う。
+# 枝の名前を間違えたのか変数が渡っていないのかが読めないので、先に見て止める。
+[ -n "$PKGSRC_BRANCH" ] || { echo "!! PKGSRC_BRANCH が空。ゲストに渡っていない"; exit 1; }
+[ -n "$PKGSRC_QUARTER" ] || { echo "!! PKGSRC_QUARTER が空"; exit 1; }
+echo "  枝 $PKGSRC_BRANCH / binary set の四半期 $PKGSRC_QUARTER"
+# cdn の current/pkgsrc.tar.gz は数日遅れるので GitHub の mirror を使う。
+# trunk ではなく四半期枝を取る。trunk だと回した日で木が変わり、NetBSD の
+# 版差を見たいのに pkgsrc 側の版差が混ざる。四半期枝には同じ枝で建てられた
+# binary package の set もあるので、木と道具の版が揃う。
+#
+# mirror は変換されたものなので pkgsrc の正ではない (正は CVS)。建てる
+# ためだけに使い、送る diff は CVS から取ること。
 if [ ! -d /usr/pkgsrc/mk ]; then
 	ftp -o /tmp/pkgsrc.tar.gz \
 		"https://codeload.github.com/NetBSD/pkgsrc/tar.gz/refs/heads/$PKGSRC_BRANCH"
