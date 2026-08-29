@@ -19,8 +19,8 @@
 #	#error This code for 64 bit Unix.
 #
 # で 32bit を拒むので、3.34 を bazel で i386 に載せる道は無い。gyp なら
-# bazel を一度も呼ばないので、この一行は効かない。**効かないことと、実際に
-# 建つことは別である。** それを測るのがこの script である。
+# bazel を一度も呼ばないので、この一行は効かない。効かないことと、実際に
+# 建つことは別である。それを測るのがこの script である。
 #
 # amd64 では techne で確かめてある。690/690 まで建ち、mozc_emacs_helper から
 # nihongo が 日本語 に変換されるところまで見た。i386 は未測である。
@@ -32,8 +32,9 @@
 #   3. mozc_server と mozc_emacs_helper が建ち、32bit の ELF であること
 #   4. 実際に日本語が打てること
 #
-# ci/netbsd-mozc333.sh と同じ作り。あちらが踏んだ穴 (root では測れない、
-# profile を先に作る、sysctl の MIB を先に測る) はそのまま引き継いでいる。
+# ci/netbsd-mozc334.sh と同じ作り。あちらが踏んだ穴 — root では測れない、
+# profile を先に作る、sysctl の MIB を先に測る、枝の名前をゲストに渡す —
+# はそのまま引き継いでいる。
 
 set -eu
 
@@ -94,7 +95,8 @@ else
 fi
 trap cleanup EXIT INT TERM
 
-$SSH "OVERLAY='$OVERLAY' ETYPE='$ETYPE' sh -s" <<'GUEST'
+$SSH "OVERLAY='$OVERLAY' ETYPE='$ETYPE' \
+	PKGSRC_BRANCH='$PKGSRC_BRANCH' PKGSRC_QUARTER='$PKGSRC_QUARTER' sh -s" <<'GUEST'
 set -e
 PATH=/sbin:/usr/sbin:/bin:/usr/bin:/usr/pkg/bin:/usr/pkg/sbin
 export PATH
@@ -113,8 +115,6 @@ echo "  / の空き: ${AVAIL}MB"
 #
 #	c++: fatal error: Killed signal terminated program cc1plus
 #
-# 334 は distfile を二本取る (3.34.6239 と 3.33.6089) ので、333 より
-# ディスクを食う。展開後の木も二つ並ぶ。
 # ディスクは 9GB 空いているので、ファイル swap を足しておく。並列度も
 # MAKE_JOBS で絞るが、片方だけでは足りないことがある。
 if [ "$(swapctl -l 2>/dev/null | grep -c /)" = "0" ]; then
@@ -135,9 +135,18 @@ if [ "$AVAIL" -lt 4000 ]; then
 fi
 
 echo "=== pkgsrc を用意する ==="
-# cdn の current/pkgsrc.tar.gz は数日遅れる。GitHub の mirror の trunk を
-# 使う。mirror は変換されたものなので pkgsrc の正ではない (正は CVS)。
-# 建てるためだけに使い、送る diff は CVS から取ること。
+# 空のまま進むと URL が refs/heads/ で終わり、ftp は 404 とだけ言う。
+# 枝の名前を間違えたのか変数が渡っていないのかが読めないので、先に見て止める。
+[ -n "$PKGSRC_BRANCH" ] || { echo "!! PKGSRC_BRANCH が空。ゲストに渡っていない"; exit 1; }
+[ -n "$PKGSRC_QUARTER" ] || { echo "!! PKGSRC_QUARTER が空"; exit 1; }
+echo "  枝 $PKGSRC_BRANCH / binary set の四半期 $PKGSRC_QUARTER"
+# cdn の current/pkgsrc.tar.gz は数日遅れるので GitHub の mirror を使う。
+# trunk ではなく四半期枝を取る。trunk だと回した日で木が変わり、NetBSD の
+# 版差を見たいのに pkgsrc 側の版差が混ざる。四半期枝には同じ枝で建てられた
+# binary package の set もあるので、木と道具の版が揃う。
+#
+# mirror は変換されたものなので pkgsrc の正ではない (正は CVS)。建てる
+# ためだけに使い、送る diff は CVS から取ること。
 if [ ! -d /usr/pkgsrc/mk ]; then
 	ftp -o /tmp/pkgsrc.tar.gz \
 		"https://codeload.github.com/NetBSD/pkgsrc/tar.gz/refs/heads/$PKGSRC_BRANCH"
@@ -149,6 +158,31 @@ if [ ! -d /usr/pkgsrc/mk ]; then
 	done
 fi
 [ -d /usr/pkgsrc/mk ] || { echo "!! /usr/pkgsrc/mk が無い"; ls /usr | head; exit 1; }
+
+# pkgsrc-2026Q2 の editors/emacs30-nox11/version.mk が
+#
+#	_EMACS_REQD=	emacs30-no-x11>=30.1<31
+#
+# と書いている。同じ package の PKGNAME は
+#
+#	PKGNAME=	${DISTNAME:S/emacs/emacs30/:S/-/-nox11-/}   = emacs30-nox11-30.2
+#
+# なので、この依存は満たしようがない。EMACS_TYPE=emacs30nox を使う
+# package は emacs を建て終わったあとで
+#
+#	pkg_add: package `emacs30-nox11-30.2' already recorded as installed
+#	ERROR: [depends.mk] A package matching ``emacs30-no-x11>=30.1<31''
+#	ERROR:     should be installed, but one cannot be found.
+#
+# で落ちる。一時間建ててから落ちるので高くつく。emacs21/26/27/28/29 の
+# nox11 は揃っていて、壊れているのは emacs30 の一本だけ。trunk では直って
+# いるので、四半期枝を使う間だけの回避。直っている枝では何も起きない。
+V=/usr/pkgsrc/editors/emacs30-nox11/version.mk
+if grep -q 'emacs30-no-x11>' $V 2>/dev/null; then
+	echo "  pkgsrc-$PKGSRC_QUARTER の emacs30-nox11/version.mk を直す"
+	sed 's/emacs30-no-x11>/emacs30-nox11>/' $V > $V.new && mv $V.new $V
+	grep '_EMACS_REQD' $V | sed 's/^/    /'
+fi
 
 # EMACS_TYPE が木に無いと、落ちるのは modules.mk の奥で、出るのは
 # Cannot open /version.mk という読めない文になる。先に見て止める。
@@ -164,6 +198,9 @@ ftp -o overlay.tar.gz "$OVERLAY"
 tar xzf overlay.tar.gz
 rm -rf /usr/pkgsrc/zakinko
 mv pkgsrc-zakinko-main /usr/pkgsrc/zakinko
+# 334 は zakinko/ に置いたまま測る。333 は送る先が inputmethod/ と決まって
+# いるのでそこへ動かしているが、334 はまだ出す先が決まっていない。
+# Makefile.common の DISTINFO_FILE と PATCHDIR も zakinko/ を指している。
 # 無いまま進むと「測っていないのに測ったような出力」になる。先に見て止める。
 for d in mozc-server334 mozc-elisp334; do
 	[ -d /usr/pkgsrc/zakinko/$d ] || { echo "!! overlay に $d が無い"; exit 1; }
@@ -197,6 +234,17 @@ for p in ninja-build py313-gyp py313-six "$EPKG"; do
 	pkg_info -e "$p" >/dev/null 2>&1 || { echo "!! $p を binary で入れられなかった"; exit 1; }
 done
 unset PKG_PATH
+# 入れた emacs が、mozc-elisp334 が要求するものと同じ名前かを見る。
+# 名前が違っても pkg_info -e は通るので、上の輪では気づけない。ここで
+# 見ておかないと、emacs を一時間かけて建て終わったあとの depends.mk で
+# 落ちる。pkgsrc-2026Q2 の emacs30-nox11/version.mk がまさにそれだった。
+EREQ=$(cd /usr/pkgsrc/zakinko/mozc-elisp334 && 	make show-var VARNAME=DEPENDS 2>/dev/null | tr ' ' '\n' | grep '^emacs')
+echo "  mozc-elisp334 が要る emacs: ${EREQ:-(取れなかった)}"
+if [ -n "$EREQ" ] && ! pkg_info -e "${EREQ%%:*}" >/dev/null 2>&1; then
+	echo "!! 入れた $EPKG は ${EREQ%%:*} を満たさない"
+	pkg_info -e 'emacs*' | sed 's/^/    入っている: /'
+	exit 1
+fi
 pkg_info | egrep -i 'ninja|gyp|six|emacs' | sed 's/^/  /'
 df -h / | sed 's/^/  /'
 
@@ -242,7 +290,6 @@ for f in build_mozc.py gyp/common.gypi protobuf/protobuf.gyp protobuf/custom_pro
 	if [ -e "$S/$f" ]; then echo "  有 $f"; else echo "  !! 無い $f"; exit 1; fi
 done
 [ "$N" = 89 ] || echo "::warning::.gyp の数が 89 ではない ($N)"
-# 当て物が reject 無しで当たったか
 if grep -qiE 'ignoring|reject|hunk.*fail' /tmp/patch.log; then
 	echo '!! 当て物が当たっていない'; grep -iE 'ignoring|reject|hunk' /tmp/patch.log | head -10; exit 1
 fi
@@ -338,7 +385,15 @@ id mozctest >/dev/null 2>&1 || useradd -m -s /bin/sh mozctest
 #   system_util.cc     User profile directory doesn't exist
 #   process_mutex.cc   open() failed
 #   mozc_server.cc:99  Mozc Server is already running   <- 誤判定
-# と進んで Finalize() に入り、FinalizeSingletons で null を呼んで落ちる。
+# と進んで Run() が -1 で戻る。main() は戻り値に関係なく Finalize() を呼ぶ。
+#
+# ここで落ちていた。patch-base_singleton.cc を入れる前の 3.33 は
+# FinalizeSingletons が 256 個の配列を全部まわって、埋まっていない
+# スロットの null を呼んでいた。i386 で追っていた core はこれで、
+# amd64 でも同じ backtrace が出る。i386 固有ではない。
+#
+# 当て物が入った今は -1 で静かに戻るだけになる。それでも profile は
+# 要る。無ければ server は起動しないので、変換はどのみち通らない。
 # server が入っていないときと同じ応答になるので、出力だけでは分からない。
 su - mozctest -c 'mkdir -p ~/.config/mozc'
 su - mozctest -c 'ls -ld ~/.config/mozc' | sed 's/^/  profile: /'
@@ -392,10 +447,14 @@ else
 	# 見え方が同じ Session failed でも原因が違う。まずここで分ける。
 	#   server が生きている + socket がある → 照合で拒まれた
 	#   server が居ない + socket も無い     → 起動できずに死んだ
-	#   server が居ない + core がある       → i386 で落ちている (当て物と無関係)
-	# af が amd64 で再現させたのは「profile が作れない HOME で起こすと落ちる」
-	# という条件だった。CI は useradd -m で home を作っているので profile は
-	# 作れるはずで、そこが食い違っている。server を直に起こして stderr を見る。
+	#   server が居ない + core がある       → singleton の当て物が効いていない
+	#
+	# 「照合で拒まれた」は ipc_path_manager が sysctl KERN_PROC_PATHNAME で
+	# 取った server の実 path を、client が期待する
+	# base/system_util.cc の MOZC_SERVER_DIR (= /usr/pkg/libexec) と
+	# 突き合わせて弾く形。work の binary を直に起こすと必ずこれになるので、
+	# 変換は install したものでしか測れない。CI がその唯一の場所になる。
+	# server を直に起こして stderr を見る。
 	echo "--- profile は作れているか ---"
 	su - mozctest -c 'ls -la ~/.config/ 2>&1; ls -la ~/.config/mozc/ 2>&1' \
 		| head -20 | sed 's/^/  /'
