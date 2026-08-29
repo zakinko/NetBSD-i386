@@ -65,6 +65,16 @@ cleanup() {
 echo "=== 起動 ==="
 # mozc は protobuf と abseil を丸ごと組むので、既定の 4096 では足りない
 # ことがある。runner は 16GB あるので広く取る。
+# 二本目のディスクを足す。イメージの / は 11G しかなく、未修正の木を
+# 建てると gtk2 の依存が gcc14 まで辿って使い切る。実際 105% で落ちた。
+# runner 側は 100G 以上空いていて、qcow2 は sparse なので、大きく取っても
+# 実際に使うぶんしか減らない。runvm.sh の EXTRAARGS から渡す。
+# root が wd0a なので、二本目は wd1 として見える。
+SCRATCH=${SCRATCH:-60G}
+qemu-img create -f qcow2 "$WORK/scratch.qcow2" "$SCRATCH" >/dev/null 2>&1 \
+	&& echo "=== 作業用ディスクを $SCRATCH で足す ===" \
+	|| echo "=== 作業用ディスクを作れなかった (11G のまま進む) ==="
+EXTRAARGS="-drive file=$WORK/scratch.qcow2,if=ide,format=qcow2,cache=unsafe" \
 MEM=${MEM:-8192} DIR=. sh runvm.sh "$NAME" "$PORT"
 trap cleanup EXIT INT TERM
 
@@ -162,6 +172,23 @@ if [ "$(swapctl -l 2>/dev/null | grep -c /)" = "0" ] && [ "$PHYS" -lt 2147483648
 	swapctl -a /var/tmp/swapfile && echo "  swap を ${sz}M 足した (空き ${free}M)"
 fi
 swapctl -l 2>/dev/null | sed 's/^/  /'
+# 足した二本目を作業用に使う。失敗しても止めない (11G のまま進む)。
+WRKOBJ=
+if [ -e /dev/wd1d ]; then
+	echo "=== 二本目のディスクを作業用にする ==="
+	if newfs -O2 /dev/rwd1d >/dev/null 2>&1 && mkdir -p /scratch \
+	   && mount /dev/wd1d /scratch 2>/dev/null; then
+		mkdir -p /scratch/work /scratch/distfiles /scratch/packages
+		WRKOBJ=/scratch/work
+		df -h /scratch | sed 's/^/  /'
+	else
+		echo "  newfs か mount に失敗した (11G のまま進む)"
+	fi
+else
+	echo "=== 二本目のディスクが見えない (11G のまま進む) ==="
+	sysctl -n hw.disknames 2>/dev/null | sed 's/^/  disks: /'
+fi
+
 cat >> /etc/mk.conf <<EOF
 MAKE_JOBS=	$J
 MAKE_ENV+=	TMPDIR=/var/tmp/ccbuild
@@ -184,6 +211,14 @@ EMACS_TYPE=	$ETYPE
 # 持っているので、そこに寄せる。
 MASTER_SITE_OVERRIDE=	https://cdn.NetBSD.org/pub/pkgsrc/distfiles/
 EOF
+if [ -n "$WRKOBJ" ]; then
+	cat >> /etc/mk.conf <<EOF
+WRKOBJDIR=	$WRKOBJ
+DISTDIR=	/scratch/distfiles
+PACKAGES=	/scratch/packages
+EOF
+	echo "  WRKOBJDIR を $WRKOBJ にした"
+fi
 tail -12 /etc/mk.conf | sed 's/^/  /'
 
 # 建てたいのは mozc だけ。道具は binary で入れる。ninja-build は re2c を、
