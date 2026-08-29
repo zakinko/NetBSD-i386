@@ -414,17 +414,25 @@ fi
 # それを返すからで、結果は binary に焼かれる。焼かれているかを見る。
 # (netbsd-i386-24 が 2.29 で先にやっていた。同じ手を借りている。)
 echo "--- server_path は空でないか (IsValidServer の二つ目の早期 return) ---"
-if command -v strings >/dev/null 2>&1; then
+# strings では見えない。"/usr/pkg/libexec" はちょうど 16 文字なので、
+# std::string の小文字列最適化で literal にならず、8 バイトの即値二つとして
+# コードに埋まる。生バイト列にも連続しては現れない。objdump で見る。
+#   movabs $0x676b702f7273752f  "/usr/pkg"
+#   movabs $0x6365786562696c2f  "/libexec"
+if command -v objdump >/dev/null 2>&1; then
 	for f in /usr/pkg/bin/mozc_emacs_helper /usr/pkg/libexec/mozc_server; do
-		hit=$(strings -a "$f" 2>/dev/null | grep -Ex '/usr/pkg/libexec|mozc_server' | sort -u)
-		if [ -n "$hit" ]; then
-			echo "  $f"; echo "$hit" | sed 's/^/    /'
+		n=$(objdump -d "$f" 2>/dev/null \
+			| grep -c '0x676b702f7273752f')
+		m=$(objdump -d "$f" 2>/dev/null \
+			| grep -c '0x6365786562696c2f')
+		if [ "${n:-0}" -gt 0 ] && [ "${m:-0}" -gt 0 ]; then
+			echo "  $f  /usr/pkg が $n 箇所、/libexec が $m 箇所 -- 空でない"
 		else
-			echo "  $f -- 見つからない (空なら比較は走らない)"
+			echo "  $f  見つからない (/usr/pkg=$n /libexec=$m) -- 空なら比較は走らない"
 		fi
 	done
 else
-	echo "  strings が無いので測れない"
+	echo "  objdump が無いので測れない"
 fi
 
 echo "--- 参考: root で叩くと (RunLevel::DENY で拒まれる) ---"
