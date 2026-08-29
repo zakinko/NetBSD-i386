@@ -163,11 +163,22 @@ ftp -o overlay.tar.gz "$OVERLAY"
 tar xzf overlay.tar.gz
 rm -rf /usr/pkgsrc/zakinko
 mv pkgsrc-zakinko-main /usr/pkgsrc/zakinko
+# 四つは inputmethod/ に、bazel9 は devel/ に置き直す。送る先がそこなので、
+# そこで測らないと意味が無い。DISTINFO_FILE と PATCHDIR が
+# ../../inputmethod/mozc-server333 を指しているし、options.mk は PKGPATH で
+# 分岐する。zakinko/ の下に置いたままだと PKGPATH が zakinko/... になり、
+# 「写しでは測れない条件」がそこに入る。VM は使い捨てなので実体を動かす。
+for d in mozc-server333 mozc-elisp333 mozc-tool333 mozc-renderer333; do
+	rm -rf /usr/pkgsrc/inputmethod/$d
+	mv /usr/pkgsrc/zakinko/$d /usr/pkgsrc/inputmethod/$d
+done
+rm -rf /usr/pkgsrc/devel/bazel9
+mv /usr/pkgsrc/zakinko/bazel9 /usr/pkgsrc/devel/bazel9
 # 無いまま進むと「測っていないのに測ったような出力」になる。先に見て止める。
 for d in mozc-server333 mozc-elisp333; do
-	[ -d /usr/pkgsrc/zakinko/$d ] || { echo "!! overlay に $d が無い"; exit 1; }
+	[ -d /usr/pkgsrc/inputmethod/$d ] || { echo "!! overlay に $d が無い"; exit 1; }
 done
-ls -d /usr/pkgsrc/zakinko/mozc-server333 /usr/pkgsrc/zakinko/mozc-elisp333
+ls -d /usr/pkgsrc/inputmethod/mozc-server333 /usr/pkgsrc/inputmethod/mozc-elisp333
 
 echo "=== 道具を binary package で入れる ==="
 # ソースから建てると devel/ninja-build が devel/re2c を、re2c が
@@ -216,7 +227,7 @@ EOF
 # i386 では options.mk が gyp を既定にする。それが効いているかを測るのが
 # この script の目的なので、i386 では何も足さない。
 #
-# 64bit の箱で回すと既定は bazel になり、TOOL_DEPENDS が zakinko/bazel9 を
+# 64bit の箱で回すと既定は bazel になり、TOOL_DEPENDS が devel/bazel9 を
 # 引く。あれは bootstrap に二時間から三時間かかるので、測りたいものと
 # 関係のない時間を CI が払うことになる。i386 以外では gyp を明示する。
 case $(uname -m) in
@@ -228,7 +239,7 @@ tail -8 /etc/mk.conf | sed 's/^/  /'
 
 echo
 echo "##### 1. gyp の configure が通るか #####"
-cd /usr/pkgsrc/zakinko/mozc-server333
+cd /usr/pkgsrc/inputmethod/mozc-server333
 V=$(make show-var VARNAME=PKGNAME 2>/dev/null)
 [ -n "$V" ] || { echo "!! PKGNAME が取れない。ここで止める"; exit 1; }
 echo "  PKGNAME     = $V"
@@ -273,7 +284,7 @@ else
 fi
 grep -oE '^\[[0-9]+/[0-9]+\] LINK mozc_server' /tmp/server.log | sed 's/^/  /'
 
-cd /usr/pkgsrc/zakinko/mozc-elisp333
+cd /usr/pkgsrc/inputmethod/mozc-elisp333
 echo "DEPENDS:"; make show-depends 2>/dev/null | sed 's/^/  /'
 if make package-install >/tmp/elisp.log 2>&1; then
 	echo 'RESULT mozc-elisp333: 通った'
@@ -417,7 +428,7 @@ else
 		# /usr/pkg/libexec/mozc_server は INSTALL_PROGRAM が -s で入れるので
 		# stripped で、bt が ?? だらけになる。work に未 strip のものが残って
 		# いるので、在ればそちらを使う。
-		B=/usr/pkgsrc/zakinko/mozc-server333/work/mozc-3.33.6089/src/out_bsd/Release/mozc_server
+		B=/usr/pkgsrc/inputmethod/mozc-server333/work/mozc-3.33.6089/src/out_bsd/Release/mozc_server
 		[ -f "$B" ] || B=/usr/pkg/libexec/mozc_server
 		echo "  binary: $B"
 		file "$B" | sed 's/^/  /'
