@@ -400,6 +400,33 @@ else
 	echo "  mib.c が建たない:"; sed 's/^/    /' /tmp/mib.err
 fi
 
+# 照合はもう一段で外れる。ipc_path_manager.cc の
+#
+#	if (server_path.empty()) { return true; }
+#
+# は sysctl より手前に在るので、MIB が直っていても path が空なら比較は
+# 走らず、それでも変換は通る。「変換が通った」ことは「比較が通った」ことを
+# 意味しない。空でないことを別に見る必要がある。
+#
+# 空でないのは patch-config.bzl が @PREFIX@/libexec を
+# LINUX_MOZC_SERVER_DIRECTORY に入れ、patch-base_base.gyp が
+# MOZC_SERVER_DIRECTORY として渡し、patch-base_system__util.cc が
+# それを返すからで、結果は binary に焼かれる。焼かれているかを見る。
+# (netbsd-i386-24 が 2.29 で先にやっていた。同じ手を借りている。)
+echo "--- server_path は空でないか (IsValidServer の二つ目の早期 return) ---"
+if command -v strings >/dev/null 2>&1; then
+	for f in /usr/pkg/bin/mozc_emacs_helper /usr/pkg/libexec/mozc_server; do
+		hit=$(strings -a "$f" 2>/dev/null | grep -Ex '/usr/pkg/libexec|mozc_server' | sort -u)
+		if [ -n "$hit" ]; then
+			echo "  $f"; echo "$hit" | sed 's/^/    /'
+		else
+			echo "  $f -- 見つからない (空なら比較は走らない)"
+		fi
+	done
+else
+	echo "  strings が無いので測れない"
+fi
+
 echo "--- 参考: root で叩くと (RunLevel::DENY で拒まれる) ---"
 timeout 60 /usr/pkg/bin/mozc_emacs_helper < /tmp/keys.txt > /tmp/conv-root.out 2>&1 || true
 tail -1 /tmp/conv-root.out | cut -c1-120 | sed 's/^/  /'
