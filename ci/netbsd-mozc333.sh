@@ -223,6 +223,12 @@ if ! ftp -o /dev/null "$BINPKG/" 2>/dev/null; then
 	BINPKG=https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$(uname -p)/$REL/All
 fi
 echo "  $BINPKG"
+# 枝なしの URL は 302 で別の set に飛ぶ。9.4 は 9.0_2026Q1、10.1 は
+# 10.0_2026Q1 に着く。古い release には四半期の set が無いためで、
+# 木 (2026Q2) と binary の四半期が一つずれる。道具として入れるだけの
+# ものなので測るものは変わらないが、どこから来たかは出しておく。
+ftp -o /dev/null -v "$BINPKG/" 2>&1 | grep -i 'redirect\|301\|302' | head -2 | sed 's/^/  /'
+
 # EMACS_TYPE (emacs30nox) から package 名 (emacs30-nox11) を作る
 EPKG=$(echo "$ETYPE" | sed -e 's/nox$/-nox11/')
 # PKG_PATH は pkg_add に渡すときだけ立てる。export したまま make を走らせると
