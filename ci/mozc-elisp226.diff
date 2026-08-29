@@ -1,0 +1,320 @@
+diff -urN a/inputmethod/ibus-mozc226/Makefile b/inputmethod/ibus-mozc226/Makefile
+--- inputmethod/ibus-mozc226/Makefile
++++ inputmethod/ibus-mozc226/Makefile
+@@ -1,7 +1,7 @@
+ # $NetBSD: Makefile,v 1.22 2026/05/14 16:41:19 ryoon Exp $
+ 
+ PKGNAME=	ibus-${DISTNAME}
+-PKGREVISION=	45
++PKGREVISION=	46
+ 
+ INSTALLATION_DIRS+=	libexec share/ibus share/ibus/component \
+ 			share/ibus-mozc
+diff -urN a/inputmethod/mozc-elisp226/Makefile b/inputmethod/mozc-elisp226/Makefile
+--- inputmethod/mozc-elisp226/Makefile
++++ inputmethod/mozc-elisp226/Makefile
+@@ -1,9 +1,17 @@
+ # $NetBSD: Makefile,v 1.25 2026/08/26 14:37:05 wiz Exp $
+ 
+ PKGNAME=	${EMACS_PKGNAME_PREFIX}${DISTNAME:S/mozc-/mozc-elisp-/}
+-PKGREVISION=	46
++PKGREVISION=	47
+ CATEGORIES=	inputmethod editors
+ 
++
++# mozc.el is only a client of mozc_emacs_helper, which in turn talks to
++# mozc_server; without the server, CreateSession succeeds and the first
++# SendKey comes back as session-error.  The version is pinned because
++# the client refuses a server whose version differs, so a >= dependency
++# would be satisfied by mozc-server226 2.29 and still not work.
++DEPENDS+=	mozc-server-${MOZC_VER}{,nb*}:../../inputmethod/mozc-server226
++
+ EMACS_MODULES=	base leim
+ 
+ # Package Requires >= 24.3 for cl-lib etc.
+diff -urN a/inputmethod/mozc-renderer226/Makefile b/inputmethod/mozc-renderer226/Makefile
+--- inputmethod/mozc-renderer226/Makefile
++++ inputmethod/mozc-renderer226/Makefile
+@@ -1,7 +1,7 @@
+ # $NetBSD: Makefile,v 1.21 2026/05/14 16:41:20 ryoon Exp $
+ 
+ PKGNAME=	${DISTNAME:S/mozc-/mozc-renderer-/}
+-PKGREVISION=	44
++PKGREVISION=	45
+ 
+ CONFLICTS+=	ibus-mozc<=1.13.1651.102
+ 
+diff -urN a/inputmethod/mozc-server226/Makefile b/inputmethod/mozc-server226/Makefile
+--- inputmethod/mozc-server226/Makefile
++++ inputmethod/mozc-server226/Makefile
+@@ -1,7 +1,8 @@
+ # $NetBSD: Makefile,v 1.21 2026/05/14 16:41:20 ryoon Exp $
+ 
+ PKGNAME=	${DISTNAME:S/mozc-/mozc-server-/}
+-PKGREVISION=	45
++PKGREVISION=	46
++
+ 
+ INSTALLATION_DIRS+=	libexec
+ 
+diff -urN a/inputmethod/mozc-server226/Makefile.common b/inputmethod/mozc-server226/Makefile.common
+--- inputmethod/mozc-server226/Makefile.common
++++ inputmethod/mozc-server226/Makefile.common
+@@ -78,12 +78,33 @@
+ # Maybe fix this later.
+ BUILDLINK_TRANSFORM+=	rm:-Werror=char-subscripts
+ 
++# mozc_server and mozc_emacs_helper use none of Qt, GTK2, glib2, zinnia
++# or curl; those belong to mozc-tool, mozc-renderer and the handwriting
++# pad.  Building them unconditionally is what makes every package that
++# includes this file USE_X11=yes, mozc-server226 and mozc-elisp226
++# included, even though neither installs anything linked against X11.
++#
++# Which package is being built is asked the way inputmethod/mozc-server
++# already asks it, rather than by a new variable.
++MOZC_GUI_PKGS=	inputmethod/mozc-server226 inputmethod/mozc-elisp226
++
++.if !empty(MOZC_GUI_PKGS:M${PKGPATH})
++MOZC_GYP_ARGS+=	--noqt
++
++SUBST_CLASSES+=		nogtk
++SUBST_STAGE.nogtk=	pre-configure
++SUBST_MESSAGE.nogtk=	Disable the GTK renderer
++SUBST_FILES.nogtk=	gyp/defines.gypi
++SUBST_SED.nogtk=	-e "s/'enable_gtk_renderer%': '1'/'enable_gtk_renderer%': '0'/"
++.endif
++
+ do-configure:
+ 	cd ${WRKSRC} && ${SETENV} ${MAKE_ENV} \
+ 		${PYTHONBIN} build_mozc.py \
+ 		gyp \
+-		--gypdir=${LOCALBASE}/bin
++		--gypdir=${LOCALBASE}/bin ${MOZC_GYP_ARGS}
+ 
++.if empty(MOZC_GUI_PKGS:M${PKGPATH})
+ .include "../../devel/glib2/buildlink3.mk"
+ #.include "../../devel/protobuf/buildlink3.mk"
+ # gmock is not used yet...
+@@ -92,6 +113,7 @@
+ .include "../../www/curl/buildlink3.mk"
+ .include "../../x11/gtk2/buildlink3.mk"
+ .include "../../x11/qt5-qtbase/buildlink3.mk"
++.endif
+ 
+ .include "../../lang/python/tool.mk"
+ .include "../../mk/atomic64.mk"
+diff -urN a/inputmethod/mozc-server226/distinfo b/inputmethod/mozc-server226/distinfo
+--- inputmethod/mozc-server226/distinfo
++++ inputmethod/mozc-server226/distinfo
+@@ -33,10 +33,10 @@
+ SHA1 (patch-gui_word__register__dialog_word__register__dialog.cc) = 218e3706b819855814ba8871504fc7ccb4e40b23
+ SHA1 (patch-gyp_common.gypi) = ce27e8665b9dab4dc6d34d337a2cb8c985c9e6f4
+ SHA1 (patch-gyp_directories.gypi) = eea985113aac5b99bf3c12267ad754817eef5dcc
+-SHA1 (patch-ipc_ipc__path__manager.cc) = cd1352bd5333f1ed755dcf6221f931fcd0a936d3
++SHA1 (patch-ipc_ipc__path__manager.cc) = aff5aab95f331ea260d3310bf0a98ba30f13d898
+ SHA1 (patch-ipc_ipc__path__manager__test.cc) = 1b83b513383f184f5ab5a56cce734b7934998533
+ SHA1 (patch-ipc_named__event.cc) = 8be0b1e5c4675e5b238e07b63e395dbed3c2d125
+-SHA1 (patch-ipc_unix__ipc.cc) = d5d86910ca610015103a309bba8d6392d96f6ce6
++SHA1 (patch-ipc_unix__ipc.cc) = 3747b9d164f10f95b4f2d6d2b85cbefa1904594d
+ SHA1 (patch-protobuf_protobuf.gyp) = bb1c9684881199936abb8acd73948d1cb174a1ea
+ SHA1 (patch-renderer_renderer.gyp) = 83493259d6b8cd9ab6871512bebc9616d72132d1
+ SHA1 (patch-session_session.cc) = 3ae2c8dd056aae4c92d9dbfdac53d9c45261aad2
+diff -urN a/inputmethod/mozc-server226/patches/patch-ipc_ipc__path__manager.cc b/inputmethod/mozc-server226/patches/patch-ipc_ipc__path__manager.cc
+--- inputmethod/mozc-server226/patches/patch-ipc_ipc__path__manager.cc
++++ inputmethod/mozc-server226/patches/patch-ipc_ipc__path__manager.cc
+@@ -2,7 +2,18 @@
+ 
+ * NetBSD support
+ 
+---- ipc/ipc_path_manager.cc.orig	2021-02-15 03:48:53.000000000 +0000
++* kern.proc.args wants four MIB elements, and the fourth has to be
++  KERN_PROC_PATHNAME to get a path rather than the argv block.  With
++  three elements sysctl(3) returns EINVAL every time.
++
++* Fill server_path_ before the comparison, not after it.  The block
++  used to sit below "if (server_path == server_path_)", so the value
++  it computed was never the one compared and IsValidServer() always
++  returned false.  Set server_pid_ too, as the Linux branch does.
++
++* sysctl(3) counts the terminating NUL; drop it before comparing.
++
++--- ipc/ipc_path_manager.cc.orig
+ +++ ipc/ipc_path_manager.cc
+ @@ -53,6 +53,11 @@
+  #endif  // __APPLE__
+@@ -16,27 +27,38 @@
+  #include <cstdlib>
+  #include <map>
+  #ifdef OS_WIN
+-@@ -425,6 +430,23 @@ bool IPCPathManager::IsValidServer(uint3
+-     return true;
+-   }
++@@ -420,6 +425,34 @@
++   server_pid_ = pid;
++ #endif  // OS_LINUX
+  
+ +#if defined(OS_NETBSD)
+-+  int name[] = { CTL_KERN, KERN_PROC_ARGS, static_cast<int>(pid) };
+-+  size_t data_len = 0;
+-+  if (sysctl(name, arraysize(name), NULL,
+-+             &data_len, NULL, 0) < 0) {
+-+    LOG(ERROR) << "sysctl KERN_PROC_ARGS failed";
+-+    return false;
+++  // kern.proc.args takes four elements, and the fourth has to be
+++  // KERN_PROC_PATHNAME: KERN_PROC_ARGV gives the argv block, not a path.
+++  // This has to run before the comparison below, not after it; filling
+++  // server_path_ afterwards leaves the comparison looking at the value
+++  // from the previous call and IsValidServer() always returns false.
+++  {
+++    int name[] = { CTL_KERN, KERN_PROC_ARGS, static_cast<int>(pid),
+++                   KERN_PROC_PATHNAME };
+++    size_t data_len = 0;
+++    if (sysctl(name, arraysize(name), NULL, &data_len, NULL, 0) < 0) {
+++      LOG(ERROR) << "sysctl KERN_PROC_PATHNAME failed";
+++      return false;
+++    }
+++    server_path_.resize(data_len);
+++    if (sysctl(name, arraysize(name), &server_path_[0],
+++               &data_len, NULL, 0) < 0) {
+++      LOG(ERROR) << "sysctl KERN_PROC_PATHNAME failed";
+++      return false;
+++    }
+++    // sysctl(3) counts the terminating NUL; std::string must not keep it.
+++    while (!server_path_.empty() && server_path_.back() == '\0') {
+++      server_path_.pop_back();
+++    }
+++    server_pid_ = pid;
+ +  }
+++#endif  // OS_NETBSD
+ +
+-+  server_path_.resize(data_len);
+-+  if (sysctl(name, arraysize(name), &server_path_[0],
+-+             &data_len, NULL, 0) < 0) {
+-+    LOG(ERROR) << "sysctl KERN_PROC_ARGS failed";
+-+    return false;
+-+  }
+-+#endif // OS_NETBSD
+-+
+- #ifdef OS_LINUX
+-   if ((server_path + " (deleted)") == server_path_) {
+-     LOG(WARNING) << server_path << " on disk is modified";
++   VLOG(1) << "server path: " << server_path << " " << server_path_;
++   if (server_path == server_path_) {
++     return true;
+diff -urN a/inputmethod/mozc-server226/patches/patch-ipc_unix__ipc.cc b/inputmethod/mozc-server226/patches/patch-ipc_unix__ipc.cc
+--- inputmethod/mozc-server226/patches/patch-ipc_unix__ipc.cc
++++ inputmethod/mozc-server226/patches/patch-ipc_unix__ipc.cc
+@@ -2,7 +2,19 @@
+ 
+ * NetBSD support
+ 
+---- ipc/unix_ipc.cc.orig	2021-02-15 03:48:53.000000000 +0000
++* Do not cut the last byte off the socket path.  sun_path does not
++  start right after sun_family on NetBSD; there is a one byte sun_len
++  in front of it, so sizeof(sun_family) is one short and
++  /tmp/.mozc.<key>.session is created as .sessio.
++
++* Set *pid in the NetBSD branch of IsPeerValid, as the Linux branch
++  does.  Without it IPCPathManager::IsValidServer() takes its
++  "if (pid == 0) return true" path and never checks the peer.
++
++* kern.proc.args wants four MIB elements, and the third one has to be
++  KERN_PROC_PATHNAME to get a path rather than the argv block.
++
++--- ipc/unix_ipc.cc.orig
+ +++ ipc/unix_ipc.cc
+ @@ -28,7 +28,7 @@
+  // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+@@ -13,7 +25,16 @@
+  
+  #include <arpa/inet.h>
+  #include <fcntl.h>
+-@@ -125,7 +125,7 @@ bool IsPeerValid(int socket, pid_t *pid)
++@@ -39,6 +39,8 @@
++ #include <sys/time.h>
++ #include <sys/types.h>
++ #include <sys/un.h>
+++
+++#include <cstddef>
++ #include <sys/wait.h>
++ #include <unistd.h>
++ 
++@@ -125,7 +127,7 @@
+    // sometimes doesn't support the getsockopt(sock, SOL_SOCKET, SO_PEERCRED)
+    // system call.
+    // TODO(yusukes): Add implementation for ARM Linux.
+@@ -22,7 +43,7 @@
+    struct ucred peer_cred;
+    int peer_cred_len = sizeof(peer_cred);
+    if (getsockopt(socket, SOL_SOCKET, SO_PEERCRED,
+-@@ -141,7 +141,23 @@ bool IsPeerValid(int socket, pid_t *pid)
++@@ -141,7 +143,28 @@
+    }
+  
+    *pid = peer_cred.pid;
+@@ -43,11 +64,40 @@
+ +    LOG(WARNING) << "uid mismatch." << peer_cred.unp_euid << "!=" << ::geteuid();
+ +    return false;
+ +  }
+++
+++  // Without this the caller sees pid 0, and IPCPathManager::IsValidServer()
+++  // returns early on "if (pid == 0) return true", so the check that the peer
+++  // really is mozc_server never runs.
+++  *pid = peer_cred.unp_pid;
+ +#endif
+  
+    return true;
+  }
+-@@ -468,4 +484,4 @@ void IPCServer::Terminate() { server_thr
++@@ -274,7 +297,11 @@
++     address.sun_family = AF_UNIX;
++     ::memcpy(address.sun_path, server_address.data(), server_address_length);
++     address.sun_path[server_address_length] = '\0';
++-    const size_t sun_len = sizeof(address.sun_family) + server_address_length;
+++    // sun_path does not start right after sun_family on every system.
+++    // NetBSD puts a one byte sun_len in front of it, so sizeof(sun_family)
+++    // is one short there and the last byte of the path is cut off.
+++    const size_t sun_len =
+++        offsetof(struct sockaddr_un, sun_path) + server_address_length;
++     pid_t pid = 0;
++     if (::connect(socket_, reinterpret_cast<const sockaddr *>(&address),
++                   sun_len) != 0 ||
++@@ -381,7 +408,9 @@
++   int on = 1;
++   ::setsockopt(socket_, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char *>(&on),
++                sizeof(on));
++-  const size_t sun_len = sizeof(addr.sun_family) + server_address_.size();
+++  // See the comment on the connect() side above.
+++  const size_t sun_len =
+++      offsetof(struct sockaddr_un, sun_path) + server_address_.size();
++   if (!IsAbstractSocket(server_address_)) {
++     // Linux does not use files for IPC.
++     ::chmod(server_address_.c_str(), 0600);
++@@ -468,4 +497,4 @@
+  
+  }  // namespace mozc
+  
+diff -urN a/inputmethod/mozc-tool226/Makefile b/inputmethod/mozc-tool226/Makefile
+--- inputmethod/mozc-tool226/Makefile
++++ inputmethod/mozc-tool226/Makefile
+@@ -1,7 +1,7 @@
+ # $NetBSD: Makefile,v 1.21 2026/05/14 16:41:20 ryoon Exp $
+ 
+ PKGNAME=	${DISTNAME:S/mozc-/mozc-tool-/}
+-PKGREVISION=	44
++PKGREVISION=	45
+ 
+ INSTALLATION_DIRS+=	libexec
+ 
+diff -urN a/inputmethod/uim-mozc226/Makefile b/inputmethod/uim-mozc226/Makefile
+--- inputmethod/uim-mozc226/Makefile
++++ inputmethod/uim-mozc226/Makefile
+@@ -1,7 +1,7 @@
+ # $NetBSD: Makefile,v 1.19 2026/05/14 16:41:21 ryoon Exp $
+ 
+ PKGNAME=	uim-${DISTNAME}
+-PKGREVISION=	42
++PKGREVISION=	43
+ 
+ CONFLICTS+=	ibus-mozc<=1.13.1651.102
+ 

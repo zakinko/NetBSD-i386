@@ -68,7 +68,10 @@ trap cleanup EXIT INT TERM
 # 送る diff そのものを VM へ入れる。overlay の写しではなく、これを当てて
 # 建てる。写しは zakinko/ に置くので ${PKGPATH} が変わり、PKGPATH で分ける
 # 仕掛けを手元では確かめられない。VM の中なら本来の path で試せる。
-DIFF=${DIFF:-$SRCROOT/doc/upstream/pr/mozc-elisp226.diff}
+# doc/ は履歴から落として .gitignore に入ったので、CI の入力には使えない
+# (checkout したところに無い)。追跡される ci/ に置く。中身は
+# doc/upstream/pr/mozc-elisp226.pr に載せているものと同じ。
+DIFF=${DIFF:-$SRCROOT/ci/mozc-elisp226.diff}
 [ -f "$DIFF" ] || { echo "$0: $DIFF が無い" >&2; exit 1; }
 echo "=== 送る diff を入れる: $DIFF ($(wc -l < "$DIFF") 行) ==="
 scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
@@ -120,49 +123,6 @@ if ! grep -q "${ETYPE}@" /usr/pkgsrc/editors/emacs/modules.mk; then
 fi
 
 # 当てる前に上流の姿を控える。当てたあとでは比べられない。
-echo "=== 当てる前の上流 ==="
-for p in mozc-elisp226 mozc-server226; do
-	echo "  --- $p ---"
-	( cd /usr/pkgsrc/inputmethod/$p
-	  echo "    USE_X11 = [$(make show-var VARNAME=USE_X11 2>/dev/null)]"
-	  make show-depends 2>/dev/null | sed 's/^/      /' )
-done
-for p in ibus-mozc226 mozc-renderer226 mozc-tool226 uim-mozc226; do
-	( cd /usr/pkgsrc/inputmethod/$p && make show-all 2>/dev/null ) > /tmp/before.$p
-done
-
-echo "=== 送る diff を当てる ==="
-cd /usr/pkgsrc
-patch -p0 -C < /tmp/mozc226.diff || { echo "!! 当たらない"; exit 1; }
-patch -p0    < /tmp/mozc226.diff
-find /usr/pkgsrc/inputmethod -name '*.orig' -delete
-echo "  当てたファイル:"
-grep '^--- ' /tmp/mozc226.diff | sed 's/^--- /    /'
-
-echo "=== 道具を binary package で入れる ==="
-# mozc-elisp226 が引くのは 11 個で、そのうち emacs30-nox11 と python313 は
-# ソースから建てると VM の中で三十分から一時間ずつかかる。測っているのは
-# mozc 本体の当て物であって依存の build ではないので、道具は先に binary で
-# 入れて pkgsrc には「found」と言わせる。mozc-server226 と mozc-elisp226 は
-# ソースから建てるので、測るものは変わらない。
-#
-# netbsd-mozc333.sh が先に同じことをしている。あちらは ninja が re2c を、
-# re2c が cmake を引いて / が溢れたのがきっかけだった。
-REL=$(uname -r | sed 's/_.*//')
-BINPKG=https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$(uname -p)/$REL/All
-echo "  $BINPKG"
-# EMACS_TYPE (emacs30nox) から package 名 (emacs30-nox11) を作る
-EPKG=$(echo "$ETYPE" | sed -e 's/nox$/-nox11/')
-# PKG_PATH は pkg_add に渡すときだけ立てる。export したまま make を走らせると
-# bsd.pkg.mk が「Please unset PKG_PATH before doing pkgsrc work!」で止める。
-for p in gmake ninja-build pkgconf py313-gyp py313-six "$EPKG"; do
-	env PKG_PATH="$BINPKG" pkg_add -U "$p" 2>&1 | grep -vE '^$' | head -2 | sed "s/^/    $p: /"
-	pkg_info -e "$p" >/dev/null 2>&1 || echo "  !! $p は binary で入らなかった (ソースから建てることになる)"
-done
-unset PKG_PATH
-pkg_info | egrep -i 'gmake|ninja|gyp|six|python|emacs' | sed 's/^/  /'
-df -h / | sed 's/^/  /'
-
 echo "=== mk.conf ==="
 J=$(sysctl -n hw.ncpu)
 # i386 の VM で devel/cmake を建てている途中に溢れた。
@@ -239,6 +199,52 @@ for p in $( ( cd /usr/pkgsrc/inputmethod/mozc-server226 && make show-var VARNAME
 	printf '  %-16s ' "$p"
 	env PKG_PATH="$BINPKG" pkg_add -U "$p" >/dev/null 2>&1 && echo "入った" || echo "取れず (ソースから建つ)"
 done
+
+# 「当てる前」は mk.conf を書いたあとに撮る。前に撮ると、MAKE_JOBS や
+# TMPDIR を足したぶんが差として出てしまう。実際それで 0 行のはずが 33 行に
+# なった。比べたいのは diff の影響だけである。
+echo "=== 当てる前の上流 ==="
+for p in mozc-elisp226 mozc-server226; do
+	echo "  --- $p ---"
+	( cd /usr/pkgsrc/inputmethod/$p
+	  echo "    USE_X11 = [$(make show-var VARNAME=USE_X11 2>/dev/null)]"
+	  make show-depends 2>/dev/null | sed 's/^/      /' )
+done
+for p in ibus-mozc226 mozc-renderer226 mozc-tool226 uim-mozc226; do
+	( cd /usr/pkgsrc/inputmethod/$p && make show-all 2>/dev/null ) > /tmp/before.$p
+done
+
+echo "=== 送る diff を当てる ==="
+cd /usr/pkgsrc
+patch -p0 -C < /tmp/mozc226.diff || { echo "!! 当たらない"; exit 1; }
+patch -p0    < /tmp/mozc226.diff
+find /usr/pkgsrc/inputmethod -name '*.orig' -delete
+echo "  当てたファイル:"
+grep '^--- ' /tmp/mozc226.diff | sed 's/^--- /    /'
+
+echo "=== 道具を binary package で入れる ==="
+# mozc-elisp226 が引くのは 11 個で、そのうち emacs30-nox11 と python313 は
+# ソースから建てると VM の中で三十分から一時間ずつかかる。測っているのは
+# mozc 本体の当て物であって依存の build ではないので、道具は先に binary で
+# 入れて pkgsrc には「found」と言わせる。mozc-server226 と mozc-elisp226 は
+# ソースから建てるので、測るものは変わらない。
+#
+# netbsd-mozc333.sh が先に同じことをしている。あちらは ninja が re2c を、
+# re2c が cmake を引いて / が溢れたのがきっかけだった。
+REL=$(uname -r | sed 's/_.*//')
+BINPKG=https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$(uname -p)/$REL/All
+echo "  $BINPKG"
+# EMACS_TYPE (emacs30nox) から package 名 (emacs30-nox11) を作る
+EPKG=$(echo "$ETYPE" | sed -e 's/nox$/-nox11/')
+# PKG_PATH は pkg_add に渡すときだけ立てる。export したまま make を走らせると
+# bsd.pkg.mk が「Please unset PKG_PATH before doing pkgsrc work!」で止める。
+for p in gmake ninja-build pkgconf py313-gyp py313-six "$EPKG"; do
+	env PKG_PATH="$BINPKG" pkg_add -U "$p" 2>&1 | grep -vE '^$' | head -2 | sed "s/^/    $p: /"
+	pkg_info -e "$p" >/dev/null 2>&1 || echo "  !! $p は binary で入らなかった (ソースから建てることになる)"
+done
+unset PKG_PATH
+pkg_info | egrep -i 'gmake|ninja|gyp|six|python|emacs' | sed 's/^/  /'
+df -h / | sed 's/^/  /'
 
 echo
 echo "##### 1. 上流の mozc-elisp226 は何を引くか #####"
