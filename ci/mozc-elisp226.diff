@@ -12,7 +12,7 @@ diff -urN a/inputmethod/ibus-mozc226/Makefile b/inputmethod/ibus-mozc226/Makefil
  			share/ibus-mozc
 diff -urN a/inputmethod/mozc-elisp226/Makefile b/inputmethod/mozc-elisp226/Makefile
 --- inputmethod/mozc-elisp226/Makefile	2026-08-29 05:31:16.696008278 +0000
-+++ inputmethod/mozc-elisp226/Makefile	2026-08-29 05:48:25.521055037 +0000
++++ inputmethod/mozc-elisp226/Makefile	2026-08-29 08:50:47.788233686 +0000
 @@ -1,9 +1,25 @@
  # $NetBSD: Makefile,v 1.25 2026/08/26 14:37:05 wiz Exp $
  
@@ -34,8 +34,8 @@ diff -urN a/inputmethod/mozc-elisp226/Makefile b/inputmethod/mozc-elisp226/Makef
 +# before it binds .sessio while this helper connects to .session, and they
 +# do not meet.  Without the second line that pairing is accepted, and the
 +# failure looks exactly like having no server at all.
-+DEPENDS+=	mozc-server-${MOZC_VER}{,nb*}:../../inputmethod/mozc-server226
-+DEPENDS+=	mozc-server>=${MOZC_VER}nb46:../../inputmethod/mozc-server226
++DEPENDS+=	mozc-server-${MOZC_VERSION}{,nb*}:../../inputmethod/mozc-server226
++DEPENDS+=	mozc-server>=${MOZC_VERSION}nb46:../../inputmethod/mozc-server226
 +
  EMACS_MODULES=	base leim
  
@@ -67,7 +67,19 @@ diff -urN a/inputmethod/mozc-server226/Makefile b/inputmethod/mozc-server226/Mak
  
 diff -urN a/inputmethod/mozc-server226/Makefile.common b/inputmethod/mozc-server226/Makefile.common
 --- inputmethod/mozc-server226/Makefile.common	2026-08-29 05:31:16.702673371 +0000
-+++ inputmethod/mozc-server226/Makefile.common	2026-08-29 05:31:16.709813944 +0000
++++ inputmethod/mozc-server226/Makefile.common	2026-08-29 08:50:47.786453013 +0000
+@@ -7,9 +7,9 @@
+ # used by inputmethod/mozc-renderer226/Makefile
+ # used by inputmethod/uim-mozc226/Makefile
+ 
+-MOZC_VER=	2.26.4282.100
++MOZC_VERSION=	2.26.4282.100
+ 
+-DISTNAME=	mozc-${MOZC_VER}
++DISTNAME=	mozc-${MOZC_VERSION}
+ CATEGORIES=	inputmethod
+ MASTER_SITES=	${MASTER_SITE_LOCAL}
+ EXTRACT_SUFX=	.tar.xz
 @@ -78,12 +78,33 @@
  # Maybe fix this later.
  BUILDLINK_TRANSFORM+=	rm:-Werror=char-subscripts
