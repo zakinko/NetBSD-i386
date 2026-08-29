@@ -346,6 +346,60 @@ cat > /tmp/keys.txt <<'EOT'
 EOT
 chmod 644 /tmp/keys.txt
 
+# 変換が落ちたとき、同じ応答になる原因が複数ある。三つ目の
+#   「server の照合に失敗している」  ipc_path_manager.cc
+# は、当て物が sysctl KERN_PROC_PATHNAME で server の path を取る形なので、
+# その sysctl がこの箱で効くことが前提になる。効かない箱で落ちたのか、
+# 当て物が効いていないのかは、応答だけでは区別できない。
+#
+# 送る PR の三つ目の欠陥がこの MIB そのものである以上、手元で一度測った
+# だけでは足りない。PR に書く証拠を作っているのはこの CI なので、ここで
+# 測り直す。四要素であること、KERN_PROC_ARGV ではなく PATHNAME であること、
+# 返る長さが終端の NUL を数えていることの三つを見る。
+# (ci/netbsd-mozc334.sh が先にやっていた。同じ形を借りている。)
+cat > /tmp/mib.c <<'EOT'
+#include <sys/param.h>
+#include <sys/sysctl.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+#include <unistd.h>
+int main(void) {
+  pid_t pid = getpid();
+  char buf[1024];
+  size_t len;
+  int rc;
+
+  int n3[] = { CTL_KERN, KERN_PROC_ARGS, (int)pid };
+  len = sizeof(buf);
+  rc = sysctl(n3, 3, buf, &len, NULL, 0);
+  printf("3 要素 {CTL_KERN,KERN_PROC_ARGS,pid}      rc=%d errno=%s\n",
+         rc, rc < 0 ? strerror(errno) : "-");
+
+  int nv[] = { CTL_KERN, KERN_PROC_ARGS, (int)pid, KERN_PROC_ARGV };
+  len = 0;
+  rc = sysctl(nv, 4, NULL, &len, NULL, 0);
+  printf("4 要素 ARGV      大きさ問い合わせ rc=%d len=%zu\n", rc, len);
+
+  int np[] = { CTL_KERN, KERN_PROC_ARGS, (int)pid, KERN_PROC_PATHNAME };
+  len = 0;
+  rc = sysctl(np, 4, NULL, &len, NULL, 0);
+  printf("4 要素 PATHNAME  大きさ問い合わせ rc=%d len=%zu\n", rc, len);
+  len = sizeof(buf);
+  rc = sysctl(np, 4, buf, &len, NULL, 0);
+  printf("4 要素 PATHNAME  取得           rc=%d len=%zu path=\"%s\" strlen=%zu\n",
+         rc, len, rc == 0 ? buf : "", rc == 0 ? strlen(buf) : (size_t)0);
+  return 0;
+}
+EOT
+echo "--- sysctl の MIB はこの箱でどうなるか ---"
+if cc -o /tmp/mib /tmp/mib.c 2>/tmp/mib.err; then
+	/tmp/mib | sed 's/^/  /'
+	echo "  (3 要素が EINVAL、PATHNAME の len が strlen+1 なら、当て物の前提どおり)"
+else
+	echo "  mib.c が建たない:"; sed 's/^/    /' /tmp/mib.err
+fi
+
 echo "--- 参考: root で叩くと (RunLevel::DENY で拒まれる) ---"
 timeout 60 /usr/pkg/bin/mozc_emacs_helper < /tmp/keys.txt > /tmp/conv-root.out 2>&1 || true
 tail -1 /tmp/conv-root.out | cut -c1-120 | sed 's/^/  /'
