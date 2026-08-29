@@ -236,7 +236,11 @@ unset PKG_PATH
 # 名前が違っても pkg_info -e は通るので、上の輪では気づけない。ここで
 # 見ておかないと、emacs を一時間かけて建て終わったあとの depends.mk で
 # 落ちる。pkgsrc-2026Q2 の emacs30-nox11/version.mk がまさにそれだった。
-EREQ=$(cd /usr/pkgsrc/inputmethod/mozc-elisp333 && 	make show-var VARNAME=DEPENDS 2>/dev/null | tr ' ' '\n' | grep '^emacs')
+# EMACS_TYPE を渡す。mk.conf を書くのはこの後なので、渡さないと既定の
+# emacs30 (X11 版) が返り、入れた emacs30-nox11 が「満たさない」ことになる。
+EREQ=$(cd /usr/pkgsrc/inputmethod/mozc-elisp333 && \
+	make show-var VARNAME=DEPENDS EMACS_TYPE="$ETYPE" 2>/dev/null | \
+	tr ' ' '\n' | grep '^emacs')
 echo "  mozc-elisp333 が要る emacs: ${EREQ:-(取れなかった)}"
 if [ -n "$EREQ" ] && ! pkg_info -e "${EREQ%%:*}" >/dev/null 2>&1; then
 	echo "!! 入れた $EPKG は ${EREQ%%:*} を満たさない"
