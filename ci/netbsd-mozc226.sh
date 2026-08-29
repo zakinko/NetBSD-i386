@@ -227,6 +227,18 @@ done
 if [ "$DEEP" = 1 ]; then
 	echo
 	echo "--- (DEEP) 未修正の mozc-server226 を建てて binary を退避する ---"
+	# 未修正の木は gtk2 と qt5 を buildlink する。この PR が直そうとして
+	# いるのがまさにそれで、放っておくと gdk-pixbuf2 -> libjpeg-turbo ->
+	# nasm -> gcc14 まで辿り、11G の disk を使い切って落ちる。実際に
+	# 105% まで行って落ちた。要らない依存を測るために建てる筋合いはないので
+	# binary で入れる。測る対象 (mozc の ipc) はソースから建つので変わらない。
+	echo "    GUI 側の依存を binary で入れる"
+	for q in glib2 gtk2+ qt5-qtbase zinnia curl; do
+		printf '      %-12s ' "$q"
+		env PKG_PATH="$BINPKG" pkg_add -U "$q" >/dev/null 2>&1 \
+			&& echo "入った" || echo "取れず"
+	done
+	df -h / | sed 's/^/      /'
 	cd /usr/pkgsrc/inputmethod/mozc-server226
 	if make package-install > /tmp/b-unpatched.log 2>&1; then
 		cp /usr/pkg/libexec/mozc_server /root/mozc_server.unpatched
