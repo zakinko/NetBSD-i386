@@ -404,6 +404,22 @@ else
 	kdump -f /tmp/kt.out 2>/dev/null | grep -E 'NAMI|RET.*-1|CALL  exit' | head -15 \
 		| sed 's/^/      /' || echo "      (kdump 取れず)"
 fi
+# profile が無いとどうなるか。server を直に起こすと profile が無くても
+# 動いて socket も作るので、要求しているのは helper が server を起こす経路の
+# 方だと当たりを付けている。同じ VM で profile の有無だけを変えて二度測る。
+echo "--- profile が無いときはどうなるか ---"
+rm -rf "$MH/prof2"; mkdir -p "$MH/prof2"; chown -R mozctest "$MH/prof2"
+sudo=""
+su - mozctest -c "env XDG_CONFIG_HOME=$MH/prof2 timeout 60 /usr/pkg/bin/mozc_emacs_helper < /tmp/keys.txt" \
+	> /tmp/conv-noprof.out 2>&1 || true
+if grep -q 'にほんご' /tmp/conv-noprof.out; then
+	echo "  mozc/ が無くても打てた (helper か server が自分で作る)"
+else
+	echo "  mozc/ が無いと打てない"
+	tail -1 /tmp/conv-noprof.out | cut -c1-90 | sed 's/^/    /'
+fi
+echo "    そのあと mozc/ は出来たか: $(ls -d "$MH/prof2/mozc" 2>/dev/null || echo '出来ていない')"
+
 echo "--- 変換候補に 日本語 があるか ---"
 if grep -q '日本語' /tmp/conv.out; then echo '  ある'; else echo '  ない'; fi
 
