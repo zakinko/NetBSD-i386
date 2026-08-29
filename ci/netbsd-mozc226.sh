@@ -420,6 +420,23 @@ else
 fi
 echo "    そのあと mozc/ は出来たか: $(ls -d "$MH/prof2/mozc" 2>/dev/null || echo '出来ていない')"
 
+# 上は XDG_CONFIG_HOME 自体は在って mozc/ だけ無い場合。i386 で落ちたのは
+# XDG_CONFIG_HOME に指した .config そのものが無い場合だったので、そちらも
+# 測る。useradd -m は .config を作らないから、新しい account では普通に
+# 起きる。ここで落ちるなら、server が無いときと root のときに続いて三つ目の
+# 「同じ session-error が出る別の原因」になる。
+echo "--- XDG_CONFIG_HOME 自体が無いときはどうなるか ---"
+rm -rf "$MH/prof3"
+su - mozctest -c "env XDG_CONFIG_HOME=$MH/prof3/.config timeout 60 /usr/pkg/bin/mozc_emacs_helper < /tmp/keys.txt" \
+	> /tmp/conv-noxdg.out 2>&1 || true
+if grep -q 'にほんご' /tmp/conv-noxdg.out; then
+	echo "  RESULT XDG_CONFIG_HOME が無くても打てた (自分で mkdir -p する)"
+else
+	echo "  RESULT XDG_CONFIG_HOME が無いと打てない -- 四つ目の原因"
+	tail -1 /tmp/conv-noxdg.out | cut -c1-90 | sed 's/^/    /'
+fi
+echo "    そのあと出来たか: $(ls -d "$MH/prof3/.config/mozc" 2>/dev/null || echo '出来ていない')"
+
 echo "--- 変換候補に 日本語 があるか ---"
 if grep -q '日本語' /tmp/conv.out; then echo '  ある'; else echo '  ない'; fi
 
