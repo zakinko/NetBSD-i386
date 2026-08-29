@@ -13,7 +13,7 @@ diff -urN a/inputmethod/ibus-mozc226/Makefile b/inputmethod/ibus-mozc226/Makefil
 diff -urN a/inputmethod/mozc-elisp226/Makefile b/inputmethod/mozc-elisp226/Makefile
 --- inputmethod/mozc-elisp226/Makefile
 +++ inputmethod/mozc-elisp226/Makefile
-@@ -1,9 +1,17 @@
+@@ -1,9 +1,27 @@
  # $NetBSD: Makefile,v 1.25 2026/08/26 14:37:05 wiz Exp $
  
  PKGNAME=	${EMACS_PKGNAME_PREFIX}${DISTNAME:S/mozc-/mozc-elisp-/}
@@ -27,7 +27,17 @@ diff -urN a/inputmethod/mozc-elisp226/Makefile b/inputmethod/mozc-elisp226/Makef
 +# SendKey comes back as session-error.  The version is pinned because
 +# the client refuses a server whose version differs, so a >= dependency
 +# would be satisfied by mozc-server226 2.29 and still not work.
++# Two patterns, both of which have to hold.  The first pins the version:
++# the helper and the server exchange it at session setup and the client
++# refuses a server whose version differs, so a >= dependency would be
++# satisfied by inputmethod/mozc-server (2.29) and the package would still
++# not work.  The second pins the revision, because the socket path fix in
++# patch-ipc_unix__ipc.cc changes the name both sides compute: a server from
++# before it binds .sessio while this helper connects to .session, and they
++# do not meet.  Without the second line that pairing is accepted, and the
++# failure looks exactly like having no server at all.
 +DEPENDS+=	mozc-server-${MOZC_VER}{,nb*}:../../inputmethod/mozc-server226
++DEPENDS+=	mozc-server>=${MOZC_VER}nb46:../../inputmethod/mozc-server226
 +
  EMACS_MODULES=	base leim
  
