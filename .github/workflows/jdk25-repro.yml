@@ -1,0 +1,75 @@
+name: jdk25-repro
+
+# JDK 25 の make が NetBSD で missing separator で落ちる件が、Linux でも
+# 起きるかを見るためだけの workflow。上流 (openjdk/jdk25u) の木をそのまま
+# 使い、build は gensrc の段までしか進めない。落ちる場所が同じなら OS 非依存
+# の upstream bug、通るなら NetBSD 固有と分かる。
+#
+# 手で起こすときだけ動かす。paths も schedule も持たない。
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: 'JVM variant'
+        type: choice
+        options: [server, zero]
+        default: server
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.variant }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: 道具を入れる
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq autoconf zip unzip build-essential \
+            libx11-dev libxext-dev libxrender-dev libxrandr-dev libxtst-dev \
+            libxt-dev libcups2-dev libfontconfig1-dev libasound2-dev
+
+      - name: boot JDK (24) を用意する
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '24'
+
+      - name: 上流の jdk25u を取る
+        run: |
+          curl -fsSL -o jdk25u.tar.gz \
+            https://codeload.github.com/openjdk/jdk25u/tar.gz/refs/heads/master
+          tar xzf jdk25u.tar.gz
+
+      - name: configure
+        working-directory: jdk25u-master
+        run: |
+          bash configure \
+            --with-boot-jdk="$JAVA_HOME" \
+            --with-jvm-variants=${{ inputs.variant }} \
+            --disable-warnings-as-errors \
+            --disable-precompiled-headers \
+            --with-jobs=2 --with-num-cores=2 \
+            > /tmp/conf.log 2>&1 || { tail -20 /tmp/conf.log; exit 1; }
+          grep -E "OUTPUTDIR|TOOLCHAIN_TYPE" build/*/spec.gmk | head -3
+
+      - name: gensrc まで進める (ここで落ちるかを見る)
+        working-directory: jdk25u-master
+        run: |
+          set +e
+          if [ "${{ inputs.variant }}" = zero ]; then T=hotspot-zero-libs; else T=hotspot-server-gensrc; fi
+          make $T > /tmp/build.log 2>&1
+          rc=$?
+          echo "make $T exit=$rc"
+          if grep -q "missing separator" /tmp/build.log; then
+            echo "RESULT: NetBSD と同じ missing separator が Linux でも出た"
+            grep -m3 -B4 "missing separator" /tmp/build.log
+            exit 0
+          fi
+          echo "RESULT: Linux では出なかった (NetBSD 固有の可能性)"
+          tail -20 /tmp/build.log
