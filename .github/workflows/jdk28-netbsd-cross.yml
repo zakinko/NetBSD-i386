@@ -34,7 +34,8 @@ jobs:
       - name: 道具を入れる
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq autoconf zip unzip clang lld llvm file
+          sudo apt-get install -y -qq autoconf zip unzip clang lld llvm file \
+            libcups2-dev libfontconfig1-dev
 
       - name: build JDK (28 EA) を置く
         run: |
@@ -53,6 +54,16 @@ jobs:
           done
           sudo chown -R "$USER" sysroot
           ls sysroot/usr/lib/libc.so* sysroot/lib/libc.so.12* | head -3
+
+      - name: sysroot に足りないものを入れる
+        run: |
+          SR="$PWD/sysroot"
+          # NetBSD の base sets に cups と fontconfig は入っていない。JDK は
+          # header だけ見て実行時は dlopen するので、header を借りれば足りる。
+          sudo cp -R /usr/include/cups "$SR/usr/include/"
+          sudo cp -R /usr/include/fontconfig "$SR/usr/include/"
+          sudo chown -R "$USER" "$SR/usr/include"
+          ls -d "$SR/usr/include/cups" "$SR/usr/include/fontconfig"
 
       - name: cross の wrapper を置く
         run: |
@@ -88,6 +99,22 @@ jobs:
           ./cross-bin/x86_64-unknown-netbsd-clang /tmp/t.c -o /tmp/t.out
           file /tmp/t.out
 
+      - name: alsa-lib を cross で建てる
+        run: |
+          export PATH="$PWD/cross-bin:$PATH"
+          SR="$PWD/sysroot"
+          curl -fsSL -o alsa.tar.bz2 https://www.alsa-project.org/files/pub/lib/alsa-lib-1.2.11.tar.bz2
+          tar xf alsa.tar.bz2 && cd alsa-lib-1.2.11
+          # --with-pic は libjvm.so に静的に取り込むため、--without-versioned は
+          # version 付き symbol が静的 link で解決できないため。
+          CC=x86_64-unknown-netbsd-clang AR=llvm-ar RANLIB=llvm-ranlib \
+            ./configure --host=x86_64-unknown-netbsd --prefix="$SR/usr" \
+              --disable-shared --enable-static --with-pic --without-versioned \
+              --disable-python --disable-old-symbols > /tmp/alsa.log 2>&1 \
+            || { tail -20 /tmp/alsa.log; exit 1; }
+          make -j2 >> /tmp/alsa.log 2>&1 && make install >> /tmp/alsa.log 2>&1
+          ls -l "$SR/usr/lib/libasound.a" "$SR/usr/include/alsa/asoundlib.h"
+
       - name: zakinko/jdk を取る
         uses: actions/checkout@v4
         with:
@@ -106,8 +133,9 @@ jobs:
             --with-boot-jdk=/opt/jdk28 --with-build-jdk=/opt/jdk28 \
             --with-toolchain-type=clang \
             --disable-dtrace --with-stdc++lib=dynamic \
-            --with-cups-include="$SR/usr/pkg/include" \
-            --with-fontconfig-include="$SR/usr/X11R7/include" \
+            --with-cups-include="$SR/usr/include" \
+            --with-alsa="$SR/usr" \
+            --with-fontconfig-include="$SR/usr/include" \
             --with-freetype=bundled --with-giflib=bundled --with-lcms=bundled \
             --x-includes="$SR/usr/X11R7/include" --x-libraries="$SR/usr/X11R7/lib" \
             --disable-warnings-as-errors --disable-precompiled-headers \
