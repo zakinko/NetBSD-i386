@@ -37,6 +37,10 @@ WORK=${WORK:-$PWD/.vm-mozc226}
 # DEEP=1 で、送る PR が主張するうち追加ビルドを要する分も測る。
 # 既定では測らない。四本の GUI 版と未修正 server を建てるので二時間ほど延びる。
 DEEP=${DEEP:-0}
+# GUI 四本の追加ビルドだけを外す。あそこが一番重く、四時間の大半を
+# 食う。対の測定 (古い server と新しい helper) だけ急ぎで取りたいとき、
+# 上限に当たって何も取れずに終わるより、軽くして確実に取る方がよい。
+DEEP_GUI=${DEEP_GUI:-1}
 OVERLAY=${OVERLAY:-https://codeload.github.com/zakinko/pkgsrc-zakinko/tar.gz/refs/heads/main}
 
 mkdir -p "$WORK"
@@ -91,7 +95,7 @@ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o BatchMode=yes -o LogLevel=ERROR -i "$WORK/$NAME.id" -P "$PORT" \
     "$DIFF" root@127.0.0.1:/tmp/mozc226.diff
 
-$SSH "ETYPE='$ETYPE' DEEP='$DEEP' sh -s" <<'GUEST'
+$SSH "ETYPE='$ETYPE' DEEP='$DEEP' DEEP_GUI='$DEEP_GUI' sh -s" <<'GUEST'
 set -e
 PATH=/sbin:/usr/sbin:/bin:/usr/bin:/usr/pkg/bin:/usr/pkg/sbin
 export PATH
@@ -664,7 +668,7 @@ if [ "$DEEP" = 1 ] && [ -s /root/mozc_server.unpatched ]; then
 	rm -f /tmp/mozc_server.old /tmp/.mozc.*
 fi
 
-if [ "$DEEP" = 1 ]; then
+if [ "$DEEP" = 1 ] && [ "$DEEP_GUI" = 1 ]; then
 	# 三つ目と四つ目の主張。PATCHDIR は共有なので当て物は六本に効く。
 	# 四本とも建つこと、ipc_path_manager.o を繋ぐこと、mozc-tool226 が
 	# Qt を保ったままであることを測る。
