@@ -1,0 +1,83 @@
+name: netbsd94-kernel
+
+# NetBSD 9.4/amd64 の GENERIC を Linux runner で cross build する。
+#
+# Vultr は virtio を modern (1.0) だけで見せる。NetBSD 9 の virtio_pci.c は
+# device id を 0x1000-0x103F しか見ないので、ディスクが一つも生えず root
+# device のプロンプトで止まる。手元の QEMU で disable-legacy=on にすると
+# 同じ症状が出るところまで確かめてある。
+#
+# 素の GENERIC が通ることを先に見てから、virtio の当て物を載せる。当て物は
+# patches/ に置いて入力で渡す。
+#
+# NetBSD の build.sh は host が Linux でも通るので、NetBSD の実機は要らない。
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'NetBSD の版'
+        required: false
+        default: '9.4'
+      patches:
+        description: '当てる patch (patches/ からの相対、空白区切り)。空なら素のまま'
+        required: false
+        default: ''
+      publish:
+        description: 'release に置く'
+        type: boolean
+        default: false
+
+concurrency:
+  group: netbsd94-kernel
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 道具を入れる
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential zlib1g-dev
+          nproc
+
+      - name: ディスクを空ける
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+          df -h / | tail -1
+
+      - name: 組む
+        env:
+          REL: ${{ inputs.release }}
+        run: |
+          set -e
+          P=""
+          for p in ${{ inputs.patches }}; do P="$P $PWD/patches/$p"; done
+          JOBS=$(nproc) sh ci/build-netbsd94-kernel.sh $P
+
+      - name: 出来たものを見る
+        run: ls -l out/ && file out/netbsd-GENERIC.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: netbsd-${{ inputs.release }}-GENERIC
+          path: out/netbsd-GENERIC.gz
+          retention-days: 7
+
+      - name: release に置く
+        if: ${{ inputs.publish }}
+        run: |
+          gh release view kernels > /dev/null 2>&1 || \
+            gh release create kernels --title "cross build した kernel" \
+              --notes "Linux runner で組んだ NetBSD の kernel。中身は ci/build-netbsd94-kernel.sh を参照。"
+          cp out/netbsd-GENERIC.gz "netbsd-${{ inputs.release }}-amd64-GENERIC.gz"
+          gh release upload kernels "netbsd-${{ inputs.release }}-amd64-GENERIC.gz" --clobber
