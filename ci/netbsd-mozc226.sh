@@ -251,7 +251,8 @@ echo "  $BINPKG"
 for p in $( ( cd /usr/pkgsrc/inputmethod/mozc-server226 && make show-var VARNAME=TOOL_DEPENDS 2>/dev/null ) \
             | tr ' ' '\n' | sed 's/:.*//;s/[<>=].*//;s/-\[0-9\].*//' | grep . | sort -u ); do
 	printf '  %-16s ' "$p"
-	env PKG_PATH="$BINPKG" pkg_add -U "$p" >/dev/null 2>&1 && echo "入った" || echo "取れず (ソースから建つ)"
+	timeout 900 env PKG_PATH="$BINPKG" pkg_add -U "$p" >/dev/null 2>&1 \
+		&& echo "入った" || echo "取れず (ソースから建つ)"
 done
 
 # 「当てる前」は mk.conf を書いたあとに撮る。前に撮ると、MAKE_JOBS や
@@ -284,10 +285,18 @@ if [ "$DEEP" = 1 ]; then
 	# 105% まで行って落ちた。要らない依存を測るために建てる筋合いはないので
 	# binary で入れる。測る対象 (mozc の ipc) はソースから建つので変わらない。
 	echo "    GUI 側の依存を binary で入れる"
+	# pkg_add には時間切れが無い。取得先が黙ると落ちずに待ち続けるので、
+	# 一度 qt5-qtbase で五時間無音のまま上限に当たり、測定が一つも取れずに
+	# 終わった。待つ上限を外から付ける。取れなければ「取れず」で先へ進む
+	# ので、ここで止まる理由はない。
 	for q in glib2 gtk2+ qt5-qtbase zinnia curl; do
 		printf '      %-12s ' "$q"
-		env PKG_PATH="$BINPKG" pkg_add -U "$q" >/dev/null 2>&1 \
-			&& echo "入った" || echo "取れず"
+		if timeout 900 env PKG_PATH="$BINPKG" pkg_add -U "$q" >/dev/null 2>&1; then
+			echo "入った"
+		else
+			rc=$?
+			[ "$rc" = 124 ] && echo "★ 15 分で時間切れ" || echo "取れず"
+		fi
 	done
 	df -h / | sed 's/^/      /'
 	cd /usr/pkgsrc/inputmethod/mozc-server226
@@ -327,7 +336,7 @@ EPKG=$(echo "$ETYPE" | sed -e 's/nox$/-nox11/')
 # PKG_PATH は pkg_add に渡すときだけ立てる。export したまま make を走らせると
 # bsd.pkg.mk が「Please unset PKG_PATH before doing pkgsrc work!」で止める。
 for p in gmake ninja-build pkgconf py313-gyp py313-six "$EPKG"; do
-	env PKG_PATH="$BINPKG" pkg_add -U "$p" 2>&1 | grep -vE '^$' | head -2 | sed "s/^/    $p: /"
+	timeout 900 env PKG_PATH="$BINPKG" pkg_add -U "$p" 2>&1 | grep -vE '^$' | head -2 | sed "s/^/    $p: /"
 	pkg_info -e "$p" >/dev/null 2>&1 || echo "  !! $p は binary で入らなかった (ソースから建てることになる)"
 done
 unset PKG_PATH
