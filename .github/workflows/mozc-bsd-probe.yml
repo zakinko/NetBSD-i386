@@ -39,6 +39,8 @@ jobs:
             set -x
             uname -a
             sh ci/bsd-ipc-probe.sh
+            echo '##### 当て物の IsPeerValid をそのまま組んで走らせる #####'
+            c++ -std=c++17 -o /tmp/peertest ci/bsd-peer-test.cc && /tmp/peertest
 
   openbsd:
     if: ${{ inputs.target == 'all' || inputs.target == 'openbsd' }}
@@ -55,6 +57,8 @@ jobs:
             set -x
             uname -a
             sh ci/bsd-ipc-probe.sh
+            echo '##### 当て物の IsPeerValid をそのまま組んで走らせる #####'
+            c++ -std=c++17 -o /tmp/peertest ci/bsd-peer-test.cc && /tmp/peertest
 
   dragonfly:
     if: ${{ inputs.target == 'all' || inputs.target == 'dragonfly' }}
@@ -71,3 +75,5 @@ jobs:
             set -x
             uname -a
             sh ci/bsd-ipc-probe.sh
+            echo '##### 当て物の IsPeerValid をそのまま組んで走らせる #####'
+            c++ -std=c++17 -o /tmp/peertest ci/bsd-peer-test.cc && /tmp/peertest
