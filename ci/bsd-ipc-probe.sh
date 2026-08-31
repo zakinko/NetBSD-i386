@@ -47,6 +47,10 @@ cat > "$T/c.c" <<'EOF'
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/sysctl.h>
+#include <sys/param.h>
+#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__APPLE__)
+#include <sys/ucred.h>
+#endif
 #include <stddef.h>
 #include <stdio.h>
 int main(void){
@@ -162,8 +166,11 @@ int main(void) {
 #if defined(XUCRED_VERSION)
       printf("                  version=%u\n", (unsigned)c.cr_version);
 #endif
-#if defined(XUCRED_VERSION) && XUCRED_VERSION >= 0
-      /* cr_pid は版による。持っていれば peer に採る */
+#ifdef HAVE_XUCRED_CR_PID
+      peer = c.cr_pid;
+      printf("                  cr_pid=%d\n", (int)c.cr_pid);
+#else
+      printf("                  cr_pid は無い\n");
 #endif
     } else printf("  LOCAL_PEERCRED  失敗: %s\n", strerror(errno)); }
 #endif
@@ -204,6 +211,18 @@ int main(void) {
 EOF
 echo
 echo '=== 実際に繋いで取る ==='
-if $CC -o "$T/r" "$T/r.c" >"$T/err" 2>&1; then "$T/r"; else echo "  組めない:"; head -20 "$T/err"; fi
+# cr_pid を参照する枝は、持たない OS では組めない。先に測って -D で渡す。
+XD=
+cat > "$T/p.c" <<'EOF'
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/param.h>
+#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__APPLE__)
+#include <sys/ucred.h>
+#endif
+int main(void){ struct xucred c; (void)c.cr_pid; return 0; }
+EOF
+$CC -o "$T/p" "$T/p.c" >/dev/null 2>&1 && XD=-DHAVE_XUCRED_CR_PID
+if $CC $XD -o "$T/r" "$T/r.c" >"$T/err" 2>&1; then "$T/r"; else echo "  組めない:"; head -20 "$T/err"; fi
 echo
 echo "########## ここまで $(uname -s) ##########"
