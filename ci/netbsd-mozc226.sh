@@ -178,22 +178,27 @@ fi
 swapctl -l 2>/dev/null | sed 's/^/  /'
 # 足した二本目を作業用に使う。失敗しても止めない (11G のまま進む)。
 WRKOBJ=
-if [ -e /dev/wd1d ]; then
+if [ -e /dev/wd1a ]; then
 	echo "=== 二本目のディスクを作業用にする ==="
 	# 失敗の理由を握り潰さない。一度 newfs か mount のどちらで転んだか
 	# 分からないまま「11G のまま進む」とだけ出て、原因が追えなかった。
 	dkctl wd1 listwedges 2>&1 | sed 's/^/    /' || true
-	disklabel wd1 2>&1 | tail -6 | sed 's/^/    /' || true
-	if newfs -O2 /dev/rwd1d > /tmp/newfs.out 2>&1 \
+	disklabel wd1 2>&1 | tail -8 | sed 's/^/    /' || true
+	# NetBSD の既定 label は全体を a に 4.2BSD で置き、d は unused にする。
+	# d を newfs しようとして "partition type is not 4.2BSD" で落ちた。
+	: > /tmp/newfs.out; : > /tmp/mount.out
+	if newfs -O2 /dev/rwd1a > /tmp/newfs.out 2>&1 \
 	   && mkdir -p /scratch \
-	   && mount /dev/wd1d /scratch > /tmp/mount.out 2>&1; then
+	   && mount /dev/wd1a /scratch > /tmp/mount.out 2>&1; then
 		mkdir -p /scratch/work /scratch/distfiles /scratch/packages
 		WRKOBJ=/scratch/work
 		df -h /scratch | sed 's/^/  /'
 	else
 		echo "  newfs か mount に失敗した (11G のまま進む)"
-		echo "    newfs:"; sed 's/^/      /' /tmp/newfs.out 2>/dev/null
-		echo "    mount:"; sed 's/^/      /' /tmp/mount.out 2>/dev/null
+		# 診断で run を殺さない。mount が走らないと mount.out が無く、
+		# それを読む sed が set -e で落ちて、ここまでの測定ごと消えた。
+		echo "    newfs:"; sed 's/^/      /' /tmp/newfs.out 2>/dev/null || true
+		echo "    mount:"; sed 's/^/      /' /tmp/mount.out 2>/dev/null || true
 	fi
 else
 	echo "=== 二本目のディスクが見えない (11G のまま進む) ==="
