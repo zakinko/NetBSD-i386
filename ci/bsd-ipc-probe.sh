@@ -21,6 +21,10 @@ try() {                 # try <名前> <本体>
 #include <sys/un.h>
 #include <sys/sysctl.h>
 #include <sys/param.h>
+#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__APPLE__)
+#include <sys/ucred.h>
+#endif
+#include <stddef.h>
 #include <unistd.h>
 int main(void){ $2 ; return 0; }
 EOF
@@ -95,7 +99,12 @@ cat > "$T/r.c" <<'EOF'
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/sysctl.h>
+#include <sys/param.h>
+#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__APPLE__)
+#include <sys/ucred.h>
+#endif
 #include <errno.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -146,12 +155,15 @@ int main(void) {
       printf("  SO_PEERCRED     pid=%d uid=%d\n", (int)c.pid, (int)c.uid);
     } else printf("  SO_PEERCRED     失敗: %s\n", strerror(errno)); }
 #endif
-#if defined(LOCAL_PEERCRED)
+#if defined(LOCAL_PEERCRED) && (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__APPLE__))
   { struct xucred c; socklen_t n = sizeof(c);
     if (getsockopt(as, 0, LOCAL_PEERCRED, &c, &n) == 0) {
       printf("  LOCAL_PEERCRED  uid=%d ngroups=%d\n", (int)c.cr_uid, (int)c.cr_ngroups);
 #if defined(XUCRED_VERSION)
       printf("                  version=%u\n", (unsigned)c.cr_version);
+#endif
+#if defined(XUCRED_VERSION) && XUCRED_VERSION >= 0
+      /* cr_pid は版による。持っていれば peer に採る */
 #endif
     } else printf("  LOCAL_PEERCRED  失敗: %s\n", strerror(errno)); }
 #endif
