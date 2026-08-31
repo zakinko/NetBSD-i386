@@ -640,3 +640,19 @@ jobs:
           grep -nE "CBL_OC_DUMP|Files in the PLIST but not|but not in the PLIST|\.dylib|\.so" "$W/gnucobol.log" | tail -25
           echo '##### PLIST が何を期待しているか #####'
           grep -n "CBL_OC_DUMP" "$W/pkgsrc/lang/gnucobol/PLIST"
+
+          echo '##### 直しを当てて再 package (検証) #####'
+          # 直しの中身: PLIST の拡張子を COB_MODULE_EXT に合わせる。macOS では
+          # COB_MODULE_EXT=dylib なので、Darwin の場合の出力である .dylib を
+          # PLIST に入れて package が通るかを見る (PLIST_SUBST の Darwin 分岐と
+          # 同じ結果)。
+          cd "$W/pkgsrc/lang/gnucobol"
+          sed -i.bak 's|lib/gnucobol/CBL_OC_DUMP\.so|lib/gnucobol/CBL_OC_DUMP.dylib|' PLIST
+          grep -n "CBL_OC_DUMP" PLIST
+          if "$BM" package >"$W/gnucobol-fixed.log" 2>&1; then
+            echo 'RESULT #178 fix: package 成功 = 直った'
+            find "$W" -name 'gnucobol-*.tgz' 2>/dev/null | head
+          else
+            echo 'RESULT #178 fix: まだ止まる'
+            grep -nE "CBL_OC_DUMP|Files in the PLIST|but not in" "$W/gnucobol-fixed.log" | tail -15
+          fi
