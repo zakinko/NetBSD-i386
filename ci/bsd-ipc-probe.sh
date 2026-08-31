@@ -107,7 +107,9 @@ cat > "$T/r.c" <<'EOF'
 #if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__APPLE__)
 #include <sys/ucred.h>
 #endif
+#include <sys/wait.h>
 #include <errno.h>
+#include <signal.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -131,12 +133,17 @@ int main(void) {
          access(path, F_OK) == 0 ? "はい" : "いいえ (切れている)");
   listen(ls, 1);
 
-  int cs = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (connect(cs, (struct sockaddr *)&a, len) != 0) {
-    printf("  connect 失敗: %s\n", strerror(errno)); unlink(path); return 1;
+  /* 自分に繋ぐと、返ってきた pid が「相手の pid」なのか「自分の pid」なのか
+     区別が付かない。fork して、親が accept し子が connect する。 */
+  pid_t kid = fork();
+  if (kid == 0) {
+    int c = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (connect(c, (struct sockaddr *)&a, len) != 0) _exit(1);
+    sleep(3);
+    _exit(0);
   }
   int as = accept(ls, NULL, NULL);
-  printf("  connect/accept 成功\n");
+  printf("  connect/accept 成功  親=%d 子=%d\n", (int)getpid(), (int)kid);
 
   pid_t peer = 0;
 #if defined(LOCAL_PEEREID)
@@ -178,10 +185,12 @@ int main(void) {
     if (getpeereid(as, &u, &g) == 0)
       printf("  getpeereid     uid=%d gid=%d (pid は返さない)\n", (int)u, (int)g);
     else printf("  getpeereid     失敗: %s\n", strerror(errno)); }
-  printf("  → peer の pid は %s\n", peer ? "取れる" : "取れない");
+  if (peer == 0)      printf("  → peer の pid は取れない\n");
+  else if (peer == kid) printf("  → peer の pid は取れる。子の pid と一致 (%d)\n", (int)peer);
+  else                printf("  → pid は返るが子と違う: %d != %d ★\n", (int)peer, (int)kid);
 
   /* 実行パスを sysctl で引く。並びが OS ごとに違うので両方試す */
-  if (peer == 0) peer = getpid();
+  if (peer == 0) peer = kid;   /* pid が取れない OS でも、子で照合を試す */
 #if defined(KERN_PROC_PATHNAME)
   {
     char buf[1024]; size_t sz;
@@ -205,7 +214,8 @@ int main(void) {
 #else
   printf("  KERN_PROC_PATHNAME が無いので実行パスは引けない\n");
 #endif
-  close(as); close(cs); close(ls); unlink(path);
+  close(as); close(ls); unlink(path);
+  { int st; kill(kid, SIGTERM); waitpid(kid, &st, 0); }
   return 0;
 }
 EOF
