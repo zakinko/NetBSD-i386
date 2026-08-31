@@ -76,7 +76,19 @@ jobs:
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm || true
-          [ -w /dev/kvm ] && echo "KVM あり" || echo "::warning::KVM 無し。相当遅い"
+          # udevadm trigger の反映は非同期で、直後に見ると間に合わない。
+          # 一度これで "KVM 無し" と警告が出たが、数秒後に起動した runvm.sh は
+          # 同じ検査で /dev/kvm を見つけて -enable-kvm を渡していた。同じ検査が
+          # 二度走って答えが違うので、片方だけ見ると逆の結論になる。待って見る。
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            [ -w /dev/kvm ] && break
+            sleep 1
+          done
+          if [ -w /dev/kvm ]; then
+            echo "KVM あり ($i 秒待った)"
+          else
+            echo "::warning::KVM 無し。emulation は 10 倍以上遅い"
+          fi
 
       - name: 空きを作る
         run: |
