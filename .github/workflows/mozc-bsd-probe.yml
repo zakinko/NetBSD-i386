@@ -1,0 +1,73 @@
+# mozc の ipc を NetBSD 以外の BSD へ広げるのに要る事実を、その OS の上で測る。
+#
+# 上流 mozc は FreeBSD/OpenBSD/DragonFly を一つも知らない (2.29/3.33/3.34 の
+# src/ipc と src/base に __FreeBSD__ __OpenBSD__ __DragonFly__ が 0 件、
+# __NetBSD__ すら 0 件で、NetBSD 対応も全部 pkgsrc の当て物)。書き足すことに
+# なるが、peer credential の取り方も実行パスの引き方も OS ごとに違う。
+#
+# 手元では確かめられないので、当てずに測る。mozc は建てないので数分で済む。
+# 四家族 (2.29 / 2.26 / 3.33 / 3.34) が同じ形の当て物を書くための土台。
+name: mozc-bsd-probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'どの OS を測るか'
+        type: choice
+        options: [all, freebsd, openbsd, dragonfly]
+        default: all
+
+# 同じ枝を続けて押したときに三重に回さない。
+concurrency:
+  group: mozc-bsd-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  freebsd:
+    if: ${{ inputs.target == 'all' || inputs.target == 'freebsd' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: FreeBSD で測る
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          copyback: false
+          run: |
+            set -x
+            uname -a
+            sh ci/bsd-ipc-probe.sh
+
+  openbsd:
+    if: ${{ inputs.target == 'all' || inputs.target == 'openbsd' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: OpenBSD で測る
+        uses: vmactions/openbsd-vm@v1
+        with:
+          usesh: true
+          copyback: false
+          run: |
+            set -x
+            uname -a
+            sh ci/bsd-ipc-probe.sh
+
+  dragonfly:
+    if: ${{ inputs.target == 'all' || inputs.target == 'dragonfly' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: DragonFly で測る
+        uses: vmactions/dragonflybsd-vm@v1
+        with:
+          usesh: true
+          copyback: false
+          run: |
+            set -x
+            uname -a
+            sh ci/bsd-ipc-probe.sh
