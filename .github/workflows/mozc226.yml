@@ -39,6 +39,11 @@ on:
         description: 'deep のうち GUI 四本の追加ビルドも行うか (さらに二時間)'
         type: boolean
         default: true
+      diff:
+        description: 'どの diff を当てるか'
+        type: choice
+        options: [ci/mozc-elisp226.diff, ci/mozc226-bsd.diff]
+        default: ci/mozc-elisp226.diff
 
 # 押し直したら前のは捨てる。VM を三つ抱えたまま二周させない。
 concurrency:
@@ -85,4 +90,5 @@ jobs:
         env:
           DEEP: ${{ inputs.deep && '1' || '0' }}
           DEEP_GUI: ${{ inputs.deep_gui && '1' || '0' }}
+          DIFF: ${{ github.workspace }}/${{ inputs.diff }}
         run: sh ci/netbsd-mozc226.sh '${{ inputs.image }}' '${{ matrix.emacs }}'
