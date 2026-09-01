@@ -65,6 +65,16 @@ tryh 'Aux64Info が在る'          'link.h' 'Aux64Info a; (void)a;'
 tryh 'Elf64_auxv_t が在る'       'link.h' 'Elf64_auxv_t a; (void)a;'
 tryh 'ElfW(auxv_t) が使える'     'link.h' 'ElfW(auxv_t) a; (void)a;'
 
+# 型が在っても欄の名前が違うと組めない。abseil は
+#   #if defined(__NetBSD__)  aux.a_v
+#   #else                    aux.a_un.a_val
+# と分けている。FreeBSD と DragonFly がどちらなのかで、別名を足すだけで
+# 済むか、欄の分岐も要るかが変わる。
+tryh 'Elf64_Auxinfo に a_type'   'link.h' 'Elf64_Auxinfo a; (void)a.a_type;'
+tryh 'Elf64_Auxinfo に a_un.a_val' 'link.h' 'Elf64_Auxinfo a; (void)a.a_un.a_val;'
+tryh 'Elf64_Auxinfo に a_v'      'link.h' 'Elf64_Auxinfo a; (void)a.a_v;'
+tryh 'Aux64Info に a_v'          'link.h' 'Aux64Info a; (void)a.a_v;'
+
 # --- 2. 定数 ----------------------------------------------------------------
 cat > "$T/c.c" <<'EOF'
 #include <sys/types.h>
