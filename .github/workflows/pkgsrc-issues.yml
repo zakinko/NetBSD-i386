@@ -649,6 +649,10 @@ jobs:
           cd "$W/pkgsrc/lang/gnucobol"
           sed -i.bak 's|lib/gnucobol/CBL_OC_DUMP\.so|lib/gnucobol/CBL_OC_DUMP.dylib|' PLIST
           grep -n "CBL_OC_DUMP" PLIST
+          # 最初の失敗で生成された packlist を消して作り直させる。これをしないと
+          # 編集した PLIST が package に伝わらない。
+          "$BM" clean-package >/dev/null 2>&1 || true
+          find work -name '.PLIST*' -delete 2>/dev/null || true
           if "$BM" package >"$W/gnucobol-fixed.log" 2>&1; then
             echo 'RESULT #178 fix: package 成功 = 直った'
             find "$W" -name 'gnucobol-*.tgz' 2>/dev/null | head
