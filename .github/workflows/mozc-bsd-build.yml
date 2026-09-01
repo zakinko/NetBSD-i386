@@ -21,7 +21,7 @@ on:
       target:
         description: 'どの OS'
         type: choice
-        options: [all, bsd, freebsd, openbsd, dragonfly, linux, macos]
+        options: [all, bsd, freebsd, openbsd, dragonfly, ghostbsd, netbsd, linux, macos]
         default: all
       stage:
         description: 'どこまで'
@@ -34,8 +34,11 @@ on:
         options: [current, stable]
         default: current
 
+# target と stage まで group に入れる。ここを ref だけにすると、別の OS を
+# 回した瞬間に走っている build が打ち消される。実際に数時間の build を二本
+# 潰した。同じ target を続けて押したときだけ古い方を止めたい。
 concurrency:
-  group: mozc-bsd-build-${{ github.ref }}
+  group: mozc-bsd-build-${{ github.ref }}-${{ inputs.target }}-${{ inputs.stage }}
   cancel-in-progress: true
 
 jobs:
@@ -80,6 +83,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: vmactions/dragonflybsd-vm@v1
+        with:
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE'
+          run: |
+            set -x
+            uname -a; cc --version | head -2; df -h
+            sh "$GITHUB_WORKSPACE/ci/mozc-bsd/run.sh" ${{ inputs.stage }} ${{ inputs.pkgsrc }}
+
+  # GhostBSD は FreeBSD 派生なので __FreeBSD__ が立つ。当て物はそのまま効く
+  # はずだが、派生が base をどこまで差し替えているかは測らないと分からない。
+  ghostbsd:
+    if: ${{ contains(fromJSON('["all","bsd"]'), inputs.target) || inputs.target == 'ghostbsd' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/ghostbsd-vm@v1
+        with:
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE'
+          run: |
+            set -x
+            uname -a; cc --version | head -2; df -h
+            sh "$GITHUB_WORKSPACE/ci/mozc-bsd/run.sh" ${{ inputs.stage }} ${{ inputs.pkgsrc }}
+
+  # NetBSD は techne でも建てているが、そこは私の箱で、他の人が同じものを
+  # 走らせられない。七つを同じ形で並べる。
+  netbsd:
+    if: ${{ contains(fromJSON('["all","bsd"]'), inputs.target) || inputs.target == 'netbsd' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/netbsd-vm@v1
         with:
           mem: 8192
           cpu: 4

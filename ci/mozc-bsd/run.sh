@@ -41,8 +41,14 @@ say "pkgsrc: 取れた"
 
 echo '##### 2. bootstrap #####'
 cd "$W/pkgsrc/bootstrap" || exit 1
-./bootstrap --prefix "$PREFIX" --workdir "$W/bs" >"$W/bootstrap.log" 2>&1
+# root でなければ --unprivileged が要る。macOS の runner は root ではなく、
+# 無いと「You must be either root ... or use the --unprivileged option」で
+# 止まる。root なら付けない (付けると pkgdb の場所が変わる)。
+UNPRIV=
+[ "$(id -u)" = "0" ] || UNPRIV=--unprivileged
+./bootstrap --prefix "$PREFIX" --workdir "$W/bs" $UNPRIV >"$W/bootstrap.log" 2>&1
 rc=$?
+echo "  bootstrap の引数: --prefix $PREFIX $UNPRIV
 say "bootstrap: rc=$rc"
 [ $rc -eq 0 ] || { tail -30 "$W/bootstrap.log"; exit 1; }
 PATH=$PREFIX/bin:$PREFIX/sbin:$PATH; export PATH
