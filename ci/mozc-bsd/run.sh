@@ -48,7 +48,7 @@ UNPRIV=
 [ "$(id -u)" = "0" ] || UNPRIV=--unprivileged
 ./bootstrap --prefix "$PREFIX" --workdir "$W/bs" $UNPRIV >"$W/bootstrap.log" 2>&1
 rc=$?
-echo "  bootstrap の引数: --prefix $PREFIX $UNPRIV
+echo "  bootstrap の引数: --prefix $PREFIX $UNPRIV"
 say "bootstrap: rc=$rc"
 [ $rc -eq 0 ] || { tail -30 "$W/bootstrap.log"; exit 1; }
 PATH=$PREFIX/bin:$PREFIX/sbin:$PATH; export PATH
