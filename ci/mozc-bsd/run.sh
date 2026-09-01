@@ -15,6 +15,9 @@ for d in /home /usr/home /var/tmp /tmp; do
 done
 [ -n "$W" ] || W="$HOME/mozcwork"
 mkdir -p "$W" || exit 1
+# macOS の /var は /private/var への symlink で、pkgsrc は
+# 「The path to WRKDIR ... must be canonical」で止まる。実体に直す。
+W=$(cd "$W" && pwd -P)
 
 # /usr/pkg に書けるなら慣例どおり。書けなければ作業場の下に置く
 # (macOS の runner は root ではない)。
