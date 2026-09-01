@@ -83,6 +83,36 @@ tryh 'Aux64Info に a_v'          'link.h' 'Aux64Info a; (void)a.a_v;'
 tryh 'ElfW(Versym) は整数'       'link.h' 'ElfW(Versym) v = 0; (void)(v & 1);'
 tryh 'ElfW(Versym) に vs_vers'   'link.h' 'ElfW(Versym) v; (void)v.vs_vers;'
 
+# abseil の config.h は platform 名の一覧で機能の有無を決める。名前が無いと
+# ABSL_HAVE_MMAP が立たず、ABSL_LOW_LEVEL_ALLOC_MISSING により
+# low_level_alloc.cc が丸ごと空になる。症状は link の undefined symbol。
+# 「POSIX だから在る」で書かずに、実際に呼べるかを見る。
+cat > "$T/m.c" <<'EOF'
+#include <sys/mman.h>
+#include <stdio.h>
+int main(void){
+  void *p = mmap(0, 4096, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
+  printf("  mmap(MAP_ANON) %s\n", p == MAP_FAILED ? "失敗" : "通る");
+  if (p != MAP_FAILED) munmap(p, 4096);
+  return 0;
+}
+EOF
+printf '%-38s ' 'mmap(2) が実際に使えるか'
+$CC -o "$T/m" "$T/m.c" >/dev/null 2>&1 && "$T/m" | sed 's/^  //' || echo "組めない"
+
+cat > "$T/g.c" <<'EOF'
+#include <pthread.h>
+#include <stdio.h>
+int main(void){
+  int policy; struct sched_param sp;
+  int r = pthread_getschedparam(pthread_self(), &policy, &sp);
+  printf("  pthread_getschedparam %s\n", r == 0 ? "通る" : "失敗");
+  return 0;
+}
+EOF
+printf '%-38s ' 'pthread_getschedparam が使えるか'
+$CC -o "$T/g" "$T/g.c" -lpthread >/dev/null 2>&1 && "$T/g" | sed 's/^  //' || echo "組めない"
+
 # --- 2. 定数 ----------------------------------------------------------------
 cat > "$T/c.c" <<'EOF'
 #include <sys/types.h>
