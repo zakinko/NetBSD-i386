@@ -54,7 +54,16 @@ EOF
 tryh '<link.h> が在る'           'link.h' '(void)0;'
 tryh 'ElfW(Sym) が使える'        'link.h' 'ElfW(Sym) s; (void)s;'
 tryh '__ElfN(Sym) が使える'      'link.h' '__ElfN(Sym) s; (void)s;'
-tryh 'Elf_Auxinfo が在る'        'sys/elf_common.h' 'Elf_Auxinfo a; (void)a;'
+# abseil が使うのは Elf64_Auxinfo / Aux64Info であって Elf_Auxinfo ではない。
+#   #if defined(__NetBSD__)  using Elf64_auxv_t = Aux64Info;
+#   #if defined(__FreeBSD__) using Elf64_auxv_t = Elf64_Auxinfo;
+# DragonFly はどちらの枝にも入らないので、綴りを一つずつ見る。
+tryh 'Elf_Auxinfo が在る'        'link.h' 'Elf_Auxinfo a; (void)a;'
+tryh 'Elf64_Auxinfo が在る'      'link.h' 'Elf64_Auxinfo a; (void)a;'
+tryh 'Elf32_Auxinfo が在る'      'link.h' 'Elf32_Auxinfo a; (void)a;'
+tryh 'Aux64Info が在る'          'link.h' 'Aux64Info a; (void)a;'
+tryh 'Elf64_auxv_t が在る'       'link.h' 'Elf64_auxv_t a; (void)a;'
+tryh 'ElfW(auxv_t) が使える'     'link.h' 'ElfW(auxv_t) a; (void)a;'
 
 # --- 2. 定数 ----------------------------------------------------------------
 cat > "$T/c.c" <<'EOF'
