@@ -149,8 +149,13 @@ OPSYSVARS+=		OSDEST
 OSDEST.Linux=		linux-opt
 OSDEST.NetBSD=		netbsd-opt
 .else
+# build_mozc.py の platform_dict は四つの BSD をどれも out_bsd に落とすので、
+# ここも四つとも bsd。空のままだと do-install が out_/Release/... を探す。
 OSDEST.Linux=		linux
 OSDEST.NetBSD=		bsd
+OSDEST.FreeBSD=		bsd
+OSDEST.OpenBSD=		bsd
+OSDEST.DragonFly=	bsd
 MOZC_BUILD_MODE?=	Release
 
 do-configure:

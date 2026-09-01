@@ -14,13 +14,16 @@ inputmethod/mozc-server226 uses '8' here.  That is correct there: it has no
 bazel build to agree with, and both its server and its helper come out of
 the same gyp run.
 
---- build_tools/mozc_version.py.orig
+--- build_tools/mozc_version.py.orig	2023-10-26 12:00:50.000000000 +0000
 +++ build_tools/mozc_version.py
-@@ -67,6 +67,7 @@
+@@ -67,6 +67,10 @@
      'iOS': '6',
      'iOS_sim': '6',
      'Wasm': '7',
 +    'NetBSD': '2',
++    'FreeBSD': '2',
++    'OpenBSD': '2',
++    'DragonFly': '2',
  }
  
  VERSION_PROPERTIES = [
