@@ -41,6 +41,21 @@ try 'struct xucred'              'struct xucred c; (void)c.cr_uid;'
 try 'struct xucred に cr_pid'    'struct xucred c; (void)c.cr_pid;'
 try 'getpeereid(2)'              'uid_t u; gid_t g; (void)getpeereid(0,&u,&g);'
 
+# abseil の elf_mem_image は __ELF__ で有効になり <link.h> の ElfW を使う。
+# FreeBSD の欠けは上流が __ElfN で埋めているが、DragonFly は誰も見ていない。
+tryh() {                # tryh <名前> <header> <本体>
+  cat > "$T/t.c" <<EOF
+#include <$2>
+int main(void){ $3 ; return 0; }
+EOF
+  if $CC -o "$T/t" "$T/t.c" >"$T/err" 2>&1; then say "$1" "通る"
+  else say "$1" "通らない"; fi
+}
+tryh '<link.h> が在る'           'link.h' '(void)0;'
+tryh 'ElfW(Sym) が使える'        'link.h' 'ElfW(Sym) s; (void)s;'
+tryh '__ElfN(Sym) が使える'      'link.h' '__ElfN(Sym) s; (void)s;'
+tryh 'Elf_Auxinfo が在る'        'sys/elf_common.h' 'Elf_Auxinfo a; (void)a;'
+
 # --- 2. 定数 ----------------------------------------------------------------
 cat > "$T/c.c" <<'EOF'
 #include <sys/types.h>
