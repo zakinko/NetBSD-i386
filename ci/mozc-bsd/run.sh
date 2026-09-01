@@ -9,19 +9,32 @@ BRANCH=${2:-current}
 WS=${GITHUB_WORKSPACE:-$(pwd)}
 
 # / が小さい OS が在るので、木も work も広い所に置く。
+W=""
 for d in /home /usr/home /var/tmp /tmp; do
-  [ -d "$d" ] && W="$d/mozcwork" && break
+  if [ -d "$d" ] && [ -w "$d" ]; then W="$d/mozcwork"; break; fi
 done
-PREFIX=/usr/pkg
+[ -n "$W" ] || W="$HOME/mozcwork"
 mkdir -p "$W" || exit 1
-echo "### 作業場 $W  prefix $PREFIX  段 $STAGE"
-df -h "$W" | tail -1
+
+# /usr/pkg に書けるなら慣例どおり。書けなければ作業場の下に置く
+# (macOS の runner は root ではない)。
+PREFIX=/usr/pkg
+if ! mkdir -p "$PREFIX" 2>/dev/null; then PREFIX="$W/pkg"; mkdir -p "$PREFIX"; fi
+
+# 取ってくる道具は OS で違う。BSD は fetch か ftp、Linux と macOS は curl。
+if command -v fetch >/dev/null 2>&1; then GET="fetch -o"
+elif command -v curl >/dev/null 2>&1; then GET="curl -fsSL -o"
+elif command -v ftp >/dev/null 2>&1; then GET="ftp -o"
+else echo "RESULT 取得の道具が無い"; exit 1; fi
+
+echo "### 作業場 $W  prefix $PREFIX  段 $STAGE  取得 $GET"
+uname -a
+df -h "$W" 2>/dev/null | tail -1
 
 say() { echo "RESULT $*"; }
 
 echo '##### 1. pkgsrc を取る #####'
 cd "$W" || exit 1
-if command -v fetch >/dev/null 2>&1; then GET="fetch -o"; else GET="ftp -o"; fi
 $GET pkgsrc.tar.gz "https://cdn.NetBSD.org/pub/pkgsrc/$BRANCH/pkgsrc.tar.gz" || { say "fetch pkgsrc: 落ちた"; exit 1; }
 tar xzf pkgsrc.tar.gz || { say "extract pkgsrc: 落ちた"; exit 1; }
 say "pkgsrc: 取れた"

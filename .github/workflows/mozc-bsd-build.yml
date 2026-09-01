@@ -21,7 +21,7 @@ on:
       target:
         description: 'どの OS'
         type: choice
-        options: [all, freebsd, openbsd, dragonfly]
+        options: [all, bsd, freebsd, openbsd, dragonfly, linux, macos]
         default: all
       stage:
         description: 'どこまで'
@@ -40,7 +40,7 @@ concurrency:
 
 jobs:
   freebsd:
-    if: ${{ inputs.target == 'all' || inputs.target == 'freebsd' }}
+    if: ${{ contains(fromJSON('["all","bsd"]'), inputs.target) || inputs.target == 'freebsd' }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     steps:
@@ -57,7 +57,7 @@ jobs:
             sh "$GITHUB_WORKSPACE/ci/mozc-bsd/run.sh" ${{ inputs.stage }} ${{ inputs.pkgsrc }}
 
   openbsd:
-    if: ${{ inputs.target == 'all' || inputs.target == 'openbsd' }}
+    if: ${{ contains(fromJSON('["all","bsd"]'), inputs.target) || inputs.target == 'openbsd' }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     steps:
@@ -74,7 +74,7 @@ jobs:
             sh "$GITHUB_WORKSPACE/ci/mozc-bsd/run.sh" ${{ inputs.stage }} ${{ inputs.pkgsrc }}
 
   dragonfly:
-    if: ${{ inputs.target == 'all' || inputs.target == 'dragonfly' }}
+    if: ${{ contains(fromJSON('["all","bsd"]'), inputs.target) || inputs.target == 'dragonfly' }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     steps:
@@ -89,3 +89,33 @@ jobs:
             set -x
             uname -a; cc --version | head -2; df -h
             sh "$GITHUB_WORKSPACE/ci/mozc-bsd/run.sh" ${{ inputs.stage }} ${{ inputs.pkgsrc }}
+
+  # mozc が元から知っている platform。BSD へ広げた条件が、動いていた側を
+  # 壊していないかを見る。VM は要らないので安い。
+  linux:
+    if: ${{ inputs.target == 'all' || inputs.target == 'linux' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    container: fedora:41
+    steps:
+      - name: pkgsrc の bootstrap に要るもの
+        run: |
+          # hostname が無いと bootstrap が「Circular dependency detected」で
+          # 落ちる。本当の原因から六段離れた所に出る。
+          dnf -y install -q git tar gzip bzip2 xz gcc gcc-c++ make patch \
+              perl file findutils diffutils which hostname libX11-devel
+      - uses: actions/checkout@v4
+      - run: sh ci/mozc-bsd/run.sh ${{ inputs.stage }} ${{ inputs.pkgsrc }}
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+  # mozc は macOS を知っている (mach_ipc.cc)。ここも壊していないかを見る。
+  macos:
+    if: ${{ inputs.target == 'all' || inputs.target == 'macos' }}
+    runs-on: macos-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh ci/mozc-bsd/run.sh ${{ inputs.stage }} ${{ inputs.pkgsrc }}
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
