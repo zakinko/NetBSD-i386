@@ -76,6 +76,29 @@ for v in OPSYS MACHINE_ARCH PKG_SUGGESTED_OPTIONS PKG_OPTIONS PKG_FAIL_REASON US
   printf '  %-22s %s\n' "$v" "$(bmake show-var VARNAME=$v 2>/dev/null | cut -c1-90)"
 done
 
+echo '##### 4b. gyp が名乗る flavor #####'
+# gyp の GetFlavor は sys.platform を見て freebsd/openbsd/netbsd を返し、
+# 知らない物は全部 'linux' に落とす。dragonfly の枝は無い。common.gypi に
+# OS=="dragonfly" と書いても永遠に成立しないので、先に測る。
+for py in python3 python3.13 python3.12 python3.11 python; do
+  command -v $py >/dev/null 2>&1 || continue
+  echo "  sys.platform = $($py -c 'import sys; print(sys.platform)')"
+  $py - <<'EOF'
+import sys
+f = {'cygwin':'win','win32':'win','darwin':'mac'}
+p = sys.platform
+if p in f: v = f[p]
+elif p.startswith('sunos'): v = 'solaris'
+elif p.startswith('freebsd'): v = 'freebsd'
+elif p.startswith('openbsd'): v = 'openbsd'
+elif p.startswith('netbsd'): v = 'netbsd'
+elif p.startswith(('aix','zos','os390')): v = 'aix/zos'
+else: v = 'linux'
+print("  gyp の flavor = " + v)
+EOF
+  break
+done
+
 echo '##### 5. 依存が解けるか #####'
 bmake show-depends-dirs >"$W/depends.log" 2>&1
 say "depends: rc=$? ($(grep -c . "$W/depends.log") 行)"
