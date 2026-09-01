@@ -1,0 +1,50 @@
+name: bsd-ipc-check
+
+# mozc の ipc を NetBSD 以外の BSD へ広げる当て物が、その OS の上で本当に
+# 成り立つかを測る。header を手元で読んで書いたものと、その OS が実際に
+# 持っているものは別で、こちらには FreeBSD も OpenBSD も実機が無い。
+#
+# 建てるのではなく、要る型と定数と system call だけを一つずつ試す。mozc の
+# 依存を積むと数時間かかるが、これなら数分で済む。答えが出れば当て物の
+# 条件分岐を直せるし、出なければ「測っていない」と書ける。
+#
+# 手で起動する。NetBSD 側は techne で直に走らせられるので、ここには無い。
+
+on:
+  workflow_dispatch:
+    inputs:
+      freebsd_release:
+        description: 'FreeBSD の版'
+        default: '14.2'
+      openbsd_release:
+        description: 'OpenBSD の版'
+        default: '7.6'
+
+concurrency:
+  group: bsd-ipc-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  freebsd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: FreeBSD で測る
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: ${{ inputs.freebsd_release }}
+          usesh: true
+          run: sh ci/bsd-ipc-check.sh
+
+  openbsd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: OpenBSD で測る
+        uses: vmactions/openbsd-vm@v1
+        with:
+          release: ${{ inputs.openbsd_release }}
+          usesh: true
+          run: sh ci/bsd-ipc-check.sh
