@@ -641,13 +641,15 @@ jobs:
           echo '##### PLIST が何を期待しているか #####'
           grep -n "CBL_OC_DUMP" "$W/pkgsrc/lang/gnucobol/PLIST"
 
-          echo '##### 直しを当てて再 package (検証) #####'
-          # 直しの中身: PLIST の拡張子を COB_MODULE_EXT に合わせる。macOS では
-          # COB_MODULE_EXT=dylib なので、Darwin の場合の出力である .dylib を
-          # PLIST に入れて package が通るかを見る (PLIST_SUBST の Darwin 分岐と
-          # 同じ結果)。
+          echo '##### 本物の直しを当てて再 package (検証) #####'
+          # 実際の直し: Makefile に OPSYS 別の拡張子と PLIST_SUBST を入れ、PLIST は
+          # その変数を使う。macOS では COBOL_MODULE_EXT=dylib になる。直打ちでなく
+          # この機構そのものを試す。
           cd "$W/pkgsrc/lang/gnucobol"
-          sed -i.bak 's|lib/gnucobol/CBL_OC_DUMP\.so|lib/gnucobol/CBL_OC_DUMP.dylib|' PLIST
+          printf '\n.include "../../mk/bsd.prefs.mk"\nCOBOL_MODULE_EXT=\tso\n.if ${OPSYS} == "Darwin"\nCOBOL_MODULE_EXT=\tdylib\n.endif\nPLIST_SUBST+=\t\tCOBOL_MODULE_EXT=${COBOL_MODULE_EXT}\n' > /tmp/mkins
+          sed -i.bak '/^TEST_TARGET=/r /tmp/mkins' Makefile
+          sed -i.bak2 's|lib/gnucobol/CBL_OC_DUMP\.so|lib/gnucobol/CBL_OC_DUMP.${COBOL_MODULE_EXT}|' PLIST
+          echo '--- Makefile に入った直し ---'; grep -n "COBOL_MODULE_EXT" Makefile
           grep -n "CBL_OC_DUMP" PLIST
           # 最初の失敗で生成された packlist を消して作り直させる。これをしないと
           # 編集した PLIST が package に伝わらない。
