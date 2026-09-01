@@ -39,15 +39,14 @@ PATH=$PREFIX/bin:$PREFIX/sbin:$PATH; export PATH
   || { say "digest: 落ちた"; tail -20 "$W/digest.log"; exit 1; }
 say "digest: 入った"
 
-echo '##### 3. mozc-server を写して当て物を入れ替える #####'
+echo '##### 3. package 一式を置く #####'
+# 木の inputmethod/mozc-server を写して patches だけ差し替えるのでは足りない。
+# gyp option は PR1 (pkg/60654) が足す options.mk と Makefile.common の変更で
+# 入るもので、木にはまだ無い。NetBSD で建てて確かめた package 一式を持ってくる。
 D="$W/pkgsrc/zakinko/mozc-server"
-mkdir -p "$W/pkgsrc/zakinko"
-cp -R "$W/pkgsrc/inputmethod/mozc-server" "$D" || { say "写し: 落ちた"; exit 1; }
-rm -rf "$D/patches"
+mkdir -p "$D"
+cp "$WS/ci/mozc-bsd/pkg/"* "$D/" || { say "package: 落ちた"; exit 1; }
 cp -R "$WS/ci/mozc-bsd/patches" "$D/patches" || { say "当て物: 落ちた"; exit 1; }
-# 写しが自分を指すように直す。Makefile だけでなく Makefile.common も。
-sed -i.bak 's|\.\./\.\./inputmethod/mozc-server/|../../zakinko/mozc-server/|g' \
-  "$D/Makefile" "$D/Makefile.common" 2>/dev/null
 echo "  当て物 $(ls "$D/patches" | wc -l) 本"
 cd "$D" || exit 1
 bmake makepatchsum >"$W/mps.log" 2>&1 || { say "makepatchsum: 落ちた"; tail -10 "$W/mps.log"; }
