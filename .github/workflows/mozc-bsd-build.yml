@@ -1,0 +1,91 @@
+# mozc を FreeBSD / OpenBSD / DragonFly で建てる。
+#
+# 上流 mozc はこの三つを知らない (src/ipc と src/base に __FreeBSD__ 等が
+# 0 件)。ci/mozc-bsd/patches/ の 34 本がそれを補う。NetBSD では建って変換も
+# するところまで確かめてあるが、**残りの三つでは一度も建てていない。**
+#
+# mozc の build は長い。いきなり通しで回すと、option の選び方や依存の解決の
+# ような手前の間違いを見つけるのに何時間もかかる。段を分ける。
+#
+#   probe    bootstrap して show-var と depends と fetch まで。数十分
+#   build    実際に建てる。数時間
+#
+# bazel は devel/bazel が openjdk11 を要求し、mk/java-vm.mk はそれを NetBSD の
+# 四つの arch にしか許していないので、この三つでは gyp を使う。options.mk が
+# OPSYS != NetBSD で gyp を返すことは NetBSD 側で測ってある。
+name: mozc-bsd-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'どの OS'
+        type: choice
+        options: [all, freebsd, openbsd, dragonfly]
+        default: all
+      stage:
+        description: 'どこまで'
+        type: choice
+        options: [probe, build]
+        default: probe
+      pkgsrc:
+        description: 'pkgsrc の配布物'
+        type: choice
+        options: [current, stable]
+        default: current
+
+concurrency:
+  group: mozc-bsd-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  freebsd:
+    if: ${{ inputs.target == 'all' || inputs.target == 'freebsd' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE'
+          run: |
+            set -x
+            uname -a; cc --version | head -2; df -h
+            sh "$GITHUB_WORKSPACE/ci/mozc-bsd/run.sh" ${{ inputs.stage }} ${{ inputs.pkgsrc }}
+
+  openbsd:
+    if: ${{ inputs.target == 'all' || inputs.target == 'openbsd' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/openbsd-vm@v1
+        with:
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE'
+          run: |
+            set -x
+            uname -a; cc --version | head -2; df -h
+            sh "$GITHUB_WORKSPACE/ci/mozc-bsd/run.sh" ${{ inputs.stage }} ${{ inputs.pkgsrc }}
+
+  dragonfly:
+    if: ${{ inputs.target == 'all' || inputs.target == 'dragonfly' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/dragonflybsd-vm@v1
+        with:
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE'
+          run: |
+            set -x
+            uname -a; cc --version | head -2; df -h
+            sh "$GITHUB_WORKSPACE/ci/mozc-bsd/run.sh" ${{ inputs.stage }} ${{ inputs.pkgsrc }}
