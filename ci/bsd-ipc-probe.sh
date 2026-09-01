@@ -75,6 +75,14 @@ tryh 'Elf64_Auxinfo に a_un.a_val' 'link.h' 'Elf64_Auxinfo a; (void)a.a_un.a_va
 tryh 'Elf64_Auxinfo に a_v'      'link.h' 'Elf64_Auxinfo a; (void)a.a_v;'
 tryh 'Aux64Info に a_v'          'link.h' 'Aux64Info a; (void)a.a_v;'
 
+# abseil の elf_mem_image.cc は version symbol を二通りで読む。
+#   #if defined(__NetBSD__)  version_symbol->vs_vers
+#   #else                    version_symbol[0]
+# 前者は構造体、後者は整数。ElfW(Versym) がどちらなのかで、当て物に
+# その OS の枝が要るかどうかが決まる。
+tryh 'ElfW(Versym) は整数'       'link.h' 'ElfW(Versym) v = 0; (void)(v & 1);'
+tryh 'ElfW(Versym) に vs_vers'   'link.h' 'ElfW(Versym) v; (void)v.vs_vers;'
+
 # --- 2. 定数 ----------------------------------------------------------------
 cat > "$T/c.c" <<'EOF'
 #include <sys/types.h>
