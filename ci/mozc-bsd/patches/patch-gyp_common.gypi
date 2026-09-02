@@ -42,13 +42,25 @@ pkgsrc supplies the compiler through its wrappers.
      ],
    },
    'target_defaults': {
-@@ -228,6 +245,24 @@
+@@ -228,6 +245,36 @@
            }],
          ],
        }],
-+      ['OS=="netbsd"', {
-+        'defines': [
-+          'OS_NETBSD',
++      # gyp の flavor は sys.platform から決まる。netbsd / freebsd / openbsd は
++      # そのまま返るが、DragonFly は dragonfly6 と名乗り、GetFlavor に枝が無い
++      # ので 'linux' に落ちる (実機で測った)。その linux の枝は -pthread と
++      # -fPIC と -fno-exceptions を既に持っているので、DragonFly はそこで
++      # 正しく建つ。ここに dragonfly と書いても成立しない。
++      # GhostBSD は freebsd15 を名乗るので freebsd の枝に入る。
++      ['OS=="netbsd" or OS=="freebsd" or OS=="openbsd"', {
++        'conditions': [
++          # 木の中で誰も見ていない define だが、FreeBSD で OS_NETBSD が立つと
++          # 読む人を惑わせるので NetBSD に留める。
++          ['OS=="netbsd"', {
++            'defines': [
++              'OS_NETBSD',
++            ],
++          }],
 +        ],
 +        'cflags': [
 +          '<@(netbsd_cflags)',
