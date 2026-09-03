@@ -113,6 +113,23 @@ EOF
 printf '%-38s ' 'pthread_getschedparam が使えるか'
 $CC -o "$T/g" "$T/g.c" -lpthread >/dev/null 2>&1 && "$T/g" | sed 's/^  //' || echo "組めない"
 
+# abseil の config.h は platform 名の一覧で決める macro を六つ持ち、DragonFly
+# はそのどれにも居ない。名前が無いと機能が無いことにされ、症状は link の
+# undefined symbol として原因から遠い所に出る。足す前に一つずつ測る。
+try2() {          # try2 <名前> <header> <本体> [lib]
+  cat > "$T/x.c" <<EOF
+#include <$2>
+#include <stdio.h>
+int main(void){ $3 ; printf("通る\n"); return 0; }
+EOF
+  printf '%-38s ' "$1"
+  if $CC -o "$T/x" "$T/x.c" ${4:-} >/dev/null 2>&1; then "$T/x"; else echo "通らない"; fi
+}
+try2 'ABSL_HAVE_TLS (__thread)'   'stdio.h'     'static __thread int v; v = 1; (void)v;'
+try2 'ABSL_HAVE_SCHED_GETCPU'     'sched.h'     '(void)sched_getcpu();'
+try2 'ABSL_HAVE_SCHED_YIELD'      'sched.h'     '(void)sched_yield();'
+try2 'ABSL_HAVE_SEMAPHORE_H'      'semaphore.h' 'sem_t s; (void)s;'
+
 # --- 2. 定数 ----------------------------------------------------------------
 cat > "$T/c.c" <<'EOF'
 #include <sys/types.h>
