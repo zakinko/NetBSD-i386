@@ -1,0 +1,127 @@
+#!/bin/sh
+# emacs-matrix -- 一つの elisp を、建ててある Emacs / XEmacs 全部で測る。
+#
+#   emacs-matrix <段の .el が並んだ directory> [段名...]
+#
+# 段は <dir>/<名前>.el。名前を挙げなければ *.el を辞書順に全部。各段について
+#
+#	byte-compile の警告数
+#	preedit の face に下線が付くか
+#	buffer をまたいだとき undo の履歴が自分のものか
+#	input method から抜けるときに後始末が呼ばれるか
+#	agent との pipe が UTF-8 になるか (LC_ALL=ja_JP.eucJP)
+#
+# を出す。段は anthy-unicode.el として置き直され、同梱の五本と leim-list.el が
+# 隣に copy される。名前が違うと provide/require が噛み合わない。
+#
+# 起こし方が版で違うので、そこを間違えると「動かない」という嘘の結果が出る。
+# 実際に出した。
+#
+#	-Q は Emacs 22 から。21 以下では "Wrong type argument: stringp, nil"
+#	XEmacs は -L を取らない。ディレクトリを load しようとして落ちる
+#	XEmacs 21.4 は EMACSPACKAGEPATH を読む。21.5 は読まないので load-path
+#	  へ直に足す。fsf-compat に overlay、mule-ucs に utf-8 が在る
+#	Emacs 20 は batch の princ が端末に届かない。t20.el 側で
+#	  send-string-to-terminal を使う
+#
+# 判定行が出ない回がある (X)。三回まで引き直す。X が三回続いたら、それは
+# 試験そのものが落ちているので、生の出力を見に行くこと。X を NG と読まない。
+
+# set -e は使わない。ここでは非零の終了は測定結果であって失敗ではない。
+# XEmacs が非零で抜けた回に set -e が後半の版を丸ごと飛ばしたことがある。
+DIR=${1:?段の .el が並んだ directory を指定してください}
+shift || true
+HERE=`cd \`dirname "$0"\` && pwd`
+: ${EMACS_MATRIX_ROOT:=$HOME/w/claude}	# 建てた Emacs と package を置いた場所
+: ${EMACS_MATRIX_LISP:=$DIR}		# 同梱の五本と leim-list.el
+W=$EMACS_MATRIX_ROOT
+M=$W/mucs/Mule-UCS-0.84/lisp		# Emacs 20/21 用に展開した Mule-UCS
+X=$W/xpkg/lisp				# XEmacs の package tree
+OUT=${EMACS_MATRIX_OUT:-$W/matrix-out}
+
+EMACSPACKAGEPATH=$W/xpkg; export EMACSPACKAGEPATH
+XLP="(setq load-path (append (list \".\" \"$X/fsf-compat\" \"$X/mule-ucs\" \"$X/mule-base\" \"$X/xemacs-base\" \"$X/edit-utils\") load-path))"
+
+STAGES=$*
+if [ -z "$STAGES" ]; then
+	STAGES=`ls $DIR/*.el 2>/dev/null | sed 's|.*/||; s|\.el$||' | grep -v '^anthy-unicode' | grep -v '^leim-list' | grep -v '^t-\|^t20$'`
+fi
+
+find_emacs() {
+	case $1 in
+	  emacs30)   echo /usr/pkg/bin/emacs ;;
+	  xemacs215) echo $W/wrk/editors/xemacs-current-nox11/work/xemacs-21.5.36/src/xemacs ;;
+	  xemacs214) echo $W/wrk/editors/xemacs-nox11/work/xemacs-21.4.25/src/xemacs ;;
+	  emacs21|emacs20)
+		find $W/wrk/zakinko/$1 -type f -name emacs -perm -u+x 2>/dev/null | head -1 ;;
+	  *)	find $W/wrk/zakinko/$1-nox11 $W/wrk/editors/$1-nox11 \
+			-type f -name emacs -perm -u+x 2>/dev/null | head -1 ;;
+	esac
+}
+
+run() {		# run <段の dir> <emacs への引数...>
+	d=$1; shift
+	case $KIND in
+	  modern) ( cd $d && env LC_ALL=$LOC $E -Q -batch -L . "$@" ) 2>&1 ;;
+	  old)    ( cd $d && env LC_ALL=$LOC $E -batch -q --no-site-file -L . -L $M "$@" ) 2>&1 ;;
+	  xemacs) ( cd $d && env LC_ALL=$LOC $E -batch -q -no-site-file -eval "$XLP" "$@" ) 2>&1 ;;
+	esac
+}
+
+judge() {	# judge <段の dir> <試験名>。X なら三回まで引き直す
+	for i in 1 2 3; do
+		o=`run $1 -l $HERE/$2.el`
+		case "$o" in
+		  *"verdict"*"OK"*) echo OK; return ;;
+		  *"verdict"*"NG"*) echo NG; return ;;
+		esac
+	done
+	echo X
+}
+
+for v in emacs31 emacs30 emacs29 emacs28 emacs27 emacs26 emacs25 emacs24 \
+	 emacs23 emacs22 xemacs215 xemacs214 emacs21 emacs20; do
+	KIND=modern
+	case $v in
+	  xemacs215|xemacs214) KIND=xemacs ;;
+	  emacs21|emacs20)     KIND=old ;;
+	esac
+	E=`find_emacs $v`
+	[ -n "$E" ] && [ -x "$E" ] || { echo "$v|建っていない"; continue; }
+
+	for st in $STAGES; do
+		[ -f "$DIR/$st.el" ] || continue
+		d=$OUT/$v/$st; rm -rf $d; mkdir -p $d
+		cp $EMACS_MATRIX_LISP/anthy-unicode-*.el $EMACS_MATRIX_LISP/leim-list.el $d/ 2>/dev/null || true
+		cp $DIR/$st.el $d/anthy-unicode.el
+		rm -f $d/*.elc
+
+		if [ $v = emacs20 ]; then
+			LOC=ja_JP.eucJP
+			rm -f $d/*.elc
+			( cd $d && $E -batch -q --no-site-file -L . -L $M \
+				-f batch-byte-compile anthy-unicode.el ) > $d/bc.log 2>&1 || true
+			w=`grep -c 'Warning' $d/bc.log || true`
+			rm -f $d/*.elc
+			o=`( cd $d && $E -batch -q --no-site-file -L . -L $M -l $HERE/t20.el ) 2>&1`
+			u=`echo "$o" | sed -n 's/.*underline : //p' | head -1`
+			n=`echo "$o" | sed -n 's/.*undo      : //p' | head -1`
+			i=`echo "$o" | sed -n 's/.*imexit    : //p' | head -1`
+			c=`( cd $d && env LC_ALL=ja_JP.eucJP $E -batch -q --no-site-file \
+			     -L . -L $M -l $HERE/t-coding20.el ) 2>&1 | grep -o 'OK\|NG' | head -1`
+			echo "$v|$st|warn=$w|under=${u:-X}|imexit=${i:-X}|undo=${n:-X}|coding=${c:-X}"
+			continue
+		fi
+
+		LOC=C
+		run $d -f batch-byte-compile anthy-unicode.el > $d/bc.log 2>&1 || true
+		w=`grep -c 'Warning:' $d/bc.log || true`
+		rm -f $d/*.elc
+		ul=`run $d -l $HERE/t-under.el | sed -n 's/.*underline: //p' | head -1`
+		LOC=ja_JP.eucJP
+		un=`judge $d t-undo3`
+		im=`judge $d t-imexit`
+		cs=`judge $d t-coding`
+		echo "$v|$st|warn=$w|under=${ul:-X}|imexit=$im|undo=$un|coding=$cs"
+	done
+done
