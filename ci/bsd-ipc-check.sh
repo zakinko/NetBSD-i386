@@ -20,13 +20,26 @@ try() {  # try <名前> <本体>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/param.h>
+/* Linux は sys/sysctl.h を捨てた。全項目でこれを include していたせいで、
+   Fedora では「型が無い」ではなく「header が無い」で全部落ち、測定が
+   一つも成立しなかった。BSD でだけ引く。 */
+#if defined(__NetBSD__) || defined(__FreeBSD__) || defined(__OpenBSD__) || \
+    defined(__DragonFly__) || defined(__APPLE__)
 #include <sys/sysctl.h>
+#endif
 #if defined(__FreeBSD__) || defined(__DragonFly__)
 #include <sys/ucred.h>
 #endif
 #include <stddef.h>
 #include <stdio.h>
 #include <unistd.h>
+#if defined(__NetBSD__)
+#include <lwp.h>
+#elif defined(__FreeBSD__)
+#include <pthread_np.h>
+#elif defined(__DragonFly__)
+#include <sys/lwp.h>
+#endif
 int main(void) { $* ; return 0; }
 EOF
 	if cc -o t t.c > cc.log 2>&1; then
@@ -59,7 +72,12 @@ try "KERN_PROC_ARGS 経由 (NetBSD 形)" \
 	'int n[]={CTL_KERN,KERN_PROC_ARGS,(int)getpid(),KERN_PROC_PATHNAME}; char b[1024]; size_t l=sizeof(b); b[0]=0; int r=sysctl(n,4,b,&l,NULL,0); printf("rc=%d len=%zu %s path=%s", r, l, (r==0 && l>1 && b[0]==0x2f) ? "USABLE" : "UNUSABLE", r==0?b:"-")'
 
 echo "--- log のスレッド ID ---"
-try "pthread_getthreadid_np"  '(void)0; printf("skip")'
-try "getthrid"               '(void)0; printf("skip")'
+# ここは一度、中身を (void)0 のままにしていて、六つの OS すべてで「通る」と
+# 出ていた。何も測っていなかったからである。空の検査は必ず成功する。
+try "_lwp_self (NetBSD)"        'printf("tid=%lu", (unsigned long)_lwp_self())'
+try "pthread_getthreadid_np (FreeBSD)" \
+	'printf("tid=%lu", (unsigned long)pthread_getthreadid_np())'
+try "getthrid (OpenBSD)"        'printf("tid=%lu", (unsigned long)getthrid())'
+try "lwp_gettid (DragonFly)"    'printf("tid=%lu", (unsigned long)lwp_gettid())'
 
 cd /; rm -rf "$T"
