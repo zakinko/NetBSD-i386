@@ -139,13 +139,25 @@ check_diff() {
 
 	# 7. 中身が空になる file。patch は file を消せないので、本文に cvs rm と
 	#    書いていなければ committer には伝わらない。
+	#
+	#    「足す行が無い」ではなく「残る行が無い」で見る。前は add==0 && del>0
+	#    で拾っていたので、行を消すだけの diff が全部「空になる」と出ていた。
+	#    uim の PLIST は 21 行消して 1 行も足さないが、387 行残る。
+	#    unified diff の hunk 頭 @@ -a,b +c,d @@ の c,d を読む。どの hunk も
+	#    +0,0 で、かつ file 全体がその hunk で覆われていれば空になる。
 	awk '
-		/^--- /{ if (f != "" && add == 0 && del > 0) print f;
-			 f=$2; sub(/\.orig$/,"",f); add=0; del=0; next }
+		/^--- /{ if (f != "" && hunks > 0 && left == 0) print f;
+			 f=$2; sub(/\.orig$/,"",f); hunks=0; left=1; next }
 		/^\+\+\+ /{ next }
-		/^\+/{ add++ }
-		/^-/{ del++ }
-		END{ if (f != "" && add == 0 && del > 0) print f }
+		/^@@ /{
+			hunks++
+			# +c,d の d を取る。d が 0 でなければ何か残る。
+			n = $3; sub(/^\+/,"",n)
+			if (n ~ /,/) { split(n, a, ","); d = a[2] } else { d = 1 }
+			if (d != 0) left = 1; else if (hunks == 1) left = 0
+			next
+		}
+		END{ if (f != "" && hunks > 0 && left == 0) print f }
 	' "$d" > /tmp/pr-ready-rm.$$ || true
 	if [ -s /tmp/pr-ready-rm.$$ ]; then
 		note "空になる file (本文に cvs rm と書いたか):"
@@ -154,7 +166,18 @@ check_diff() {
 	rm -f /tmp/pr-ready-rm.$$
 
 	# 8. 新しい file は cvs add が要る
-	grep '^--- ' "$d" | sed -n 's/\.orig$//p' | sed 's/^--- //' > /tmp/pr-ready-add.$$ || true
+	#
+	#    最初の hunk が @@ -0,0 で始まるものだけが新しい file である。前は
+	#    ^--- の行を全部並べていたので、当て物の対象が例外なく「新しい」と
+	#    出ていた。誰も読まない黄色を出す検査は、無いのと同じである。
+	awk '
+		/^--- /{ f=$2; sub(/\.orig$/,"",f); first=1; next }
+		/^\+\+\+ /{ next }
+		/^@@ /{
+			if (first && $2 ~ /^-0,0$/) print f
+			first=0
+		}
+	' "$d" > /tmp/pr-ready-add.$$ || true
 	if [ -s /tmp/pr-ready-add.$$ ]; then
 		note "新しい file (本文に cvs add と書いたか):"
 		sed 's/^/     /' /tmp/pr-ready-add.$$
