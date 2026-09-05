@@ -74,7 +74,13 @@ check_one() {
 		for p in "$pkg"/patches/patch-*; do
 			[ -f "$p" ] || continue
 			n=${p##*/}
-			want=$(sed -n "s|^SHA1 ($n) = ||p" "$pkg/distinfo")
+			# 名前をそのまま正規表現に置くと、当て物の名前に必ず
+			# 入っている "." が任意の一字に化ける。mule2 には
+			# patch-src_mcpath.c と patch-src_mcpath_c が並んで
+			# 居て、前者の pattern が後者にも当たり、want が二行に
+			# なって必ず食い違う。値は合っているのに NG が出た。
+			nre=$(printf '%s' "$n" | sed 's/[].[^$*\\]/\\&/g')
+			want=$(sed -n "s|^SHA1 ($nre) = ||p" "$pkg/distinfo")
 			got=$(grep -v '^\$NetBSD' "$p" | shasum | cut -d' ' -f1)
 			[ -n "$want" ] || { bad "distinfo に $n が無い"; continue; }
 			[ "$want" = "$got" ] || bad "distinfo の値が違う: $n"
