@@ -7,6 +7,7 @@ set -u
 T=$(mktemp -d) || exit 1
 trap 'rm -rf "$T"' EXIT INT TERM HUP
 CC=${CC:-cc}
+CXX=${CXX:-c++}
 
 echo "########## $(uname -srm) ##########"
 $CC --version 2>&1 | head -1
@@ -129,6 +130,27 @@ try2 'ABSL_HAVE_TLS (__thread)'   'stdio.h'     'static __thread int v; v = 1; (
 try2 'ABSL_HAVE_SCHED_GETCPU'     'sched.h'     '(void)sched_getcpu();'
 try2 'ABSL_HAVE_SCHED_YIELD'      'sched.h'     '(void)sched_yield();'
 try2 'ABSL_HAVE_SEMAPHORE_H'      'semaphore.h' 'sem_t s; (void)s;'
+
+# abseil の cctz は time_zone_format.cc の中で自分に _XOPEN_SOURCE を立てる
+# (HAS_STRPTIME のため)。DragonFly ではそれで __ISO_C_VISIBLE が 2011 から
+# 1990 に落ち、libstdc++ の <cwchar> が要る C99 の wide 関数が消える。
+# mozc は cctz を実際に組むので、同じ所を通る。立てた場合と立てない場合を
+# 両方組んで、落ちるかどうかで見る。
+echo
+echo '=== cctz が立てる _XOPEN_SOURCE の影響 ==='
+cat > "$T/w.cc" <<'EOF'
+#include <cwchar>
+int main(void){ return 0; }
+EOF
+printf '  %-34s ' '__ISO_C_VISIBLE (素)'
+$CXX -E -dM -x c++ /dev/null 2>/dev/null | sed -n 's/^#define __ISO_C_VISIBLE //p' | head -1
+printf '  %-34s ' '__ISO_C_VISIBLE (_XOPEN_SOURCE=500)'
+$CXX -D_XOPEN_SOURCE=500 -E -dM -x c++ /dev/null 2>/dev/null | sed -n 's/^#define __ISO_C_VISIBLE //p' | head -1
+printf '  %-34s ' '<cwchar> (素)'
+$CXX -c -o "$T/w.o" "$T/w.cc" >/dev/null 2>&1 && echo '組める' || echo '組めない'
+printf '  %-34s ' '<cwchar> (_XOPEN_SOURCE=500)'
+$CXX -D_XOPEN_SOURCE=500 -c -o "$T/w.o" "$T/w.cc" >"$T/werr" 2>&1 && echo '組める' || {
+  echo '組めない'; grep -m2 -iE 'error|vfwscanf' "$T/werr" | sed 's/^/      /'; }
 
 # --- 2. 定数 ----------------------------------------------------------------
 cat > "$T/c.c" <<'EOF'
