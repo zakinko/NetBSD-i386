@@ -2,6 +2,9 @@ $NetBSD$
 
 Give DragonFly the same auxv type names as FreeBSD.
 
+Proposed upstream as abseil/abseil-cpp#2160; drop this patch once that
+lands.
+
 vdso_support.cc is compiled here -- mozc pulls in absl/debugging, and
 ABSL_HAVE_VDSO_SUPPORT follows ABSL_HAVE_ELF_MEM_IMAGE, which is on for
 every __ELF__ platform except the handful this file names.  It then wants

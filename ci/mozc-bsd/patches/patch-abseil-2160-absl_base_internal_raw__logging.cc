@@ -2,6 +2,9 @@ $NetBSD$
 
 Let raw logging work on NetBSD and DragonFly.
 
+Proposed upstream as abseil/abseil-cpp#2160; drop this patch once that
+lands.
+
 The list decides ABSL_HAVE_POSIX_WRITE, and with it
 ABSL_LOW_LEVEL_WRITE_SUPPORTED.  Upstream names FreeBSD and OpenBSD but not
 the other two, and the file does not stop when nothing matches -- the

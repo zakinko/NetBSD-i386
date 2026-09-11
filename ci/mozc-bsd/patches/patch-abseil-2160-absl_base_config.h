@@ -2,6 +2,9 @@ $NetBSD$
 
 Name DragonFly in the two feature lists it belongs in.
 
+Proposed upstream as abseil/abseil-cpp#2160; drop this patch once that
+lands.
+
 absl/base/config.h decides these by listing platform names, and DragonFly
 appears nowhere in the file -- the other three BSDs appear twice each.
 
