@@ -136,6 +136,31 @@ try2 'ABSL_HAVE_SEMAPHORE_H'      'semaphore.h' 'sem_t s; (void)s;'
 # 1990 に落ち、libstdc++ の <cwchar> が要る C99 の wide 関数が消える。
 # mozc は cctz を実際に組むので、同じ所を通る。立てた場合と立てない場合を
 # 両方組んで、落ちるかどうかで見る。
+
+# abseil の sysinfo.cc は <sys/sysctl.h> を __APPLE__ と __FreeBSD__ でしか
+# 読まない。GetNominalCPUFrequency の枝は #elif defined(CTL_HW) &&
+# defined(HW_CPU_FREQ) で選ばれるので、header を読まない OS では枝に入らず、
+# 組めたまま別経路に落ちる。足す意味が在るかは、その OS が macro を持つかで
+# 決まる。
+echo
+echo '=== sysinfo.cc が要る sysctl の macro ==='
+for h in 'sys/sysctl.h'; do
+  cat > "$T/s.c" <<EOF
+#include <sys/types.h>
+#include <sys/param.h>
+#include <$h>
+#include <stdio.h>
+int main(void){
+#if defined(CTL_HW) && defined(HW_CPU_FREQ)
+  printf("  CTL_HW と HW_CPU_FREQ  在る (CTL_HW=%d HW_CPU_FREQ=%d)\n", CTL_HW, HW_CPU_FREQ);
+#else
+  printf("  CTL_HW と HW_CPU_FREQ  片方または両方が無い\n");
+#endif
+  return 0;
+}
+EOF
+  $CC -o "$T/s" "$T/s.c" >/dev/null 2>&1 && "$T/s" || echo "  組めない ($h)"
+done
 echo
 echo '=== cctz が立てる _XOPEN_SOURCE の影響 ==='
 cat > "$T/w.cc" <<'EOF'
