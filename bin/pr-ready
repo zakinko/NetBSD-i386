@@ -34,6 +34,16 @@
 
 set -eu
 
+# 見る物は byte として扱う。pkgsrc の当て物は UTF-8 とは限らず、anthy の辞書は
+# EUC-JP である。UTF-8 の locale のまま awk に食わせると
+#
+#	awk: towc: multibyte conversion failure on: '...'
+#
+# と言って **その file の残りを読まずに抜ける**。落ちるのではなく、短い答えを
+# 返す。実際 inputmethod/anthy の diff で「新しい file」が 5 本のところ 2 本
+# しか出さず、rc は 0 のままだった。cvs add を書き漏らす形の事故になる。
+LC_ALL=C; export LC_ALL
+
 : "${PKGSRCDIR:=/usr/pkgsrc}"
 : "${PKGLINT:=/usr/pkg/bin/pkglint}"
 
@@ -189,6 +199,22 @@ check_diff() {
 		sed 's/^/     /' /tmp/pr-ready-add.$$
 	fi
 	rm -f /tmp/pr-ready-add.$$
+
+	# 9. diff に混ざった binary。macOS の tar が運ぶ AppleDouble (._patch-*) が
+	#    patches/ に落ちていると、diff -urN は中身を出さずに
+	#
+	#	Binary files a/patches/._patch-foo and b/patches/._patch-foo differ
+	#
+	#    と書く。-x CVS は効くが ._* は除外されないので、そのまま本文に入る。
+	#    三度踏んだ。二度目までは「当て物として拾われる」話だったが、三度目は
+	#    報告そのものが汚れる形で出た。送る前に全文を読んで見つけたのであって、
+	#    検査が止めたのではなかったので、ここに置く。
+	if grep -q '^Binary files ' "$d"; then
+		bad "diff に binary が混ざっている:"
+		grep '^Binary files ' "$d" | sed 's/^/     /'
+		note "   ._* なら消して diff を取り直す。送る側では"
+		note "   COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata"
+	fi
 }
 
 for d in "$@"; do
