@@ -79,7 +79,7 @@ NetBSD)
 		done
 	fi
 	export PKG_PATH="https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$ARCH/$REL/All"
-	for p in git-base python313 unzip zip go; do
+	for p in git-base bash python313 unzip zip go; do
 		pkg_add -U "$p" || say "pkg_add $p が入らなかった"
 	done
 	# bazel の master は language version 25 を求める。openjdk25 が pkgsrc に
@@ -89,16 +89,33 @@ NetBSD)
 		say "JDK の package が入らなかった"
 	;;
 FreeBSD|GhostBSD)
-	env ASSUME_ALWAYS_YES=yes pkg install -y git openjdk21 python3 unzip zip go || true
+	env ASSUME_ALWAYS_YES=yes pkg install -y git bash openjdk21 python3 unzip zip go || true
 	;;
 DragonFly)
-	pkg install -y git openjdk21 python3 unzip zip go || true
+	pkg install -y git bash openjdk21 python3 unzip zip go || true
 	;;
 OpenBSD)
 	export PKG_PATH="https://cdn.openbsd.org/pub/OpenBSD/$(uname -r)/packages/$(uname -m)/"
-	for p in git jdk-21 python-3 unzip zip go; do
+	for p in git bash zip go; do
 		pkg_add -I "$p" || say "pkg_add $p が入らなかった"
 	done
+	# 多版ある package は % で枝を指す。名前をそのまま渡すと
+	#
+	#	Can't find jdk-21
+	#	Can't find python-3
+	#
+	# になる (jdk-21 は「stem が jdk で版がちょうど 21」の意味になる)。
+	for j in 25 21 17; do
+		if pkg_add -I "jdk%$j"; then echo "jdk%$j を入れた"; break; fi
+	done
+	for p in 3.13 3.12 3.11 3.10; do
+		if pkg_add -I "python%$p"; then echo "python%$p を入れた"; break; fi
+	done
+	# flavour が複数あるものは -- で「flavour 無し」を指す。素の名前だと
+	#
+	#	Ambiguous: unzip could be unzip-6.0p18-iconv unzip-6.0p18
+	#
+	pkg_add -I unzip-- || pkg_add -I unzip || say "unzip が入らなかった"
 	;;
 *)
 	say "知らない OS: $OS"
@@ -117,7 +134,7 @@ for n in 25 24 23 22 21; do
 	         /usr/lib/jvm/java-$n-openjdk; do
 		if [ -x "$d/bin/javac" ]; then JAVA_HOME=$d; break; fi
 	done
-	[ -n "$JAVA_HOME" ] && break
+	if [ -n "$JAVA_HOME" ]; then break; fi
 done
 # 名前が合わない置き方をしている箱のための最後の手 (版は問わない)。
 if [ -z "$JAVA_HOME" ]; then
@@ -293,7 +310,7 @@ int main() { std::cout << "hello-from-rules-cc\n"; }' > "$T/hello.cpp"
 	echo "--- NEEDED の一覧 (#857) ---"
 	need=""
 	for t in objdump readelf; do
-		command -v $t >/dev/null 2>&1 && { need=$t; break; }
+		if command -v "$t" >/dev/null 2>&1; then need=$t; break; fi
 	done
 	case "$need" in
 	objdump) objdump -p bazel-bin/hello | grep NEEDED || true ;;
