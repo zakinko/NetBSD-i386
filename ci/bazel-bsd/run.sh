@@ -234,13 +234,119 @@ if [ "$STAGE" = bootstrap ]; then
 	exit 0
 fi
 
-##### 4. master を建てる #####
-echo '##### 4. upstream master を建てる #####'
+##### 4. rules_cc の toolchain を測る #####
+# bazel 本体は建てない。踏み台で小さな C++ を建てて、出来た binary を調べる。
+# rules_cc #862 で c2qd さんが挙げた二つの回帰を見る。
+#
+#   #854  OpenBSD の ld.so は DF_ORIGIN が無いと $ORIGIN を展開しない。
+#         cc_binary が linkstatic=False で cc_library を引くと RPATH に
+#         $ORIGIN が入るので、展開されないと共有 library を読めずに死ぬ。
+#   #857  driver が -lstdc++ を -lc++ -lc++abi -lpthread へ展開するが、
+#         --as-needed で包むと libpthread が落ちる。
+#
+# **「走った」では判定できない。** libpthread が欠けていても OpenBSD は
+# undefined symbol を stderr へ並べたうえで main を走らせ、標準出力は出る。
+# NEEDED の一覧と stderr の中身で見る。
+if [ "$STAGE" = rules-cc ]; then
+	echo '##### 4. rules_cc の toolchain を測る #####'
+	RC=$W/rules_cc
+	rm -rf "$RC"
+	git clone -q --depth 1 -b "${RC_BRANCH:-bsd-autoconf-verify}" \
+		"${RC_REPO:-https://github.com/zakinko/rules_cc.git}" "$RC"
+	(cd "$RC" && git log --oneline -1)
+
+	T=$W/rctest
+	rm -rf "$T"; mkdir -p "$T/lib"
+	cat > "$T/MODULE.bazel" <<'M'
+module(name = "rctest")
+bazel_dep(name = "rules_cc", version = "0.2.22")
+M
+	cat > "$T/BUILD.bazel" <<'M'
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+# #854 の再現。linkstatic=False なので RPATH に $ORIGIN が入る。
+cc_library(name = "func", srcs = ["lib/func.cpp"])
+
+cc_binary(
+    name = "main",
+    srcs = ["main.cpp"],
+    deps = [":func"],
+    linkstatic = False,
+)
+
+# #857 の再現。libc++ と libc++abi が pthread を要る。
+cc_binary(name = "hello", srcs = ["hello.cpp"])
+M
+	echo 'extern int func();
+int main() { return func(); }' > "$T/main.cpp"
+	echo 'int func() { return 0; }' > "$T/lib/func.cpp"
+	echo '#include <iostream>
+int main() { std::cout << "hello-from-rules-cc\n"; }' > "$T/hello.cpp"
+
+	cd "$T"
+	"$B" build --repo_contents_cache= --override_module=rules_cc="$RC" //... \
+		|| { say "rules_cc の test workspace が建たない"; exit 1; }
+
+	fail=0
+
+	echo "--- NEEDED の一覧 (#857) ---"
+	need=""
+	for t in objdump readelf; do
+		command -v $t >/dev/null 2>&1 && { need=$t; break; }
+	done
+	case "$need" in
+	objdump) objdump -p bazel-bin/hello | grep NEEDED || true ;;
+	readelf) readelf -d bazel-bin/hello | grep NEEDED || true ;;
+	*)       ldd bazel-bin/hello || true ;;
+	esac
+	if [ "$OS" = OpenBSD ]; then
+		if { objdump -p bazel-bin/hello 2>/dev/null || readelf -d bazel-bin/hello 2>/dev/null; } \
+		   | grep -q 'pthread'; then
+			say "#857 OK: libpthread が NEEDED に居る"
+		else
+			say "#857 NG: libpthread が NEEDED に無い"
+			fail=1
+		fi
+	fi
+
+	echo "--- 走らせる (#857) ---"
+	./bazel-bin/hello > "$T/hello.out" 2> "$T/hello.err" || true
+	cat "$T/hello.out"; cat "$T/hello.err"
+	if grep -q 'undefined symbol' "$T/hello.err"; then
+		say "#857 NG: undefined symbol が出た"
+		fail=1
+	else
+		say "#857 OK: undefined symbol は出ない"
+	fi
+
+	echo "--- \$ORIGIN (#854) ---"
+	if ./bazel-bin/main > "$T/main.out" 2> "$T/main.err"; then
+		say "#854 OK: \$ORIGIN 付きの binary が走る"
+	else
+		cat "$T/main.err"
+		say "#854 NG: \$ORIGIN 付きの binary が走らない"
+		fail=1
+	fi
+
+	if [ $fail -eq 0 ]; then
+		say "段 rules-cc まで完了"
+		exit 0
+	fi
+	say "rules-cc の検査が落ちた"
+	exit 1
+fi
+
+##### 5. master を建てる #####
+echo '##### 5. upstream master を建てる #####'
 export B
 export SRC=$W/mst
 export PATCH859=$SRCDIR/ci/rules_cc_859.patch
-[ -f "$SRCDIR/ci/rules_python_quote_args.patch" ] && \
+# set -e の下で `[ ... ] && export ...` を素で置くと、file が無いときに
+# その AND 列の終了値が 1 になって script ごと終わる。if で書く。
+if [ -f "$SRCDIR/ci/rules_python_quote_args.patch" ]; then
 	export PATCH_RULES_PYTHON=$SRCDIR/ci/rules_python_quote_args.patch
+fi
 # master-build.sh の既定に合わせて 2。VM は 4 CPU だが memory は 8GB で、
 # bazel の JVM と C++ の compile が同時に伸びる。上げるなら、上げた run で
 # memory が足りることを見てからにする。

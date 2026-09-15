@@ -8,6 +8,8 @@
 # 上流の PR に貼れるのは run の URL なので、ここへ移す。
 #
 #   bootstrap  9.2.0 を建てるところまで。数十分
+#   rules-cc   その bazel で小さな C++ を建て、出来た binary を調べる。
+#              rules_cc #862 の回帰検査 (#854 の $ORIGIN と #857 の libpthread)
 #   master     その bazel で master を建てて --version まで。数時間
 #
 # 手当ては zakinko/bazel の probe/plain-upstream の ci/ に在り、ここには
@@ -29,7 +31,7 @@ on:
       stage:
         description: 'どこまで'
         type: choice
-        options: [bootstrap, master]
+        options: [bootstrap, rules-cc, master]
         default: bootstrap
 
 # target と stage も group に入れる。ref だけにすると、別の OS を押した瞬間に
