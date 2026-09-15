@@ -79,9 +79,14 @@ NetBSD)
 		done
 	fi
 	export PKG_PATH="https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$ARCH/$REL/All"
-	for p in git-base openjdk21 python313 unzip zip go; do
+	for p in git-base python313 unzip zip go; do
 		pkg_add -U "$p" || say "pkg_add $p が入らなかった"
 	done
+	# bazel の master は language version 25 を求める。openjdk25 が pkgsrc に
+	# 入れば .bazelrc の既定のまま通せるので、在ればそちらを採る。まだ
+	# binary repo には openjdk21 までしか無い (2026-09-16 時点)。
+	pkg_add -U openjdk25 2>/dev/null || pkg_add -U openjdk21 || \
+		say "JDK の package が入らなかった"
 	;;
 FreeBSD|GhostBSD)
 	env ASSUME_ALWAYS_YES=yes pkg install -y git openjdk21 python3 unzip zip go || true
@@ -102,11 +107,24 @@ OpenBSD)
 esac
 
 # JDK の在処は OS ごとに違う。決め打ちせず、在るものから新しい順に採る。
+#
+# 名前で sort してはいけない。openjdk8 は openjdk21 より後ろに並ぶので
+# (文字として '8' > '2')、sort -r だと 8 を掴む。sort -V は NetBSD の sort に
+# 無いことがある。欲しい順に名前を並べて、最初に javac が在るものを採る。
 JAVA_HOME=""
-for d in $(ls -d /usr/pkg/java/openjdk* /usr/local/openjdk* /usr/local/jdk-* \
-                 /usr/lib/jvm/* 2>/dev/null | sort -r); do
-	if [ -x "$d/bin/javac" ]; then JAVA_HOME=$d; break; fi
+for n in 25 24 23 22 21; do
+	for d in /usr/pkg/java/openjdk$n /usr/local/openjdk$n /usr/local/jdk-$n \
+	         /usr/lib/jvm/java-$n-openjdk; do
+		if [ -x "$d/bin/javac" ]; then JAVA_HOME=$d; break; fi
+	done
+	[ -n "$JAVA_HOME" ] && break
 done
+# 名前が合わない置き方をしている箱のための最後の手 (版は問わない)。
+if [ -z "$JAVA_HOME" ]; then
+	for d in $(ls -d /usr/pkg/java/* /usr/local/openjdk* /usr/lib/jvm/* 2>/dev/null); do
+		if [ -x "$d/bin/javac" ]; then JAVA_HOME=$d; break; fi
+	done
+fi
 [ -n "$JAVA_HOME" ] || { say "JDK が見つからない"; exit 1; }
 export JAVA_HOME
 JAVA_VER=$("$JAVA_HOME/bin/javac" -version 2>&1 | sed 's/^javac //; s/\..*//')
