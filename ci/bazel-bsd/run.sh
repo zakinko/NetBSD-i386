@@ -82,11 +82,9 @@ NetBSD)
 	for p in git-base bash python313 unzip zip go; do
 		pkg_add -U "$p" || say "pkg_add $p が入らなかった"
 	done
-	# bazel の master は language version 25 を求める。openjdk25 が pkgsrc に
-	# 入れば .bazelrc の既定のまま通せるので、在ればそちらを採る。まだ
-	# binary repo には openjdk21 までしか無い (2026-09-16 時点)。
-	pkg_add -U openjdk25 2>/dev/null || pkg_add -U openjdk21 || \
-		say "JDK の package が入らなかった"
+	# 21 を採る。JDK 23 から annotation processing が既定で走らないので、
+	# bazel 9.2.0 の bootstrap は 25 では建たない (上の JAVA_HOME の註)。
+	pkg_add -U openjdk21 || say "JDK の package が入らなかった"
 	;;
 FreeBSD|GhostBSD)
 	env ASSUME_ALWAYS_YES=yes pkg install -y git bash openjdk21 python3 unzip zip go || true
@@ -105,7 +103,7 @@ OpenBSD)
 	#	Can't find python-3
 	#
 	# になる (jdk-21 は「stem が jdk で版がちょうど 21」の意味になる)。
-	for j in 25 21 17; do
+	for j in 21 17 25; do
 		if pkg_add -I "jdk%$j"; then echo "jdk%$j を入れた"; break; fi
 	done
 	for p in 3.13 3.12 3.11 3.10; do
@@ -123,13 +121,27 @@ OpenBSD)
 	;;
 esac
 
-# JDK の在処は OS ごとに違う。決め打ちせず、在るものから新しい順に採る。
+# JDK の在処は OS ごとに違う。決め打ちせず、欲しい版から順に探す。
 #
 # 名前で sort してはいけない。openjdk8 は openjdk21 より後ろに並ぶので
 # (文字として '8' > '2')、sort -r だと 8 を掴む。sort -V は NetBSD の sort に
 # 無いことがある。欲しい順に名前を並べて、最初に javac が在るものを採る。
+#
+# **新しければよいわけではない。** 21 を先に探す。bootstrap は bazel 9.2.0 を
+# -source 21 -target 21 で compile するが、JDK 23 から annotation processing が
+# 既定で走らなくなったので、javac 25 で建てると AutoValue の生成 class が
+# 出来ず
+#
+#	DependencyError.java:135: error: cannot find symbol
+#	  symbol: variable AutoOneOf_DependencyError
+#	... 178 errors
+#
+# で落ちる。OpenBSD 7.9 は jdk 25.0.2 を配っているので実際に踏んだ。
+# BSD の話ではなく、bazel 9.2.0 と JDK 23+ の話である。
+#
+#	https://github.com/zakinko/NetBSD-i386/actions/runs/35012408515
 JAVA_HOME=""
-for n in 25 24 23 22 21; do
+for n in 21 22 23 24 25 17; do
 	for d in /usr/pkg/java/openjdk$n /usr/local/openjdk$n /usr/local/jdk-$n \
 	         /usr/lib/jvm/java-$n-openjdk; do
 		if [ -x "$d/bin/javac" ]; then JAVA_HOME=$d; break; fi
