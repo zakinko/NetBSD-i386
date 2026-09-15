@@ -120,6 +120,26 @@ done
 [ -n "${PY:-}" ] || { say "python3 が見つからない"; exit 1; }
 echo "python=$(command -v "$PY")"
 
+# pkgsrc は python3.13 のような版つきの名前しか作らない。素の python3 を作る
+# package も無い (repo に在るのは python310 から python314 まで)。ところが
+# bazel の genrule は create_embedded_tools を #!/usr/bin/env python3 で起動し、
+# action は env - で走るので、PATH に python3 という名前が無いと
+#
+#	src/BUILD:277:9: Executing genrule //src:embedded_tools_nojdk failed:
+#	  (Exit 127): env: python3: No such file or directory
+#
+# で落ちる。1,479 action まで進んでから出るので手前の段では気づけない。
+# 版つきの binary と同じ場所に張る。そこは command -v が見つけた以上 PATH に
+# 在る。FreeBSD と OpenBSD は package が素の名前を作るので、その場合は飛ばす。
+if ! command -v python3 >/dev/null 2>&1; then
+	PYBIN=$(command -v "$PY")
+	ln -sf "$PYBIN" "$(dirname "$PYBIN")/python3" || {
+		say "python3 の名前を作れなかった"
+		exit 1
+	}
+	echo "python3 -> $PYBIN を張った"
+fi
+
 # rules_go は SDK を自前で落とさず host の go を見る。
 #
 #	rules_go/go/private/sdk.bzl  _detect_host_sdk()
