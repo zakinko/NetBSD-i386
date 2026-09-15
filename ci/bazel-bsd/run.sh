@@ -79,19 +79,19 @@ NetBSD)
 		done
 	fi
 	export PKG_PATH="https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$ARCH/$REL/All"
-	for p in git-base openjdk21 python313 unzip zip; do
+	for p in git-base openjdk21 python313 unzip zip go; do
 		pkg_add -U "$p" || say "pkg_add $p が入らなかった"
 	done
 	;;
 FreeBSD|GhostBSD)
-	env ASSUME_ALWAYS_YES=yes pkg install -y git openjdk21 python3 unzip zip || true
+	env ASSUME_ALWAYS_YES=yes pkg install -y git openjdk21 python3 unzip zip go || true
 	;;
 DragonFly)
-	pkg install -y git openjdk21 python3 unzip zip || true
+	pkg install -y git openjdk21 python3 unzip zip go || true
 	;;
 OpenBSD)
 	export PKG_PATH="https://cdn.openbsd.org/pub/OpenBSD/$(uname -r)/packages/$(uname -m)/"
-	for p in git jdk-21 python-3 unzip zip; do
+	for p in git jdk-21 python-3 unzip zip go; do
 		pkg_add -I "$p" || say "pkg_add $p が入らなかった"
 	done
 	;;
@@ -119,6 +119,34 @@ for c in python3 python3.13 python3.12 python3.11; do
 done
 [ -n "${PY:-}" ] || { say "python3 が見つからない"; exit 1; }
 echo "python=$(command -v "$PY")"
+
+# rules_go は SDK を自前で落とさず host の go を見る。
+#
+#	rules_go/go/private/sdk.bzl  _detect_host_sdk()
+#	  GOROOT が在ればそれ、無ければ `go env GOROOT` を叩き、
+#	  失敗すると fail("Could not detect host go version")
+#
+# bootstrap の段で既に要る (master-build.sh の go の扱いはその後の段にしか
+# 効かない)。pkgsrc も dports も go を PATH に置かず /usr/pkg/go1NN や
+# /usr/local/go1NN に入れるので、版の大きい方から探す。glob は昇順なので
+# 素直に先頭を採ると一番古いものを掴む。
+if ! command -v go >/dev/null 2>&1; then
+	for d in $(ls -d /usr/pkg/go1* /usr/local/go1* /usr/local/go 2>/dev/null | sort -r); do
+		if [ -x "$d/bin/go" ]; then
+			PATH="$d/bin:$PATH"
+			export PATH
+			break
+		fi
+	done
+fi
+if command -v go >/dev/null 2>&1; then
+	GOROOT=$(go env GOROOT)
+	export GOROOT
+	echo "go=$(command -v go)  GOROOT=$GOROOT  $(go version)"
+else
+	say "go が見つからない。rules_go が host SDK を見つけられずに落ちる"
+	exit 1
+fi
 
 ##### 2. 枝を取る #####
 echo '##### 2. probe/plain-upstream を取る #####'
