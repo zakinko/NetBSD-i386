@@ -225,6 +225,12 @@ git log --oneline -1
 [ -f ci/bsd-bootstrap.sh ] || { say "ci/bsd-bootstrap.sh が無い"; exit 1; }
 
 ##### 3. 踏み台を建てる #####
+# master 段は master-bootstrap.sh が compile.sh から直接起こすので踏み台が
+# 要らない。ここを飛ばすと三十分浮く。
+if [ "$STAGE" = master ]; then
+	echo '##### 3. 踏み台は master 段では要らないので飛ばす #####'
+else
+
 echo '##### 3. 踏み台の bazel を建てる #####'
 export SRCDIR
 # 作業場はあちらに選ばせる。bsd-bootstrap.sh は WORK_FORCED が無ければ空きの
@@ -262,6 +268,8 @@ if [ "$STAGE" = bootstrap ]; then
 	say "段 bootstrap まで完了"
 	exit 0
 fi
+
+fi   # STAGE = master のときに飛ばした分の閉じ
 
 ##### 4. rules_cc の toolchain を測る #####
 # bazel 本体は建てない。踏み台で小さな C++ を建てて、出来た binary を調べる。
@@ -367,21 +375,27 @@ int main() { std::cout << "hello-from-rules-cc\n"; }' > "$T/hello.cpp"
 fi
 
 ##### 5. master を建てる #####
+# 呼ぶのは master-bootstrap.sh であって master-build.sh ではない。
+#
+# 二つは別の経路である。master-build.sh は踏み台の bazel で master を建てる
+# 形で、remotejdk_25 の書き換えは持っているが drop_pip_dev_deps.py を呼ばない。
+# それで
+#
+#	Unable to find interpreter for pip hub 'bazel_pip_dev_deps'
+#	  for python_version=3.11
+#
+# で落ちた (最初にこちらを呼んで踏んだ)。master-bootstrap.sh の方が
+# 「踏み台なしで master を起こす」本体で、三つの手当てを全部持っている。
+# protoc と gRPC の Java plugin も自分で用意する。
+#
+#	https://github.com/zakinko/NetBSD-i386/actions/runs/35008969162
 echo '##### 5. upstream master を建てる #####'
-export B
+export W
 export SRC=$W/mst
-export PATCH859=$SRCDIR/ci/rules_cc_859.patch
-# set -e の下で `[ ... ] && export ...` を素で置くと、file が無いときに
-# その AND 列の終了値が 1 になって script ごと終わる。if で書く。
-if [ -f "$SRCDIR/ci/rules_python_quote_args.patch" ]; then
-	export PATCH_RULES_PYTHON=$SRCDIR/ci/rules_python_quote_args.patch
-fi
-# master-build.sh の既定に合わせて 2。VM は 4 CPU だが memory は 8GB で、
-# bazel の JVM と C++ の compile が同時に伸びる。上げるなら、上げた run で
-# memory が足りることを見てからにする。
+export BZ=$SRCDIR
 export JOBS=${JOBS:-2}
 
-if sh ci/master-build.sh; then
+if sh ci/master-bootstrap.sh; then
 	say "master OK"
 else
 	say "master 失敗"
