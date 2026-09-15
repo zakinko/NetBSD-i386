@@ -1,0 +1,121 @@
+# bazel の upstream master を五つの BSD で、踏み台なしに建てる。
+#
+# 「踏み台なし」は、その機械に bazel が一つも無い状態から始める、という意味
+# である。9.2.0 の dist から bootstrap で一本作り、それで master を建てる。
+# 配られている bazel を持ち込むと、BSD で何が足りないかが見えなくなる。
+#
+# これまで同じことを手元の VPS で回していたが、証拠が手元にしか残らなかった。
+# 上流の PR に貼れるのは run の URL なので、ここへ移す。
+#
+#   bootstrap  9.2.0 を建てるところまで。数十分
+#   master     その bazel で master を建てて --version まで。数時間
+#
+# 手当ては zakinko/bazel の probe/plain-upstream の ci/ に在り、ここには
+# 写していない。あちらが唯一の正で、ci/bazel-bsd/run.sh はそれを VM の中から
+# 呼ぶだけである。写しを二つ持つと、片方だけ直した状態が必ず出来る。
+#
+# VM action は起動と package の導入だけで十分から十五分かかるので、push では
+# 回さない。手で押したときだけ走る。
+name: bazel-bsd-selfbuild
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'どの OS'
+        type: choice
+        options: [netbsd, freebsd, openbsd, dragonfly, ghostbsd, bsd]
+        default: netbsd
+      stage:
+        description: 'どこまで'
+        type: choice
+        options: [bootstrap, master]
+        default: bootstrap
+
+# target と stage も group に入れる。ref だけにすると、別の OS を押した瞬間に
+# 走っている数時間の build が打ち消される。同じ組み合わせを続けて押したとき
+# だけ古い方を止めたい。
+concurrency:
+  group: bazel-bsd-selfbuild-${{ github.ref }}-${{ inputs.target }}-${{ inputs.stage }}
+  cancel-in-progress: true
+
+jobs:
+  netbsd:
+    if: ${{ inputs.target == 'bsd' || inputs.target == 'netbsd' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/netbsd-vm@v1
+        with:
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE'
+          run: |
+            set -x
+            sh "$GITHUB_WORKSPACE/ci/bazel-bsd/run.sh" ${{ inputs.stage }}
+
+  freebsd:
+    if: ${{ inputs.target == 'bsd' || inputs.target == 'freebsd' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE'
+          run: |
+            set -x
+            sh "$GITHUB_WORKSPACE/ci/bazel-bsd/run.sh" ${{ inputs.stage }}
+
+  openbsd:
+    if: ${{ inputs.target == 'bsd' || inputs.target == 'openbsd' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/openbsd-vm@v1
+        with:
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE'
+          run: |
+            set -x
+            sh "$GITHUB_WORKSPACE/ci/bazel-bsd/run.sh" ${{ inputs.stage }}
+
+  dragonfly:
+    if: ${{ inputs.target == 'bsd' || inputs.target == 'dragonfly' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/dragonflybsd-vm@v1
+        with:
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE'
+          run: |
+            set -x
+            sh "$GITHUB_WORKSPACE/ci/bazel-bsd/run.sh" ${{ inputs.stage }}
+
+  ghostbsd:
+    if: ${{ inputs.target == 'bsd' || inputs.target == 'ghostbsd' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/ghostbsd-vm@v1
+        with:
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE'
+          run: |
+            set -x
+            sh "$GITHUB_WORKSPACE/ci/bazel-bsd/run.sh" ${{ inputs.stage }}
