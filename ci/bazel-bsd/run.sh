@@ -55,7 +55,30 @@ df -h "$W" | tail -1
 echo '##### 1. 依存を入れる #####'
 case "$OS" in
 NetBSD)
-	export PKG_PATH="https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$(uname -m)/$(uname -r | cut -d_ -f1)/All"
+	REL=$(uname -r | cut -d_ -f1)
+	ARCH=$(uname -m)
+	# 配られている openjdk21 は X のライブラリに link されているので、X sets の
+	# 無い箱では pkg_add が
+	#
+	#	missing required library: /usr/X11R7/lib/libX11.so.7
+	#	Please make sure to install the X sets
+	#
+	# で落ちる。JDK は headless にしか使わないのに要る。sets を先に入れる。
+	# 名前は xbase と xcomp、拡張子は .tar.xz (.tgz ではない)、path の arch は
+	# uname -m (amd64) であって uname -p (x86_64) ではない。二度とも間違えた。
+	if [ ! -f /usr/X11R7/lib/libX11.so.7 ]; then
+		SETS="https://cdn.NetBSD.org/pub/NetBSD/NetBSD-$REL/$ARCH/binary/sets"
+		for s in xbase xcomp; do
+			echo "--- $s.tar.xz を入れる"
+			if ftp -o "$W/$s.tar.xz" "$SETS/$s.tar.xz"; then
+				(cd / && xzcat "$W/$s.tar.xz" | tar -xpf -)
+			else
+				say "$s.tar.xz が取れなかった ($SETS)"
+			fi
+			rm -f "$W/$s.tar.xz"
+		done
+	fi
+	export PKG_PATH="https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$ARCH/$REL/All"
 	for p in git-base openjdk21 python313 unzip zip; do
 		pkg_add -U "$p" || say "pkg_add $p が入らなかった"
 	done
