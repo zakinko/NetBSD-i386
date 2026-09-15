@@ -180,7 +180,12 @@ git log --oneline -1
 ##### 3. 踏み台を建てる #####
 echo '##### 3. 踏み台の bazel を建てる #####'
 export SRCDIR
-export WORK=$W/dist
+# 作業場はあちらに選ばせる。bsd-bootstrap.sh は WORK_FORCED が無ければ空きの
+# 一番多い場所を自分で選び (VM では /var/tmp が 183GB で、こちらが渡す
+# /home より広かった)、建てた binary の path を BOOTSTRAP_OUT の file へ書く。
+# 決め打ちで探すと、あちらが場所を変えた瞬間に「見つからない」になる。
+export BOOTSTRAP_OUT=$W/bootstrap-bazel-path
+rm -f "$BOOTSTRAP_OUT"
 # ulimit は bootstrap でも要る。OpenBSD の既定の記述子上限では
 # Too many open files で落ちる。
 ulimit -n unlimited 2>/dev/null || ulimit -n 4096 2>/dev/null || true
@@ -194,10 +199,13 @@ else
 fi
 
 B=""
-for p in "$WORK/output/bazel" "$SRCDIR/output/bazel" "$W/dist/output/bazel"; do
-	[ -x "$p" ] && { B=$p; break; }
-done
-[ -n "$B" ] || { say "踏み台の bazel が見つからない"; exit 1; }
+if [ -s "$BOOTSTRAP_OUT" ]; then
+	B=$(cat "$BOOTSTRAP_OUT")
+fi
+if [ -z "$B" ] || [ ! -x "$B" ]; then
+	say "踏み台の bazel が見つからない (BOOTSTRAP_OUT=$BOOTSTRAP_OUT の中身: ${B:-空})"
+	exit 1
+fi
 echo "踏み台: $B"
 "$B" --version
 
