@@ -215,6 +215,67 @@ check_diff() {
 		note "   ._* なら消して diff を取り直す。送る側では"
 		note "   COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata"
 	fi
+
+	# 10. hunk の頭が宣言した行数と、本文の行数が合っているか。
+	#
+	#     @@ -a,b +c,d @@ の b は「元の側の行数」で、本文の ' ' と '-' の
+	#     合計に等しい。d は「新しい側の行数」で、' ' と '+' の合計。
+	#
+	#     手で書いた覚え書きを当て物の名前で置いていた、という形で二本壊れた。
+	#     **建てた側では一度も踏まない。**木の中の file を直接編集して建てて
+	#     いたので、壊れているのは差分だけで、建つものは建っていた。「建った」
+	#     と「送るものが正しい」が別だという例。
+	#
+	#     壊れ方は二通りあり、片方は静かである。2026-09-16 に両方測った。
+	#
+	#	宣言 -6 +7 / 本文 2 行   rc=2
+	#	  patch: **** unexpected end of file in patch
+	#
+	#	宣言 -3 / 本文 2 行      rc=0  当たってしまう
+	#	  No such line 3 in input file, ignoring
+	#	  one two -> one two three
+	#
+	#     後者が置く理由である。**rc が 0 で、当たり、警告が一行出るだけ。**
+	#     rc を見る検査は素通りする。前者は勝手に止まるので要らない。
+	#
+	#     機械生成の diff では起きないが、手で書いた一行や、貼り直しで行が
+	#     落ちた場合に起きる。読んでも気付けないのでここに置く。
+	awk '
+		function flush(   ) {
+			if (h == "") return
+			if (om != ob || nm != nb)
+				printf "%s %s  宣言 -%d +%d / 本文 -%d +%d\n", f, h, ob, nb, om, nm
+			h = ""
+		}
+		/^--- /{ flush(); f=$2; sub(/\.orig$/,"",f); next }
+		/^\+\+\+ /{ next }
+		/^@@ /{
+			flush()
+			h = $2 " " $3
+			o = $2; sub(/^-/,"",o)
+			n = $3; sub(/^\+/,"",n)
+			if (o ~ /,/) { split(o, a, ","); ob = a[2] } else { ob = 1 }
+			if (n ~ /,/) { split(n, b, ","); nb = b[2] } else { nb = 1 }
+			om = 0; nm = 0
+			next
+		}
+		h != "" {
+			c = substr($0, 1, 1)
+			if (c == " " || c == "")  { om++; nm++ }
+			else if (c == "-")        { om++ }
+			else if (c == "+")        { nm++ }
+			else if (c == "\\")       { }   # \ No newline at end of file
+			else                      { flush() }
+		}
+		END{ flush() }
+	' "$d" > /tmp/pr-ready-hunk.$$ || true
+	if [ -s /tmp/pr-ready-hunk.$$ ]; then
+		bad "hunk の頭と本文の行数が合っていない:"
+		sed 's/^/     /' /tmp/pr-ready-hunk.$$
+		note "   当てると unexpected end of file になる。手で直さず"
+		note "   素の木から diff -u で取り直す"
+	fi
+	rm -f /tmp/pr-ready-hunk.$$
 }
 
 for d in "$@"; do
