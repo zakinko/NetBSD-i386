@@ -87,12 +87,47 @@ jobs:
           Set-Content config.inc $c
           Select-String -Path config.inc -Pattern '^(HAVE_|UNICODE_|PERL=)'
 
-      - name: nmake で建ててみる (探りなので落とさない)
+      - name: nmake で建てる (info 段は makeinfo が無いので落ちる。既知)
         shell: cmd
         continue-on-error: true
         run: |
           cd xemacs\nt
           nmake -f xemacs.mak
+
+      - name: xemacs.exe が出来たかを明示的に判定する
+        shell: pwsh
+        run: |
+          # info ドキュメント段は makeinfo が無くて落ちるが、本体はその前に
+          # 出来ている。ここで無ければ本当の失敗なので job を落とす。
+          $exe = "xemacs/src/xemacs.exe"
+          if (-not (Test-Path $exe)) { throw "xemacs.exe が無い" }
+          Get-Item xemacs/src/temacs.exe, $exe | Format-Table Name, Length
+
+      - name: モジュール(動的ロード)が使えるかの基準測定
+        shell: pwsh
+        run: |
+          # sysdll.c には WIN32_NATIVE 用の LoadLibrary 実装が既にあるが、
+          # その全体が #ifdef HAVE_SHLIB の中で、xemacs.mak の OPT_DEFINES に
+          # -DHAVE_SHLIB が無い。ここが「モジュール対応はまだ」の正体か。
+          cd xemacs
+          ./src/xemacs.exe -batch -vanilla -eval '(princ (format "modules=%s load-module=%s\n" (featurep (quote modules)) (fboundp (quote load-module))))'
+
+      - name: HAVE_SHLIB を立てたら建つか (実験)
+        shell: cmd
+        continue-on-error: true
+        run: |
+          cd xemacs\nt
+          nmake -f xemacs.mak clean
+          nmake -f xemacs.mak OPT_DEFINES="-DHAVE_SHLIB"
+
+      - name: 立てた側でモジュールが見えるか
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          cd xemacs
+          if (Test-Path src/xemacs.exe) {
+            ./src/xemacs.exe -batch -vanilla -eval '(princ (format "HAVE_SHLIB build: modules=%s load-module=%s\n" (featurep (quote modules)) (fboundp (quote load-module))))'
+          } else { Write-Host "xemacs.exe が無い (この実験では建たなかった)" }
 
       - name: どこまで行ったか
         shell: cmd
