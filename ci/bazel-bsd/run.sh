@@ -407,6 +407,41 @@ M
 	#	https://github.com/zakinko/NetBSD-i386/actions/runs/35061461816
 	#
 	# 生成された値は BUILD の cc_toolchain_config(...) の中に在る。
+	#
+	# その前に、箱の compiler そのものを出しておく。#862 の返信に書いた
+	# 「NetBSD と DragonFly は cc と gcc が同じ物」「DragonFly に
+	# /usr/bin/clang も /usr/bin/dwp も無く、-lc++ は繋がらず -lstdc++ は
+	# 繋がる」は、消してしまった Vultr の箱で手で測った値だった。ここで
+	# 毎回出せば run の URL で指せる。link の probe は source ではなく
+	# object を渡す。source を渡すと driver が runtime を足して何でも通る。
+	echo "--- 箱の compiler ---"
+	for t in cc gcc clang c++ g++ clang++; do
+		p=$(command -v "$t" 2>/dev/null || true)
+		if [ -n "$p" ]; then
+			printf '  %-8s %s  %s\n' "$t" "$p" "$("$p" --version 2>/dev/null | head -1)"
+		else
+			printf '  %-8s (無し)\n' "$t"
+		fi
+	done
+	for f in /usr/bin/clang /usr/bin/dwp; do
+		if [ -e "$f" ]; then echo "  $f  在る"; else echo "  $f  無い"; fi
+	done
+	echo "  -- link probe (object を渡す)"
+	P=$W/linkprobe
+	rm -rf "$P"; mkdir -p "$P"
+	printf 'int main(void) { return 0; }\n' > "$P/p.c"
+	if cc -c -o "$P/p.o" "$P/p.c" 2>"$P/cc.err"; then
+		for lib in -lc++ -lstdc++ -lm -lpthread; do
+			if cc -o "$P/p" "$P/p.o" "$lib" 2>"$P/l.err"; then
+				printf '  cc p.o %-10s 繋がる\n' "$lib"
+			else
+				printf '  cc p.o %-10s 落ちる: %s\n' "$lib" "$(head -1 "$P/l.err" | cut -c1-80)"
+			fi
+		done
+	else
+		echo "  cc -c が落ちた: $(head -1 "$P/cc.err")"
+	fi
+
 	echo "--- 生成された toolchain (#862) ---"
 	OB=$("$B" info output_base 2>/dev/null || true)
 	LCC=""
