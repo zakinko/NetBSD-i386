@@ -375,6 +375,40 @@ M
 
 	fail=0
 
+	# 生成された toolchain そのものを見る。#862 の review で
+	#
+	#	should we be worried that this logic would select gcc on bsd if
+	#	they had that installed alongside the default?
+	#
+	# と訊かれている所で、手元で一度測って終わりにすると主張だけが残る。
+	# BSD の base には cc と gcc が同じものとして両方在るか、gcc が無いので、
+	# ここで /usr/bin/cc 以外を掴んでいたら ports や pkgsrc のものを拾って
+	# いる。出して、かつ落とす。
+	echo "--- 生成された toolchain (#862) ---"
+	OB=$("$B" info output_base 2>/dev/null || true)
+	LCC=""
+	if [ -n "$OB" ]; then
+		LCC=$(find "$OB/external" -maxdepth 1 -name '*local_config_cc' -type d 2>/dev/null | head -1)
+	fi
+	if [ -z "$LCC" ] || [ ! -f "$LCC/cc_toolchain_config.bzl" ]; then
+		say "#862 測れない: local_config_cc が見つからない (output_base=$OB)"
+		fail=1
+	else
+		grep -E 'toolchain_identifier = |^ *compiler = |target_libc = |host_system_name = ' \
+			"$LCC/cc_toolchain_config.bzl" | sed 's/^ */  /'
+		echo "  -- C の driver"
+		grep -E '"(gcc|cpp|ld)": *"' "$LCC/cc_toolchain_config.bzl" | sed 's/^ */  /'
+		echo "  -- builtin include"
+		sed -n '/cxx_builtin_include_directories = \[/,/\]/p' \
+			"$LCC/cc_toolchain_config.bzl" | sed 's/^ */  /' | head -12
+		drv=$(sed -n 's/.*"gcc": *"\([^"]*\)".*/\1/p' "$LCC/cc_toolchain_config.bzl" | head -1)
+		case "$drv" in
+		*/cc)  say "#862 OK: C の driver は $drv" ;;
+		"")    say "#862 測れない: driver の path を読み取れない"; fail=1 ;;
+		*)     say "#862 NG: cc ではなく $drv を掴んでいる"; fail=1 ;;
+		esac
+	fi
+
 	echo "--- NEEDED の一覧 (#857) ---"
 	need=""
 	for t in objdump readelf; do
