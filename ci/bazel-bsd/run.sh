@@ -33,6 +33,21 @@ REPO=${REPO:-https://github.com/zakinko/bazel.git}
 
 say() { echo "RESULT $*"; }
 
+# 生成された local_config_cc/BUILD から、一つの attribute の値を丸ごと出す。
+#
+#	tc_field <BUILD> link_flags
+#
+# 一覧は複数行に折れている (get_starlark_list が '",\n    "' で繋ぐ) ので、
+# 行単位では拾えない。key の行から ] の在る行までを出す。key は行頭に錨を
+# 打つ。打たないと link_flags が opt_link_flags と coverage_link_flags にも
+# 当たり、短い方だけが出て長い本命が落ちる。
+tc_field() {
+	awk -v k="$2" '
+		!inb && $0 ~ "^[ \t]*" k " = \\[" { inb = 1; print; if (/\]/) exit; next }
+		inb { print; if (/\]/) exit }
+	' "$1"
+}
+
 # / が小さい VM が在るので、木も work も一番広い所に置く。bazel の build は
 # 出力だけで数 GB になる。
 W=""
@@ -406,12 +421,18 @@ M
 			"$LCC/BUILD" | sed 's/^ */  /'
 		echo "  -- tool_paths"
 		grep -o '"gcc": *"[^"]*"' "$LCC/BUILD" | sed 's/^/    /'
-		# , で割ってはいけない。旗そのものが -Wl,-z,relro,-z,now の形で
-		# comma を含むので、千切れて読めなくなる。折り返すだけにする。
+		# 一覧は必ず複数行に折れている。lib_cc_configure.bzl の
+		# get_starlark_list が '",\n    "' で繋ぐためで、行単位の grep -o では
+		# 一項目しかない短い key しか拾えない。実際 link_flags を指したつもりで
+		# opt_link_flags と coverage_link_flags だけが出ていた。
+		#
+		#	https://github.com/zakinko/NetBSD-i386/actions/runs/35067051116
+		#
+		# key の行から始めて、] の在る行まで出す。key は行頭に錨を打つ。
+		# そうしないと link_flags が opt_link_flags にも当たる。
 		for k in cxx_builtin_include_directories link_flags link_libs; do
 			echo "  -- $k"
-			grep -o "$k = \[[^]]*\]" "$LCC/BUILD" |
-				fold -s -w 96 | sed 's/^/    /' | head -12
+			tc_field "$LCC/BUILD" "$k" | sed 's/^/    /' | head -14
 		done
 
 		drv=$(sed -n 's/.*"gcc": *"\([^"]*\)".*/\1/p' "$LCC/BUILD" | head -1)
@@ -423,8 +444,11 @@ M
 
 		# #854 は OpenBSD の話なので、そこだけ設定の側でも断定する。
 		# 他の BSD は ld が -z origin を取るとは限らないので出すだけ。
+		#
+		# file 全体を grep してはいけない。「link_flags に在る」と言いながら
+		# 別の key に在っても通ってしまう。link_flags の中だけを見る。
 		if [ "$OS" = OpenBSD ]; then
-			if grep -q 'z,origin' "$LCC/BUILD"; then
+			if tc_field "$LCC/BUILD" link_flags | grep -q 'z,origin'; then
 				say "#854 OK: link_flags に -z origin が在る"
 			else
 				say "#854 NG: link_flags に -z origin が無い"
