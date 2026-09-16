@@ -405,8 +405,20 @@ M
 		say "#857 OK: undefined symbol は出ない"
 	fi
 
+	# 走ることだけを見てはいけない。RPATH に $ORIGIN が入っていなければ、
+	# あるいは共有 library を要求していなければ、当て物を外しても走ってしまい、
+	# 検査が何も測らないまま緑になる。測る物が在ることを先に確かめる。
 	echo "--- \$ORIGIN (#854) ---"
-	if ./bazel-bin/main > "$T/main.out" 2> "$T/main.err"; then
+	dyn=$({ objdump -p bazel-bin/main 2>/dev/null || readelf -d bazel-bin/main 2>/dev/null; })
+	echo "$dyn" | grep -E 'RPATH|RUNPATH|NEEDED' || true
+	# $ORIGIN が RPATH に入っていれば、共有 library をそこから引く形になって
+	# いる。入っていなければ静的に繋がったということで、DF_ORIGIN の有無を
+	# 測れる状態ではない。NEEDED の名前は箱ごとに違いうるので断定せず、
+	# 記録に残すだけにする。
+	if ! echo "$dyn" | grep -qE '(RPATH|RUNPATH).*\$ORIGIN'; then
+		say "#854 測れない: RPATH に \$ORIGIN が無い (linkstatic=False が効いていない)"
+		fail=1
+	elif ./bazel-bin/main > "$T/main.out" 2> "$T/main.err"; then
 		say "#854 OK: \$ORIGIN 付きの binary が走る"
 	else
 		cat "$T/main.err"
