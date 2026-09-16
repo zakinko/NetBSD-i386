@@ -33,7 +33,7 @@ cd "$WORK/src"
 
 if [ "$MODE" = patched ]; then
 	echo "=== 当て物を当てる"
-	patch -p1 < "$PATCH"
+	patch -p1 -f -i "$PATCH" </dev/null
 	grep -q -- '-proc:full' scripts/bootstrap/compile.sh \
 		|| { echo "compile.sh に -proc:full が入っていない"; exit 1; }
 	n=$(grep -c 'javacopt=-proc:full' scripts/bootstrap/bootstrap.sh)
