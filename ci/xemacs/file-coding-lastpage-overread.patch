@@ -1,0 +1,36 @@
+--- a/src/file-coding.c
++++ b/src/file-coding.c
+@@ -4997,8 +4997,20 @@
+      these strings do not exist, all of BUF is regarded as the last page. */
+   do
+     {
+-      lastpage = (const UExtbyte *) memchr (lastpage, 0x0c, nread); /* ^L */
++      {
++        /* Reduce the length as LASTPAGE advances; otherwise each pass
++           searches NREAD bytes from a pointer that has moved on, reading
++           past the end of BUF. */
++        Bytecount remaining = nread - (lastpage - buf);
+ 
++        if (remaining <= 0)
++          {
++            break;
++          }
++
++        lastpage = (const UExtbyte *) memchr (lastpage, 0x0c, remaining); /* ^L */
++      }
++
+       if (lastpage && lastpage > buf &&
+ 	  (lastpage[-1] == '\n' || lastpage[-1] == '\r'))
+         {
+@@ -5031,7 +5043,10 @@
+   begline = buf;
+   do
+     {
+-      endline = (const UExtbyte *) memchr (begline, newline, nread);
++      /* As above, BEGLINE advances, so the length has to come down with
++         it. */
++      endline = (const UExtbyte *) memchr (begline, newline,
++                                           nread - (begline - buf));
+ 
+       if (endline == NULL)
+ 	{

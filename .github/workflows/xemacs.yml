@@ -1,0 +1,104 @@
+name: xemacs
+
+# XEmacs へ出す予定の直しを、手元の一台きりでなく公開の run で確かめる。
+#
+# 手元で測ったものは bambi (NetBSD 10.1/i386) 一台しかない。上流へ出すとき
+# 「こちらでは落ちます」だけでは弱いので、誰でも開ける run の URL を添える。
+#
+#   overread   look_for_coding_cookie_last_page() が buffer を越えて読む件。
+#              関数の写しは持たず、checkout から抜き出して組む。素の木で
+#              落ち、当て物を入れると落ちないことを一つの job で両方見る。
+#
+#   windows    Windows のモジュール(動的ロード)未対応を触るための足場作り。
+#              まず VS で最小構成が建つかを測る。建たないなら、どこで
+#              止まるかが答えになる。探りなので job は落とさない。
+#
+# どちらも押すまで動かない。overread は数十秒、windows は数分。
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'どれを回すか'
+        type: choice
+        options: [both, overread, windows]
+        default: both
+
+concurrency:
+  group: xemacs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  overread:
+    if: ${{ inputs.target == 'both' || inputs.target == 'overread' }}
+    name: coding cookie の読み越し
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: XEmacs を取る
+        run: |
+          git clone --quiet --depth 1 https://github.com/zakinko/XEmacs xemacs
+          # file-coding.c は上流 tip と同一 (fork は elhash の一件だけ先行)
+          echo "HEAD: $(cd xemacs && git log --oneline -1)"
+
+      - name: 素の木で越えることを見る
+        run: ci/xemacs/overread.sh "$PWD/xemacs"
+
+      - name: 当て物を入れると越えないことを見る
+        run: |
+          git clone --quiet --depth 1 https://github.com/zakinko/XEmacs xemacs2
+          ci/xemacs/overread.sh "$PWD/xemacs2" \
+              "$PWD/ci/xemacs/file-coding-lastpage-overread.patch"
+
+  windows:
+    if: ${{ inputs.target == 'both' || inputs.target == 'windows' }}
+    name: Windows で建つか (探り)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: XEmacs を取る
+        run: git clone --quiet --depth 1 https://github.com/zakinko/XEmacs xemacs
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: config.inc を最小構成で置く
+        shell: pwsh
+        run: |
+          cd xemacs/nt
+          Copy-Item config.inc.samp config.inc
+          # 追加ライブラリは一つも入れない。建つかどうかだけを見る。
+          # 変数名は config.inc.samp の実物に合わせてある (HAVE_ZLIB は無い)。
+          $c = Get-Content config.inc
+          foreach ($v in 'HAVE_XPM','HAVE_GIF','HAVE_PNG','HAVE_JPEG','HAVE_TIFF','HAVE_XFACE') {
+            $c = $c -replace "^$v=1", "$v=0"
+          }
+          # 既定の PERL は Cygwin を指す。runner に居る perl を使う。
+          $perl = (Get-Command perl -ErrorAction SilentlyContinue).Source
+          if (-not $perl) { throw "perl が見つからない" }
+          Write-Host "perl: $perl"
+          $c = $c -replace '^PERL=.*', ("PERL=" + $perl)
+          Set-Content config.inc $c
+          Select-String -Path config.inc -Pattern '^(HAVE_|UNICODE_|PERL=)'
+
+      - name: nmake で建ててみる (探りなので落とさない)
+        shell: cmd
+        continue-on-error: true
+        run: |
+          cd xemacs\nt
+          nmake -f xemacs.mak
+
+      - name: どこまで行ったか
+        shell: cmd
+        if: always()
+        run: |
+          cd xemacs
+          if exist src\temacs.exe (echo temacs.exe あり) else (echo temacs.exe 無し)
+          if exist src\xemacs.exe (echo xemacs.exe あり) else (echo xemacs.exe 無し)
+          dir src\*.exe 2>nul
