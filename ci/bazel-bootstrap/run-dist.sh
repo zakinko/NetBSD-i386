@@ -9,8 +9,8 @@
 #
 # 使い方: run-dist.sh <proc-full.patch>
 #   DIST_VER   既定 9.3.0rc1。<ver> で releases/download/<ver>/bazel-<ver>-dist.zip
-#   MODE       patched (既定): 当てて建て、成功と version を確かめる
-#              control        : 当てずに建て、既知の場所で落ちることを確かめる
+#   MODE       patched (既定): 当てて建て、bazel が出来て version を答えるか
+#              control        : 当てずに建て、bazel が出来ないことを確かめる
 #                               (JDK 23 以降でのみ意味がある)
 set -eu
 
@@ -24,12 +24,27 @@ echo "=== JDK / OS"
 "${JAVA_HOME:?JAVA_HOME を設定してください}/bin/javac" -version
 uname -sm
 
+# macOS の clang は module map を持つので cc_configure が layering_check を
+# 立て、grpc がその検査に通らない (thread_count.cc が module を export して
+# いないと言って落ちる)。当て物とは無関係の C++ の問題で、master-bootstrap.sh
+# が DragonFly に対してするのと同じく、踏み台を建てる間だけ切る。
+case "$(uname -s)" in
+Darwin) EXTRA_BAZEL_ARGS="--features=-layering_check"; export EXTRA_BAZEL_ARGS ;;
+esac
+
 rm -rf "$WORK"
 mkdir -p "$WORK/src"
 echo "=== $URL を取る"
 curl -fsSL -o "$WORK/dist.zip" "$URL"
 ( cd "$WORK/src" && unzip -q ../dist.zip )
 cd "$WORK/src"
+
+# compile.sh は一段目の javac が 178 errors で失敗しても exit 0 を返す
+# (run が javac の失敗を伝えない)。だから成否は compile.sh の返り値ではなく、
+# output/bazel が出来て version を答えるかで見る。
+built() {
+	[ -x output/bazel ] && ./output/bazel version 2>/dev/null | grep -q '^Build label:'
+}
 
 if [ "$MODE" = patched ]; then
 	echo "=== 当て物を当てる"
@@ -40,26 +55,30 @@ if [ "$MODE" = patched ]; then
 	[ "$n" -eq 2 ] || { echo "bootstrap.sh の -proc:full が $n 行 (2 のはず)"; exit 1; }
 
 	echo "=== bootstrap (patched)"
-	env bash ./compile.sh
-	echo "=== version"
-	./output/bazel version
-	./output/bazel version | grep -q '^Build label:' \
-		|| { echo "Build label が出ない"; exit 1; }
-	echo "RESULT patched $(uname -s) JDK$($JAVA_HOME/bin/javac -version 2>&1 | sed 's/javac //') OK"
-else
-	echo "=== bootstrap (control: 素のまま。JDK 23 以降では落ちるはず)"
-	if env bash ./compile.sh > compile.log 2>&1; then
-		echo "素のまま建ってしまった。この JDK では当て物が要らない"
-		tail -3 compile.log
+	env bash ./compile.sh > compile.log 2>&1 || true
+	if built; then
+		./output/bazel version | grep -i 'build label'
+		echo "RESULT patched $(uname -s) JDK$($JAVA_HOME/bin/javac -version 2>&1 | sed 's/javac //') OK"
+	else
+		echo "当て物ありでも bazel が出来なかった"
+		grep -n 'error:\|errors$\|ERROR' compile.log | tail -20
 		exit 1
 	fi
-	echo "--- 落ちた。理由を確かめる"
+else
+	echo "=== bootstrap (control: 素のまま。JDK 23 以降では bazel が出来ないはず)"
+	env bash ./compile.sh > compile.log 2>&1 || true
+	if built; then
+		echo "素のまま働く bazel が出来てしまった。この JDK では当て物が要らない"
+		./output/bazel version | grep -i 'build label'
+		exit 1
+	fi
+	echo "--- bazel が出来なかった。理由を確かめる"
 	if grep -q 'AutoOneOf_DependencyError' compile.log; then
 		echo "RESULT control OK: 一段目 (compile.sh の javac) で AutoOneOf が無いと言って落ちた"
 	elif grep -q 'AutoValue_JarOwner' compile.log; then
 		echo "RESULT control OK: 二段目 (genrule の javac) で AutoValue が無いと言って落ちた"
 	else
-		echo "落ちたが、想定した annotation processor のエラーではない"
+		echo "bazel は出来なかったが、想定した annotation processor のエラーが log に無い"
 		grep -n 'error:' compile.log | head -10
 		exit 1
 	fi
