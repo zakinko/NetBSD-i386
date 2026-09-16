@@ -121,6 +121,42 @@ OpenBSD)
 	;;
 esac
 
+# master の段だけが要るもの。
+#
+# master は git の木なので compile.sh が PROTOC を要求する。手当ての側は
+# 「protoc は package に在る」前提で書いてあり、無いと
+#
+#	protoc が無い。package を入れる
+#
+# と言って止まる。dist archive から建てる bootstrap の段には要らないので、
+# 数分を毎回払わないよう段で分ける。
+#
+#	https://github.com/zakinko/NetBSD-i386/actions/runs/35015325674
+#
+# protoc が 30 より古いと master-bootstrap.sh が protobuf を source から
+# 組み直す。そこでだけ cmake と ninja が要る。DragonFly の dports は 29.3 が
+# 最新なので、そちらには初めから入れておく。
+if [ "$STAGE" = master ]; then
+	echo '--- master の段の依存'
+	case "$OS" in
+	NetBSD)
+		for p in protobuf pkg-config; do
+			pkg_add -U "$p" || say "pkg_add $p が入らなかった"
+		done
+		;;
+	FreeBSD|GhostBSD)
+		env ASSUME_ALWAYS_YES=yes pkg install -y protobuf pkgconf || true
+		;;
+	DragonFly)
+		pkg install -y protobuf pkgconf cmake ninja || true
+		;;
+	OpenBSD)
+		# pkg-config は base に在る。
+		pkg_add -I protobuf || say "pkg_add protobuf が入らなかった"
+		;;
+	esac
+fi
+
 # JDK の在処は OS ごとに違う。決め打ちせず、欲しい版から順に探す。
 #
 # 名前で sort してはいけない。openjdk8 は openjdk21 より後ろに並ぶので
