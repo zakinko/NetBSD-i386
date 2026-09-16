@@ -163,7 +163,16 @@ if [ "$STAGE" = master ]; then
 		env ASSUME_ALWAYS_YES=yes pkg install -y protobuf pkgconf || true
 		;;
 	DragonFly)
+		# dports の protobuf 29.3 は abseil 2501 の .so を要るが、pkg install は
+		# 箱に元から在る古い abseil で依存が満たされたと見て上げない。
+		#
+		#	Shared object "libabsl_die_if_null.so.2501.0.0" not found,
+		#	  required by "protoc"
+		#	https://github.com/zakinko/NetBSD-i386/actions/runs/35129102405
+		#
+		# abseil を名指しで上げる。
 		pkg install -y protobuf pkgconf cmake ninja || true
+		pkg upgrade -y abseil || pkg install -y abseil || true
 		;;
 	OpenBSD)
 		# pkg-config は base に在る。
