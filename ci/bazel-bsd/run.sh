@@ -354,8 +354,20 @@ M
 	echo 'extern int func();
 int main() { return func(); }' > "$T/main.cpp"
 	echo 'int func() { return 0; }' > "$T/lib/func.cpp"
-	echo '#include <iostream>
-int main() { std::cout << "hello-from-rules-cc\n"; }' > "$T/hello.cpp"
+	# echo に \n を渡さない。OpenBSD の sh (ksh) の echo は backslash を
+	# 解釈するので、C++ の文字列の中に生の改行が入り
+	#
+	#	hello.cpp:2:27: warning: missing terminating '"' character
+	#	hello.cpp:2:27: error: expected expression
+	#
+	# で compile が落ちる。#857 の回帰検査はその手前で止まるので、link を
+	# 一度も測らないまま「落ちた」になる。
+	#
+	#	https://github.com/zakinko/NetBSD-i386/actions/runs/35015123723
+	cat > "$T/hello.cpp" <<'M'
+#include <iostream>
+int main() { std::cout << "hello-from-rules-cc" << std::endl; }
+M
 
 	cd "$T"
 	"$B" build --repo_contents_cache= --override_module=rules_cc="$RC" //... \
