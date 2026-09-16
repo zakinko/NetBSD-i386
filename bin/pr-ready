@@ -79,6 +79,29 @@ check_one() {
 		done
 	fi
 
+	# 1c. 同じ file を触る当て物が二本無いか。控えを patches/ の下へ
+	#     patch-... という名前で置くと、pkgsrc はそれも当て物として拾う。
+	#     makepatchsum が SHA1 まで足してくれるので distinfo の検査も通り、
+	#     建てて初めて「Some of the selected build options and/or local
+	#     patches may be incompatible」で落ちる。mail/mu で踏んだ。
+	if [ -d "$pkg/patches" ]; then
+		for p in "$pkg"/patches/patch-*; do
+			[ -f "$p" ] || continue
+			t=$(sed -n 's|^+++ \([^	 ]*\).*|\1|p' "$p" | head -1)
+			[ -n "$t" ] || continue
+			printf '%s\t%s\n' "$t" "${p##*/}"
+		done | sort > "$pkg/.pr-ready-tgt.$$" 2>/dev/null || true
+		dup=$(cut -f1 "$pkg/.pr-ready-tgt.$$" 2>/dev/null | uniq -d)
+		if [ -n "$dup" ]; then
+			for d in $dup; do
+				bad "同じ file を触る当て物が二本ある: $d"
+				grep "^$d	" "$pkg/.pr-ready-tgt.$$" | sed 's/^/     /'
+			done
+			note "   控えなら patches/ の外へ出して distinfo を取り直す"
+		fi
+		rm -f "$pkg/.pr-ready-tgt.$$"
+	fi
+
 	# 2. distinfo の値が当て物と合っているか
 	if [ -f "$pkg/distinfo" ] && [ -d "$pkg/patches" ]; then
 		for p in "$pkg"/patches/patch-*; do
