@@ -76,18 +76,21 @@ jobs:
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm || true
-          # udevadm trigger の反映は非同期で、直後に見ると間に合わない。
-          # 一度これで "KVM 無し" と警告が出たが、数秒後に起動した runvm.sh は
-          # 同じ検査で /dev/kvm を見つけて -enable-kvm を渡していた。同じ検査が
-          # 二度走って答えが違うので、片方だけ見ると逆の結論になる。待って見る。
-          for i in 1 2 3 4 5 6 7 8 9 10; do
-            [ -w /dev/kvm ] && break
-            sleep 1
-          done
+          # trigger は非同期。settle で待ち、駄目なら chmod する。待たずに -w を
+          # 読んで負けると TCG に落ち、そのまま何時間も回る。この workflow でも
+          # 一度 "KVM 無し" と出た回があり、そのときは数秒後の runvm.sh が勝って
+          # KVM で走ったが、pkgsrc-zakinko の run 35069883047 では四つの job が
+          # 違う答えを出し、負けた二つが 3h20m と 3h30m かかった。勝ち負けで
+          # 結果が変わる検査は検査ではないので、settle と chmod で決着させる。
+          sudo udevadm settle --timeout=10 || true
+          [ -w /dev/kvm ] || sudo chmod 666 /dev/kvm 2>/dev/null || true
+          # -w だけだと「device が無い」と「在るが書けない」が同じ顔で出る。
           if [ -w /dev/kvm ]; then
-            echo "KVM あり ($i 秒待った)"
+            echo "KVM あり"
+          elif [ -e /dev/kvm ]; then
+            echo "::warning::/dev/kvm は在るが書けない。TCG になり相当遅い"
           else
-            echo "::warning::KVM 無し。emulation は 10 倍以上遅い"
+            echo "::warning::/dev/kvm が無い。TCG になり相当遅い"
           fi
 
       - name: 空きを作る
