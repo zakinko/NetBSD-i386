@@ -384,29 +384,53 @@ M
 	# BSD の base には cc と gcc が同じものとして両方在るか、gcc が無いので、
 	# ここで /usr/bin/cc 以外を掴んでいたら ports や pkgsrc のものを拾って
 	# いる。出して、かつ落とす。
+	#
+	# 見るのは BUILD であって cc_toolchain_config.bzl ではない。後者は rule の
+	# 実装で、値の所は ctx.attr.compiler のような参照でしかない。そちらを
+	# grep して「driver の path を読み取れない」を出した。
+	#
+	#	https://github.com/zakinko/NetBSD-i386/actions/runs/35061461816
+	#
+	# 生成された値は BUILD の cc_toolchain_config(...) の中に在る。
 	echo "--- 生成された toolchain (#862) ---"
 	OB=$("$B" info output_base 2>/dev/null || true)
 	LCC=""
 	if [ -n "$OB" ]; then
 		LCC=$(find "$OB/external" -maxdepth 1 -name '*local_config_cc' -type d 2>/dev/null | head -1)
 	fi
-	if [ -z "$LCC" ] || [ ! -f "$LCC/cc_toolchain_config.bzl" ]; then
-		say "#862 測れない: local_config_cc が見つからない (output_base=$OB)"
+	if [ -z "$LCC" ] || [ ! -f "$LCC/BUILD" ]; then
+		say "#862 測れない: local_config_cc/BUILD が見つからない (output_base=$OB)"
 		fail=1
 	else
-		grep -E 'toolchain_identifier = |^ *compiler = |target_libc = |host_system_name = ' \
-			"$LCC/cc_toolchain_config.bzl" | sed 's/^ */  /'
-		echo "  -- C の driver"
-		grep -E '"(gcc|cpp|ld)": *"' "$LCC/cc_toolchain_config.bzl" | sed 's/^ */  /'
-		echo "  -- builtin include"
-		sed -n '/cxx_builtin_include_directories = \[/,/\]/p' \
-			"$LCC/cc_toolchain_config.bzl" | sed 's/^ */  /' | head -12
-		drv=$(sed -n 's/.*"gcc": *"\([^"]*\)".*/\1/p' "$LCC/cc_toolchain_config.bzl" | head -1)
+		grep -E '^ *(toolchain_identifier|compiler|target_libc|host_system_name|cpu) = "' \
+			"$LCC/BUILD" | sed 's/^ */  /'
+		echo "  -- tool_paths"
+		grep -o '"gcc": *"[^"]*"' "$LCC/BUILD" | sed 's/^/    /'
+		# , で割ってはいけない。旗そのものが -Wl,-z,relro,-z,now の形で
+		# comma を含むので、千切れて読めなくなる。折り返すだけにする。
+		for k in cxx_builtin_include_directories link_flags link_libs; do
+			echo "  -- $k"
+			grep -o "$k = \[[^]]*\]" "$LCC/BUILD" |
+				fold -s -w 96 | sed 's/^/    /' | head -12
+		done
+
+		drv=$(sed -n 's/.*"gcc": *"\([^"]*\)".*/\1/p' "$LCC/BUILD" | head -1)
 		case "$drv" in
 		*/cc)  say "#862 OK: C の driver は $drv" ;;
 		"")    say "#862 測れない: driver の path を読み取れない"; fail=1 ;;
 		*)     say "#862 NG: cc ではなく $drv を掴んでいる"; fail=1 ;;
 		esac
+
+		# #854 は OpenBSD の話なので、そこだけ設定の側でも断定する。
+		# 他の BSD は ld が -z origin を取るとは限らないので出すだけ。
+		if [ "$OS" = OpenBSD ]; then
+			if grep -q 'z,origin' "$LCC/BUILD"; then
+				say "#854 OK: link_flags に -z origin が在る"
+			else
+				say "#854 NG: link_flags に -z origin が無い"
+				fail=1
+			fi
+		fi
 	fi
 
 	echo "--- NEEDED の一覧 (#857) ---"
