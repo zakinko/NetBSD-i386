@@ -160,7 +160,9 @@ if [ "$STAGE" = master ]; then
 		done
 		;;
 	FreeBSD|GhostBSD)
-		env ASSUME_ALWAYS_YES=yes pkg install -y protobuf pkgconf || true
+		# ports の protobuf も 29.6 で 30 に届かない (run 35129102405 の
+		# freebsd)。source から組む側の cmake と ninja も入れる。
+		env ASSUME_ALWAYS_YES=yes pkg install -y protobuf pkgconf cmake ninja || true
 		;;
 	DragonFly)
 		# dports の protobuf 29.3 は abseil 2501 の .so を要るが、pkg install は
