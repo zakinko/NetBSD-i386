@@ -1,0 +1,65 @@
+# release-9.3.0 へ出す当て物 (scripts/bootstrap の -proc:full 二箇所) が、
+# Linux と macOS でも dist archive を bootstrap できることを見る。
+#
+# NetBSD では ci/bazel-bsd/ で測っているが、上流の PR には Linux と macOS の
+# 結果も要る。dist archive は自己完結なので、ここでは VM も pkgsrc も要らず、
+# GitHub の runner の上で直に建てられる。
+#
+# 押したときだけ走る。bootstrap は runner で数十分かかるので push では回さない。
+name: bazel-bootstrap-jvm
+
+on:
+  workflow_dispatch:
+    inputs:
+      dist_ver:
+        description: 'bazel の dist archive の版'
+        type: string
+        default: '9.3.0rc1'
+
+concurrency:
+  group: bazel-bootstrap-jvm-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 当てて建て、成功と version を確かめる。Linux / macOS × JDK 21 / 25。
+  # JDK 21 は -proc:full が既定なので「変わらない」側の確認。
+  patched:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        jdk: ['21', '25']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk }}
+      - name: bootstrap the patched dist
+        run: |
+          set -x
+          sh ci/bazel-bootstrap/run-dist.sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/proc-full.patch"
+        env:
+          DIST_VER: ${{ inputs.dist_ver }}
+          MODE: patched
+
+  # 当てずに建て、既知の場所で落ちることを確かめる (JDK 25、Linux のみ)。
+  # 当て物が実際に何かを直していることの対照。落ちるのが成功なので緑になる。
+  control:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: bootstrap the unpatched dist (expected to fail on the processors)
+        run: |
+          set -x
+          sh ci/bazel-bootstrap/run-dist.sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/proc-full.patch"
+        env:
+          DIST_VER: ${{ inputs.dist_ver }}
+          MODE: control
