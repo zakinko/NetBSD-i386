@@ -56,6 +56,14 @@ say "bootstrap: rc=$rc"
 [ $rc -eq 0 ] || { tail -30 "$W/bootstrap.log"; exit 1; }
 PATH=$PREFIX/bin:$PREFIX/sbin:$PATH; export PATH
 
+# VM の cpu は 4 だが、pkgsrc は MAKE_JOBS を書かないと直列で建てる。mozc は
+# 依存を含めて 6 時間近くかかり、GitHub の上限 (360 分) に当たった。
+N=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 2)
+cat >> "$PREFIX/etc/mk.conf" <<EOF
+MAKE_JOBS=	$N
+EOF
+echo "  MAKE_JOBS=$N を mk.conf に書いた"
+
 # bootstrap は digest を入れない。makepatchsum が呼ぶので先に建てる。
 ( cd "$W/pkgsrc/pkgtools/digest" && bmake install ) >"$W/digest.log" 2>&1 \
   || { say "digest: 落ちた"; tail -20 "$W/digest.log"; exit 1; }
