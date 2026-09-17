@@ -52,7 +52,14 @@ done
 echo "  5 本とも #!/bin/sh、bash 専用構文なし"
 
 # bazel の genrule も同じ shell で回す。/bin/bash に依らないことを示す。
-EXTRA_BAZEL_ARGS="--shell_executable=$SH_BIN"; export EXTRA_BAZEL_ARGS
+EXTRA_BAZEL_ARGS="--shell_executable=$SH_BIN"
+# macOS の clang は module map を持つので cc_configure が layering_check を立て、
+# grpc がその検査に通らない。shell とは無関係の C++ の問題なので切る
+# (run-dist.sh の Darwin と同じ扱い)。
+case "$(uname -s)" in
+Darwin) EXTRA_BAZEL_ARGS="$EXTRA_BAZEL_ARGS --features=-layering_check" ;;
+esac
+export EXTRA_BAZEL_ARGS
 
 echo "=== $SH_BIN ./compile.sh で bootstrap (bash を呼ばない)"
 "$SH_BIN" ./compile.sh > compile.log 2>&1 || true
