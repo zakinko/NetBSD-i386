@@ -103,37 +103,48 @@ jobs:
           if (-not (Test-Path $exe)) { throw "xemacs.exe が無い" }
           Get-Item xemacs/src/temacs.exe, $exe | Format-Table Name, Length
 
-      - name: モジュール(動的ロード)が使えるかの基準測定
+      - name: モジュール判定の elisp を置く
         shell: pwsh
         run: |
-          # sysdll.c には WIN32_NATIVE 用の LoadLibrary 実装が既にあるが、
-          # その全体が #ifdef HAVE_SHLIB の中で、xemacs.mak の OPT_DEFINES に
-          # -DHAVE_SHLIB が無い。ここが「モジュール対応はまだ」の正体か。
-          cd xemacs
-          ./src/xemacs.exe -batch -vanilla -eval '(princ (format "modules=%s load-module=%s\n" (featurep (quote modules)) (fboundp (quote load-module))))'
+          # -eval を shell から渡すと引用が入れ子になって壊れる。file に置いて
+          # -load する。
+          @'
+          (princ (format "modules=%s load-module=%s shlib=%s\n"
+                         (featurep (quote modules))
+                         (fboundp (quote load-module))
+                         (if (boundp (quote module-directory)) "var-present" "no-var")))
+          '@ | Set-Content -Encoding ascii probe.el
+          Get-Content probe.el
 
-      - name: HAVE_SHLIB を立てたら建つか (実験)
-        shell: cmd
+      - name: 素の build でモジュールが見えるか (基準)
+        shell: pwsh
+        run: |
+          cd xemacs
+          & ./src/xemacs.exe -batch -vanilla -load ../probe.el
+          if ($LASTEXITCODE -ne 0) { throw "xemacs.exe が rc=$LASTEXITCODE で終わった" }
+
+      - name: HAVE_SHLIB を足して建て直す (上書きではなく追記)
+        shell: pwsh
         continue-on-error: true
         run: |
-          cd xemacs\nt
+          cd xemacs/nt
+          # OPT_DEFINES を command line で渡すと変数ごと置き換わり、
+          # -DHAVE_MS_WINDOWS 等が消えて device-msw.c が壊れる。mak に足す。
+          $m = Get-Content xemacs.mak
+          $i = ($m | Select-String -Pattern '^OPT_DEFINES=\$\(OPT_DEFINES\) -DHAVE_MS_WINDOWS' | Select-Object -First 1).LineNumber
+          if (-not $i) { throw "OPT_DEFINES の行が見つからない" }
+          $m = $m[0..($i-1)] + 'OPT_DEFINES=$(OPT_DEFINES) -DHAVE_SHLIB' + $m[$i..($m.Length-1)]
+          Set-Content xemacs.mak $m
+          Select-String -Path xemacs.mak -Pattern 'HAVE_SHLIB|HAVE_MS_WINDOWS' | Select-Object -First 5
           nmake -f xemacs.mak clean
-          nmake -f xemacs.mak OPT_DEFINES="-DHAVE_SHLIB"
+          nmake -f xemacs.mak
 
-      - name: 立てた側でモジュールが見えるか
+      - name: HAVE_SHLIB 版でモジュールが見えるか
         shell: pwsh
         continue-on-error: true
         run: |
           cd xemacs
           if (Test-Path src/xemacs.exe) {
-            ./src/xemacs.exe -batch -vanilla -eval '(princ (format "HAVE_SHLIB build: modules=%s load-module=%s\n" (featurep (quote modules)) (fboundp (quote load-module))))'
+            & ./src/xemacs.exe -batch -vanilla -load ../probe.el
           } else { Write-Host "xemacs.exe が無い (この実験では建たなかった)" }
 
-      - name: どこまで行ったか
-        shell: cmd
-        if: always()
-        run: |
-          cd xemacs
-          if exist src\temacs.exe (echo temacs.exe あり) else (echo temacs.exe 無し)
-          if exist src\xemacs.exe (echo xemacs.exe あり) else (echo xemacs.exe 無し)
-          dir src\*.exe 2>nul
