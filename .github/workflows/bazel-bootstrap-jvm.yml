@@ -45,6 +45,31 @@ jobs:
           DIST_VER: ${{ inputs.dist_ver }}
           MODE: patched
 
+  # Windows は bootstrap が一番手強い (MSVC と MSYS が要る)。Git Bash で
+  # run-dist.sh を回す。bazel の cc autoconfig が windows-latest の VS2022 を
+  # 見つける。出来る binary は output/bazel.exe。
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        jdk: ['21', '25']
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk }}
+      - name: bootstrap the patched dist
+        shell: bash
+        run: |
+          set -x
+          sh ci/bazel-bootstrap/run-dist.sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/proc-full.patch"
+        env:
+          DIST_VER: ${{ inputs.dist_ver }}
+          MODE: patched
+
   # 当てずに建て、既知の場所で落ちることを確かめる (JDK 25、Linux のみ)。
   # 当て物が実際に何かを直していることの対照。落ちるのが成功なので緑になる。
   control:

@@ -36,14 +36,23 @@ rm -rf "$WORK"
 mkdir -p "$WORK/src"
 echo "=== $URL を取る"
 curl -fsSL -o "$WORK/dist.zip" "$URL"
-( cd "$WORK/src" && unzip -q ../dist.zip )
+# Windows の Git Bash には unzip が無いことがあるので、7z か python へ落とす。
+( cd "$WORK/src" && { unzip -q ../dist.zip \
+	|| 7z x -y ../dist.zip >/dev/null \
+	|| python -c "import zipfile;zipfile.ZipFile('../dist.zip').extractall()"; } )
 cd "$WORK/src"
 
 # compile.sh は一段目の javac が 178 errors で失敗しても exit 0 を返す
 # (run が javac の失敗を伝えない)。だから成否は compile.sh の返り値ではなく、
-# output/bazel が出来て version を答えるかで見る。
+# bazel が出来て version を答えるかで見る。Windows では output/bazel.exe。
+bazel_bin() {
+	if [ -x output/bazel ]; then echo output/bazel
+	elif [ -x output/bazel.exe ]; then echo output/bazel.exe
+	fi
+}
 built() {
-	[ -x output/bazel ] && ./output/bazel version 2>/dev/null | grep -q '^Build label:'
+	bz=$(bazel_bin)
+	[ -n "$bz" ] && "$bz" version 2>/dev/null | grep -q '^Build label:'
 }
 
 if [ "$MODE" = patched ]; then
@@ -57,7 +66,7 @@ if [ "$MODE" = patched ]; then
 	echo "=== bootstrap (patched)"
 	env bash ./compile.sh > compile.log 2>&1 || true
 	if built; then
-		./output/bazel version | grep -i 'build label'
+		"$(bazel_bin)" version | grep -i 'build label'
 		echo "RESULT patched $(uname -s) JDK$($JAVA_HOME/bin/javac -version 2>&1 | sed 's/javac //') OK"
 	else
 		echo "当て物ありでも bazel が出来なかった"
@@ -69,7 +78,7 @@ else
 	env bash ./compile.sh > compile.log 2>&1 || true
 	if built; then
 		echo "素のまま働く bazel が出来てしまった。この JDK では当て物が要らない"
-		./output/bazel version | grep -i 'build label'
+		"$(bazel_bin)" version | grep -i 'build label'
 		exit 1
 	fi
 	echo "--- bazel が出来なかった。理由を確かめる"
