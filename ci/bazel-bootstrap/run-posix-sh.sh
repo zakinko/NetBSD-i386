@@ -43,13 +43,13 @@ cd "$WORK/src"
 echo "=== bootstrap script を POSIX sh 版へ差し替える (posix-sh.patch)"
 patch -p1 -f -i "$PATCH" </dev/null
 for f in compile.sh scripts/bootstrap/compile.sh scripts/bootstrap/buildenv.sh \
-         scripts/bootstrap/bootstrap.sh; do
+         scripts/bootstrap/bootstrap.sh src/zip_builtins.sh; do
 	head -1 "$f" | grep -q '^#!/bin/sh$' \
 		|| { echo "$f の shebang が #!/bin/sh でない"; exit 1; }
 	grep -nE '^[[:space:]]*function |\[\[|=\(' "$f" \
 		&& { echo "$f に bash 専用構文が残っている"; exit 1; }
 done
-echo "  4 本とも #!/bin/sh、bash 専用構文なし"
+echo "  5 本とも #!/bin/sh、bash 専用構文なし"
 
 # bazel の genrule も同じ shell で回す。/bin/bash に依らないことを示す。
 EXTRA_BAZEL_ARGS="--shell_executable=$SH_BIN"; export EXTRA_BAZEL_ARGS

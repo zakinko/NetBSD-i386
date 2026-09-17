@@ -613,3 +613,22 @@
 +get_bazel_bin_path() {
    _run_bootstrapping_bazel info "bazel-bin" || echo "bazel-bin"
  }
+--- a/src/zip_builtins.sh
++++ b/src/zip_builtins.sh
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env bash
++#!/bin/sh
+ 
+ # Copyright 2020 The Bazel Authors. All rights reserved.
+ #
+@@ -20,7 +20,9 @@
+ # Usage:
+ #     zip_builtins.sh zip output builtins_root files...
+ 
+-set -euo pipefail
++# pipefail is not in POSIX sh; the last command of each pipeline below is
++# the one whose status matters, so -eu is enough.
++set -eu
+ 
+ origdir="$(pwd)"
+ 

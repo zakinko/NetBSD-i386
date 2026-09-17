@@ -31,6 +31,15 @@ STAGE=${1:-bootstrap}
 BRANCH=${BRANCH:-probe/plain-upstream}
 REPO=${REPO:-https://github.com/zakinko/bazel.git}
 
+# posix-sh の段では bash を入れない。BSD は base に bash を持たないので、
+# 入れなければ本当に存在しない箱になる。そこで bootstrap script の POSIX sh
+# 版が /bin/sh だけで建つかを測るのがこの段の趣旨である。
+if [ "$STAGE" = posix-sh ]; then
+	BASH_PKG=""
+else
+	BASH_PKG="bash"
+fi
+
 say() { echo "RESULT $*"; }
 
 # 生成された local_config_cc/BUILD から、一つの attribute の値を丸ごと出す。
@@ -94,7 +103,7 @@ NetBSD)
 		done
 	fi
 	export PKG_PATH="https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$ARCH/$REL/All"
-	for p in git-base bash python313 unzip zip go; do
+	for p in git-base $BASH_PKG python313 unzip zip go; do
 		pkg_add -U "$p" || say "pkg_add $p が入らなかった"
 	done
 	# 21 を採る。JDK 23 から annotation processing が既定で走らないので、
@@ -102,14 +111,14 @@ NetBSD)
 	pkg_add -U openjdk21 || say "JDK の package が入らなかった"
 	;;
 FreeBSD|GhostBSD)
-	env ASSUME_ALWAYS_YES=yes pkg install -y git bash openjdk21 python3 unzip zip go || true
+	env ASSUME_ALWAYS_YES=yes pkg install -y git $BASH_PKG openjdk21 python3 unzip zip go || true
 	;;
 DragonFly)
-	pkg install -y git bash openjdk21 python3 unzip zip go || true
+	pkg install -y git $BASH_PKG openjdk21 python3 unzip zip go || true
 	;;
 OpenBSD)
 	export PKG_PATH="https://cdn.openbsd.org/pub/OpenBSD/$(uname -r)/packages/$(uname -m)/"
-	for p in git bash zip go; do
+	for p in git $BASH_PKG zip go; do
 		pkg_add -I "$p" || say "pkg_add $p が入らなかった"
 	done
 	# 多版ある package は % で枝を指す。名前をそのまま渡すと
@@ -306,6 +315,17 @@ rm -f "$BOOTSTRAP_OUT"
 ulimit -n unlimited 2>/dev/null || ulimit -n 4096 2>/dev/null || true
 ulimit -d unlimited 2>/dev/null || true
 
+# posix-sh の段では、bootstrap script を POSIX sh 版に差し替えて /bin/sh だけで
+# 建てる。当て物は NetBSD-i386 の側に在るので、VM から見える path を渡す。
+if [ "$STAGE" = posix-sh ]; then
+	P=$GITHUB_WORKSPACE/ci/bazel-bootstrap/posix-sh.patch
+	[ -f "$P" ] || { say "posix-sh.patch が無い ($P)"; exit 1; }
+	POSIX_SH_PATCH=$P; export POSIX_SH_PATCH
+	BAZEL_SH=/bin/sh; export BAZEL_SH
+	echo "bash: $(command -v bash 2>/dev/null || echo '無い)')"
+	echo "posix-sh の段: $POSIX_SH_PATCH を当てて $BAZEL_SH で建てる"
+fi
+
 if sh ci/bsd-bootstrap.sh; then
 	say "bootstrap OK"
 else
@@ -328,6 +348,11 @@ echo "踏み台: $B"
 # 終了値が 1 になって script ごと終わる。if で書く。
 if [ "$STAGE" = bootstrap ]; then
 	say "段 bootstrap まで完了"
+	exit 0
+fi
+
+if [ "$STAGE" = posix-sh ]; then
+	say "posix-sh $OS OK: bash 無しで /bin/sh だけで bootstrap 完走"
 	exit 0
 fi
 

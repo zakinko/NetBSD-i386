@@ -31,7 +31,7 @@ on:
       stage:
         description: 'どこまで'
         type: choice
-        options: [bootstrap, rules-cc, master]
+        options: [bootstrap, posix-sh, rules-cc, master]
         default: bootstrap
 
 # target と stage も group に入れる。ref だけにすると、別の OS を押した瞬間に
