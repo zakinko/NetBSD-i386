@@ -70,7 +70,10 @@ jobs:
         run: |
           set -x
           export BAZEL_VC="${VCINSTALLDIR%\\}"
-          echo "BAZEL_VC=$BAZEL_VC"
+          # genrule が bash.exe を呼ぶので (builtins_bzl.zip など)、bazel に
+          # どの bash かを教える。教えないと Exit 127 で落ちる。
+          export BAZEL_SH="$(cygpath -w "$(which bash)")"
+          echo "BAZEL_VC=$BAZEL_VC  BAZEL_SH=$BAZEL_SH"
           sh ci/bazel-bootstrap/run-dist.sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/proc-full.patch"
         env:
           DIST_VER: ${{ inputs.dist_ver }}
