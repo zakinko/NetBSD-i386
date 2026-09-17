@@ -61,10 +61,16 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ matrix.jdk }}
+      # bazel は Windows で MSVC を要る。素の runner では vswhere 経由で
+      # 見つからず VCVARSALL.bat not found で止まるので、VS の環境を入れて
+      # BAZEL_VC を指す。
+      - uses: ilammy/msvc-dev-cmd@v1
       - name: bootstrap the patched dist
         shell: bash
         run: |
           set -x
+          export BAZEL_VC="${VCINSTALLDIR%\\}"
+          echo "BAZEL_VC=$BAZEL_VC"
           sh ci/bazel-bootstrap/run-dist.sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/proc-full.patch"
         env:
           DIST_VER: ${{ inputs.dist_ver }}
