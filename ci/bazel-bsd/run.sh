@@ -352,7 +352,15 @@ if [ "$STAGE" = bootstrap ]; then
 fi
 
 if [ "$STAGE" = posix-sh ]; then
-	say "posix-sh $OS OK: bash 無しで /bin/sh だけで bootstrap 完走"
+	# bash の package は入れていないが、他の package が依存で引き込むことが
+	# ある (NetBSD は go か python3 が /usr/pkg/bin/bash を連れてきた)。
+	# 入っている箱で「bash 無しで完走」と言うと嘘になるので、実態を見て
+	# 主張を分ける。
+	if command -v bash >/dev/null 2>&1; then
+		say "posix-sh $OS OK: script は /bin/sh で動いた (ただし bash が $(command -v bash) に在る箱。build 全体が bash を使わないことの証明にはならない)"
+	else
+		say "posix-sh $OS OK: bash が無い箱で /bin/sh だけで bootstrap 完走"
+	fi
 	exit 0
 fi
 
