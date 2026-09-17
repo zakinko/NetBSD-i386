@@ -52,7 +52,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        jdk: ['21', '25']
+        include:
+          - { jdk: '21', mode: patched }
+          - { jdk: '25', mode: patched }
+          # 当てずに建てて、Windows でも一段目で AutoOneOf で落ちることを実測する
+          # (当て物が Windows でも要ることの対照。JDK 25 のみ意味がある)。
+          - { jdk: '25', mode: control }
     runs-on: windows-latest
     timeout-minutes: 120
     steps:
@@ -71,7 +76,7 @@ jobs:
       - name: install zip and unzip
         shell: pwsh
         run: choco install zip unzip -y --no-progress
-      - name: bootstrap the patched dist
+      - name: bootstrap the dist (${{ matrix.mode }})
         shell: bash
         run: |
           set -x
@@ -83,7 +88,7 @@ jobs:
           sh ci/bazel-bootstrap/run-dist.sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/proc-full.patch"
         env:
           DIST_VER: ${{ inputs.dist_ver }}
-          MODE: patched
+          MODE: ${{ matrix.mode }}
 
   # bootstrap script を POSIX sh 版 (posix-sh.patch) に差し替えて、bash では
   # なく sh (Ubuntu の /bin/sh は dash) だけで通しで建てる。scripts/bootstrap の
