@@ -52,12 +52,27 @@ jobs:
         with:
           mem: 8192
           cpu: 4
-          copyback: false
+          copyback: true
           envs: 'GITHUB_WORKSPACE'
           run: |
             set -x
             uname -a; cc --version | head -2; df -h
             sh "$GITHUB_WORKSPACE/ci/mozc-bsd/run.sh" ${{ inputs.stage }} ${{ inputs.pkgsrc }}
+            rc=$?
+            # 落ちたときの手掛かりは build.log の中に在る。tail だけでは足りない
+            # (OpenBSD の cmake が何で落ちたか、二度分からなかった)。丸ごと持ち帰る。
+            mkdir -p "$GITHUB_WORKSPACE/logs"
+            for d in /home/mozcwork /usr/home/mozcwork /var/tmp/mozcwork; do
+              [ -d "$d" ] && cp "$d"/*.log "$GITHUB_WORKSPACE/logs/" 2>/dev/null
+            done
+            ls -l "$GITHUB_WORKSPACE/logs/" || true
+            exit $rc
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-${{ github.job }}
+          path: logs/
+          if-no-files-found: ignore
 
   openbsd:
     if: ${{ contains(fromJSON('["all","bsd"]'), inputs.target) || inputs.target == 'openbsd' }}
@@ -69,12 +84,27 @@ jobs:
         with:
           mem: 8192
           cpu: 4
-          copyback: false
+          copyback: true
           envs: 'GITHUB_WORKSPACE'
           run: |
             set -x
             uname -a; cc --version | head -2; df -h
             sh "$GITHUB_WORKSPACE/ci/mozc-bsd/run.sh" ${{ inputs.stage }} ${{ inputs.pkgsrc }}
+            rc=$?
+            # 落ちたときの手掛かりは build.log の中に在る。tail だけでは足りない
+            # (OpenBSD の cmake が何で落ちたか、二度分からなかった)。丸ごと持ち帰る。
+            mkdir -p "$GITHUB_WORKSPACE/logs"
+            for d in /home/mozcwork /usr/home/mozcwork /var/tmp/mozcwork; do
+              [ -d "$d" ] && cp "$d"/*.log "$GITHUB_WORKSPACE/logs/" 2>/dev/null
+            done
+            ls -l "$GITHUB_WORKSPACE/logs/" || true
+            exit $rc
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-${{ github.job }}
+          path: logs/
+          if-no-files-found: ignore
 
   dragonfly:
     if: ${{ contains(fromJSON('["all","bsd"]'), inputs.target) || inputs.target == 'dragonfly' }}
@@ -86,12 +116,27 @@ jobs:
         with:
           mem: 8192
           cpu: 4
-          copyback: false
+          copyback: true
           envs: 'GITHUB_WORKSPACE'
           run: |
             set -x
             uname -a; cc --version | head -2; df -h
             sh "$GITHUB_WORKSPACE/ci/mozc-bsd/run.sh" ${{ inputs.stage }} ${{ inputs.pkgsrc }}
+            rc=$?
+            # 落ちたときの手掛かりは build.log の中に在る。tail だけでは足りない
+            # (OpenBSD の cmake が何で落ちたか、二度分からなかった)。丸ごと持ち帰る。
+            mkdir -p "$GITHUB_WORKSPACE/logs"
+            for d in /home/mozcwork /usr/home/mozcwork /var/tmp/mozcwork; do
+              [ -d "$d" ] && cp "$d"/*.log "$GITHUB_WORKSPACE/logs/" 2>/dev/null
+            done
+            ls -l "$GITHUB_WORKSPACE/logs/" || true
+            exit $rc
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-${{ github.job }}
+          path: logs/
+          if-no-files-found: ignore
 
   # GhostBSD は FreeBSD 派生なので __FreeBSD__ が立つ。当て物はそのまま効く
   # はずだが、派生が base をどこまで差し替えているかは測らないと分からない。
@@ -105,12 +150,27 @@ jobs:
         with:
           mem: 8192
           cpu: 4
-          copyback: false
+          copyback: true
           envs: 'GITHUB_WORKSPACE'
           run: |
             set -x
             uname -a; cc --version | head -2; df -h
             sh "$GITHUB_WORKSPACE/ci/mozc-bsd/run.sh" ${{ inputs.stage }} ${{ inputs.pkgsrc }}
+            rc=$?
+            # 落ちたときの手掛かりは build.log の中に在る。tail だけでは足りない
+            # (OpenBSD の cmake が何で落ちたか、二度分からなかった)。丸ごと持ち帰る。
+            mkdir -p "$GITHUB_WORKSPACE/logs"
+            for d in /home/mozcwork /usr/home/mozcwork /var/tmp/mozcwork; do
+              [ -d "$d" ] && cp "$d"/*.log "$GITHUB_WORKSPACE/logs/" 2>/dev/null
+            done
+            ls -l "$GITHUB_WORKSPACE/logs/" || true
+            exit $rc
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-${{ github.job }}
+          path: logs/
+          if-no-files-found: ignore
 
   # NetBSD は techne でも建てているが、そこは私の箱で、他の人が同じものを
   # 走らせられない。七つを同じ形で並べる。
@@ -124,12 +184,27 @@ jobs:
         with:
           mem: 8192
           cpu: 4
-          copyback: false
+          copyback: true
           envs: 'GITHUB_WORKSPACE'
           run: |
             set -x
             uname -a; cc --version | head -2; df -h
             sh "$GITHUB_WORKSPACE/ci/mozc-bsd/run.sh" ${{ inputs.stage }} ${{ inputs.pkgsrc }}
+            rc=$?
+            # 落ちたときの手掛かりは build.log の中に在る。tail だけでは足りない
+            # (OpenBSD の cmake が何で落ちたか、二度分からなかった)。丸ごと持ち帰る。
+            mkdir -p "$GITHUB_WORKSPACE/logs"
+            for d in /home/mozcwork /usr/home/mozcwork /var/tmp/mozcwork; do
+              [ -d "$d" ] && cp "$d"/*.log "$GITHUB_WORKSPACE/logs/" 2>/dev/null
+            done
+            ls -l "$GITHUB_WORKSPACE/logs/" || true
+            exit $rc
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-${{ github.job }}
+          path: logs/
+          if-no-files-found: ignore
 
   # mozc が元から知っている platform。BSD へ広げた条件が、動いていた側を
   # 壊していないかを見る。VM は要らないので安い。
