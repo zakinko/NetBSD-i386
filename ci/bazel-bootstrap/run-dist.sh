@@ -30,6 +30,12 @@ uname -sm
 # が DragonFly に対してするのと同じく、踏み台を建てる間だけ切る。
 case "$(uname -s)" in
 Darwin) EXTRA_BAZEL_ARGS="--features=-layering_check"; export EXTRA_BAZEL_ARGS ;;
+# third_party の fastutil / netty の genrule は zip / unzip を呼び、そのうち
+# fastutil は [for tool] = exec 構成で走る。repo 直下 compile.sh は
+# --action_env=PATH (target 構成) しか渡さないので、exec 構成の action には
+# client の PATH が届かず、choco で入れた zip が見つからない (Exit 127)。
+# exec 構成にも PATH を通す。
+MINGW*|MSYS*|CYGWIN*) EXTRA_BAZEL_ARGS="--host_action_env=PATH"; export EXTRA_BAZEL_ARGS ;;
 esac
 
 rm -rf "$WORK"
