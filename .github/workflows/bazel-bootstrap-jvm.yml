@@ -94,8 +94,14 @@ jobs:
   # なく sh (Ubuntu の /bin/sh は dash) だけで通しで建てる。scripts/bootstrap の
   # bash→sh 化が実際に完走することの証明。genrule の shell も --shell_executable
   # で sh に向け、build 全体で bash を呼ばない。
+  # 既定が bash でない Linux (Ubuntu/Debian の /bin/sh は dash) と、
+  # 既定シェルが zsh になった macOS。どちらも /bin/sh で建てる。
   posix-sh:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -109,6 +115,32 @@ jobs:
           sh ci/bazel-bootstrap/run-posix-sh.sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/posix-sh.patch"
         env:
           DIST_VER: ${{ inputs.dist_ver }}
+
+  # sh しかない Linux。Alpine の /bin/sh は busybox の ash で、bash は
+  # 入っていない。bash が存在しない箱で建つことを示す。
+  posix-sh-alpine:
+    runs-on: ubuntu-latest
+    container: alpine:latest
+    timeout-minutes: 90
+    steps:
+      - name: install the tools Alpine does not ship
+        run: |
+          set -x
+          apk add --no-cache openjdk21 build-base linux-headers zip unzip curl \
+            python3 patch findutils coreutils grep sed which git
+          # bash は入れない。入っていないことを確かめる。
+          if command -v bash >/dev/null 2>&1; then
+            echo "bash が入っている。この job の前提が崩れる"; exit 1
+          fi
+          echo "bash は無い。/bin/sh は $(readlink -f /bin/sh)"
+      - uses: actions/checkout@v4
+      - name: bootstrap under busybox ash (bash が無い箱)
+        run: |
+          set -x
+          sh ci/bazel-bootstrap/run-posix-sh.sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/posix-sh.patch"
+        env:
+          DIST_VER: ${{ inputs.dist_ver }}
+          JAVA_HOME: /usr/lib/jvm/java-21-openjdk
 
   # 当てずに建て、既知の場所で落ちることを確かめる (JDK 25、Linux のみ)。
   # 当て物が実際に何かを直していることの対照。落ちるのが成功なので緑になる。
