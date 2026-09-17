@@ -70,7 +70,12 @@ if [ "$MODE" = patched ]; then
 		echo "RESULT patched $(uname -s) JDK$($JAVA_HOME/bin/javac -version 2>&1 | sed 's/javac //') OK"
 	else
 		echo "当て物ありでも bazel が出来なかった"
+		echo "--- command not found / Exit の類"
+		grep -n -i 'command not found\|not found\|No such file\|Exit 12[0-9]\|cannot execute' compile.log | tail -20
+		echo "--- error 行"
 		grep -n 'error:\|errors$\|ERROR' compile.log | tail -20
+		echo "--- compile.log の末尾 60 行"
+		tail -60 compile.log
 		exit 1
 	fi
 else

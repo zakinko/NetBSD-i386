@@ -85,6 +85,26 @@ jobs:
           DIST_VER: ${{ inputs.dist_ver }}
           MODE: patched
 
+  # bootstrap script を POSIX sh 版 (posix-sh.patch) に差し替えて、bash では
+  # なく sh (Ubuntu の /bin/sh は dash) だけで通しで建てる。scripts/bootstrap の
+  # bash→sh 化が実際に完走することの証明。genrule の shell も --shell_executable
+  # で sh に向け、build 全体で bash を呼ばない。
+  posix-sh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: bootstrap under /bin/sh (no bash)
+        run: |
+          set -x
+          sh ci/bazel-bootstrap/run-posix-sh.sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/posix-sh.patch"
+        env:
+          DIST_VER: ${{ inputs.dist_ver }}
+
   # 当てずに建て、既知の場所で落ちることを確かめる (JDK 25、Linux のみ)。
   # 当て物が実際に何かを直していることの対照。落ちるのが成功なので緑になる。
   control:
