@@ -1,24 +1,24 @@
 diff -urN a/inputmethod/ibus-mozc226/Makefile b/inputmethod/ibus-mozc226/Makefile
---- inputmethod/ibus-mozc226/Makefile	2026-08-29 05:31:16.727866797 +0000
-+++ inputmethod/ibus-mozc226/Makefile	2026-08-29 05:31:16.730604296 +0000
+--- inputmethod/ibus-mozc226/Makefile	2026-09-17 08:29:30.295270961 +0000
++++ inputmethod/ibus-mozc226/Makefile	2026-09-17 08:29:30.299616206 +0000
 @@ -1,7 +1,7 @@
- # $NetBSD: Makefile,v 1.22 2026/05/14 16:41:19 ryoon Exp $
+ # $NetBSD: Makefile,v 1.23 2026/09/02 19:03:05 wiz Exp $
  
  PKGNAME=	ibus-${DISTNAME}
--PKGREVISION=	45
-+PKGREVISION=	46
+-PKGREVISION=	46
++PKGREVISION=	47
  
  INSTALLATION_DIRS+=	libexec share/ibus share/ibus/component \
  			share/ibus-mozc
 diff -urN a/inputmethod/mozc-elisp226/Makefile b/inputmethod/mozc-elisp226/Makefile
---- inputmethod/mozc-elisp226/Makefile	2026-08-29 05:31:16.696008278 +0000
-+++ inputmethod/mozc-elisp226/Makefile	2026-08-29 08:50:47.788233686 +0000
+--- inputmethod/mozc-elisp226/Makefile	2026-09-17 08:29:30.276498184 +0000
++++ inputmethod/mozc-elisp226/Makefile	2026-09-17 08:29:59.988130528 +0000
 @@ -1,9 +1,25 @@
- # $NetBSD: Makefile,v 1.25 2026/08/26 14:37:05 wiz Exp $
+ # $NetBSD: Makefile,v 1.26 2026/09/02 19:03:07 wiz Exp $
  
  PKGNAME=	${EMACS_PKGNAME_PREFIX}${DISTNAME:S/mozc-/mozc-elisp-/}
--PKGREVISION=	46
-+PKGREVISION=	47
+-PKGREVISION=	47
++PKGREVISION=	48
  CATEGORIES=	inputmethod editors
  
 +# mozc.el is only a client of mozc_emacs_helper, which in turn talks to
@@ -35,33 +35,32 @@ diff -urN a/inputmethod/mozc-elisp226/Makefile b/inputmethod/mozc-elisp226/Makef
 +# do not meet.  Without the second line that pairing is accepted, and the
 +# failure looks exactly like having no server at all.
 +DEPENDS+=	mozc-server-${MOZC_VERSION}{,nb*}:../../inputmethod/mozc-server226
-+DEPENDS+=	mozc-server>=${MOZC_VERSION}nb46:../../inputmethod/mozc-server226
++DEPENDS+=	mozc-server>=${MOZC_VERSION}nb47:../../inputmethod/mozc-server226
 +
  EMACS_MODULES=	base leim
  
  # Package Requires >= 24.3 for cl-lib etc.
 diff -urN a/inputmethod/mozc-renderer226/Makefile b/inputmethod/mozc-renderer226/Makefile
---- inputmethod/mozc-renderer226/Makefile	2026-08-29 05:31:16.722138415 +0000
-+++ inputmethod/mozc-renderer226/Makefile	2026-08-29 05:31:16.724951342 +0000
+--- inputmethod/mozc-renderer226/Makefile	2026-09-17 08:29:30.289077437 +0000
++++ inputmethod/mozc-renderer226/Makefile	2026-09-17 08:29:30.293402567 +0000
 @@ -1,7 +1,7 @@
- # $NetBSD: Makefile,v 1.21 2026/05/14 16:41:20 ryoon Exp $
+ # $NetBSD: Makefile,v 1.22 2026/09/02 19:03:07 wiz Exp $
  
  PKGNAME=	${DISTNAME:S/mozc-/mozc-renderer-/}
--PKGREVISION=	44
-+PKGREVISION=	45
+-PKGREVISION=	45
++PKGREVISION=	46
  
  CONFLICTS+=	ibus-mozc<=1.13.1651.102
  
 diff -urN a/inputmethod/mozc-server226/Makefile b/inputmethod/mozc-server226/Makefile
---- inputmethod/mozc-server226/Makefile	2026-08-29 05:31:16.701777727 +0000
-+++ inputmethod/mozc-server226/Makefile	2026-08-29 05:31:16.709100166 +0000
-@@ -1,7 +1,8 @@
- # $NetBSD: Makefile,v 1.21 2026/05/14 16:41:20 ryoon Exp $
+--- inputmethod/mozc-server226/Makefile	2026-09-17 08:29:30.269455390 +0000
++++ inputmethod/mozc-server226/Makefile	2026-09-17 08:29:30.274619454 +0000
+@@ -1,7 +1,7 @@
+ # $NetBSD: Makefile,v 1.22 2026/09/02 19:03:08 wiz Exp $
  
  PKGNAME=	${DISTNAME:S/mozc-/mozc-server-/}
--PKGREVISION=	45
-+PKGREVISION=	46
-+
+-PKGREVISION=	46
++PKGREVISION=	47
  
  INSTALLATION_DIRS+=	libexec
  
@@ -315,26 +314,26 @@ diff -urN a/inputmethod/mozc-server226/patches/patch-ipc_unix__ipc.cc b/inputmet
   }  // namespace mozc
   
 diff -urN a/inputmethod/mozc-tool226/Makefile b/inputmethod/mozc-tool226/Makefile
---- inputmethod/mozc-tool226/Makefile	2026-08-29 05:31:16.716252192 +0000
-+++ inputmethod/mozc-tool226/Makefile	2026-08-29 05:31:16.719082440 +0000
+--- inputmethod/mozc-tool226/Makefile	2026-09-17 08:29:30.283137017 +0000
++++ inputmethod/mozc-tool226/Makefile	2026-09-17 08:29:30.287404319 +0000
 @@ -1,7 +1,7 @@
- # $NetBSD: Makefile,v 1.21 2026/05/14 16:41:20 ryoon Exp $
+ # $NetBSD: Makefile,v 1.22 2026/09/02 19:03:08 wiz Exp $
  
  PKGNAME=	${DISTNAME:S/mozc-/mozc-tool-/}
--PKGREVISION=	44
-+PKGREVISION=	45
+-PKGREVISION=	45
++PKGREVISION=	46
  
  INSTALLATION_DIRS+=	libexec
  
 diff -urN a/inputmethod/uim-mozc226/Makefile b/inputmethod/uim-mozc226/Makefile
---- inputmethod/uim-mozc226/Makefile	2026-08-29 05:31:16.733830963 +0000
-+++ inputmethod/uim-mozc226/Makefile	2026-08-29 05:31:16.736845871 +0000
+--- inputmethod/uim-mozc226/Makefile	2026-09-17 08:29:30.301698035 +0000
++++ inputmethod/uim-mozc226/Makefile	2026-09-17 08:29:30.305855547 +0000
 @@ -1,7 +1,7 @@
- # $NetBSD: Makefile,v 1.19 2026/05/14 16:41:21 ryoon Exp $
+ # $NetBSD: Makefile,v 1.20 2026/09/02 19:03:11 wiz Exp $
  
  PKGNAME=	uim-${DISTNAME}
--PKGREVISION=	42
-+PKGREVISION=	43
+-PKGREVISION=	43
++PKGREVISION=	44
  
  CONFLICTS+=	ibus-mozc<=1.13.1651.102
  
