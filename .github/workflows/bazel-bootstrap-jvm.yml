@@ -65,6 +65,11 @@ jobs:
       # 見つからず VCVARSALL.bat not found で止まるので、VS の環境を入れて
       # BAZEL_VC を指す。
       - uses: ilammy/msvc-dev-cmd@v1
+      # third_party の genrule が zip を呼ぶ (netty の native lib を絞る)。
+      # Git bash に zip は無いので入れる。無いと Exit 127 で止まる。
+      - name: install zip
+        shell: pwsh
+        run: choco install zip -y --no-progress
       - name: bootstrap the patched dist
         shell: bash
         run: |
