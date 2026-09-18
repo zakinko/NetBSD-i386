@@ -37,6 +37,10 @@ on:
         description: 'stock の段で建てる release の版 (例 9.3.0rc2)'
         type: string
         default: '9.3.0rc2'
+      stock_patch:
+        description: 'stock の段で素の木へ当てる ci/bazel-bootstrap/ の当て物 (空なら素のまま)'
+        type: string
+        default: ''
 
 # target と stage も group に入れる。ref だけにすると、別の OS を押した瞬間に
 # 走っている数時間の build が打ち消される。同じ組み合わせを続けて押したとき
@@ -52,6 +56,7 @@ jobs:
     timeout-minutes: 350
     env:
       DIST_VER: ${{ inputs.dist_ver }}
+      STOCK_PATCH_NAME: ${{ inputs.stock_patch }}
     steps:
       - uses: actions/checkout@v4
       - uses: vmactions/netbsd-vm@v1
@@ -59,7 +64,7 @@ jobs:
           mem: 8192
           cpu: 4
           copyback: false
-          envs: 'GITHUB_WORKSPACE DIST_VER'
+          envs: 'GITHUB_WORKSPACE DIST_VER STOCK_PATCH_NAME'
           run: |
             set -x
             sh "$GITHUB_WORKSPACE/ci/bazel-bsd/run.sh" ${{ inputs.stage }}
@@ -70,6 +75,7 @@ jobs:
     timeout-minutes: 350
     env:
       DIST_VER: ${{ inputs.dist_ver }}
+      STOCK_PATCH_NAME: ${{ inputs.stock_patch }}
     steps:
       - uses: actions/checkout@v4
       - uses: vmactions/freebsd-vm@v1
@@ -77,7 +83,7 @@ jobs:
           mem: 8192
           cpu: 4
           copyback: false
-          envs: 'GITHUB_WORKSPACE DIST_VER'
+          envs: 'GITHUB_WORKSPACE DIST_VER STOCK_PATCH_NAME'
           run: |
             set -x
             sh "$GITHUB_WORKSPACE/ci/bazel-bsd/run.sh" ${{ inputs.stage }}
@@ -88,6 +94,7 @@ jobs:
     timeout-minutes: 350
     env:
       DIST_VER: ${{ inputs.dist_ver }}
+      STOCK_PATCH_NAME: ${{ inputs.stock_patch }}
     steps:
       - uses: actions/checkout@v4
       - uses: vmactions/openbsd-vm@v1
@@ -95,7 +102,7 @@ jobs:
           mem: 8192
           cpu: 4
           copyback: false
-          envs: 'GITHUB_WORKSPACE DIST_VER'
+          envs: 'GITHUB_WORKSPACE DIST_VER STOCK_PATCH_NAME'
           run: |
             set -x
             sh "$GITHUB_WORKSPACE/ci/bazel-bsd/run.sh" ${{ inputs.stage }}
@@ -106,6 +113,7 @@ jobs:
     timeout-minutes: 350
     env:
       DIST_VER: ${{ inputs.dist_ver }}
+      STOCK_PATCH_NAME: ${{ inputs.stock_patch }}
     steps:
       - uses: actions/checkout@v4
       - uses: vmactions/dragonflybsd-vm@v1
@@ -113,7 +121,7 @@ jobs:
           mem: 8192
           cpu: 4
           copyback: false
-          envs: 'GITHUB_WORKSPACE DIST_VER'
+          envs: 'GITHUB_WORKSPACE DIST_VER STOCK_PATCH_NAME'
           run: |
             set -x
             sh "$GITHUB_WORKSPACE/ci/bazel-bsd/run.sh" ${{ inputs.stage }}
@@ -124,6 +132,7 @@ jobs:
     timeout-minutes: 350
     env:
       DIST_VER: ${{ inputs.dist_ver }}
+      STOCK_PATCH_NAME: ${{ inputs.stock_patch }}
     steps:
       - uses: actions/checkout@v4
       - uses: vmactions/ghostbsd-vm@v1
@@ -131,7 +140,7 @@ jobs:
           mem: 8192
           cpu: 4
           copyback: false
-          envs: 'GITHUB_WORKSPACE DIST_VER'
+          envs: 'GITHUB_WORKSPACE DIST_VER STOCK_PATCH_NAME'
           run: |
             set -x
             sh "$GITHUB_WORKSPACE/ci/bazel-bsd/run.sh" ${{ inputs.stage }}

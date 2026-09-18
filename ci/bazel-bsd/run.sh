@@ -41,6 +41,15 @@ if [ "$STAGE" = stock ]; then
 	PLAIN=1
 	export PLAIN
 	DIST_VER=${DIST_VER:-9.3.0rc2}
+	# STOCK_PATCH_NAME が来たら、ci/bazel-bootstrap/ のその当て物を素の木へ
+	# 一枚だけ当てる。「素で落ちる」と「その一行を直せば建つ」は別の主張で、
+	# 後者は当てた run を指せないと言えない。
+	if [ -n "${STOCK_PATCH_NAME:-}" ]; then
+		STOCK_PATCH=$GITHUB_WORKSPACE/ci/bazel-bootstrap/$STOCK_PATCH_NAME
+		[ -f "$STOCK_PATCH" ] || { say "$STOCK_PATCH が無い"; exit 1; }
+		export STOCK_PATCH
+		echo "### 素の木へ当てる: $STOCK_PATCH_NAME"
+	fi
 fi
 if [ -n "${DIST_VER:-}" ]; then
 	export DIST_VER
