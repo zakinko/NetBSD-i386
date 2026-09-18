@@ -124,7 +124,7 @@ diff -urN a/inputmethod/mozc-server226/Makefile.common b/inputmethod/mozc-server
  .include "../../mk/atomic64.mk"
 diff -urN a/inputmethod/mozc-server226/distinfo b/inputmethod/mozc-server226/distinfo
 --- inputmethod/mozc-server226/distinfo	2026-08-29 05:31:16.706055924 +0000
-+++ inputmethod/mozc-server226/distinfo	2026-08-29 05:31:16.712940878 +0000
++++ inputmethod/mozc-server226/distinfo	2026-09-18 05:50:44.906040203 +0000
 @@ -33,10 +33,10 @@
  SHA1 (patch-gui_word__register__dialog_word__register__dialog.cc) = 218e3706b819855814ba8871504fc7ccb4e40b23
  SHA1 (patch-gyp_common.gypi) = ce27e8665b9dab4dc6d34d337a2cb8c985c9e6f4
@@ -134,7 +134,7 @@ diff -urN a/inputmethod/mozc-server226/distinfo b/inputmethod/mozc-server226/dis
  SHA1 (patch-ipc_ipc__path__manager__test.cc) = 1b83b513383f184f5ab5a56cce734b7934998533
  SHA1 (patch-ipc_named__event.cc) = 8be0b1e5c4675e5b238e07b63e395dbed3c2d125
 -SHA1 (patch-ipc_unix__ipc.cc) = d5d86910ca610015103a309bba8d6392d96f6ce6
-+SHA1 (patch-ipc_unix__ipc.cc) = 3747b9d164f10f95b4f2d6d2b85cbefa1904594d
++SHA1 (patch-ipc_unix__ipc.cc) = 188907f6a7a4a55d79148add75ef8f26f65c9cab
  SHA1 (patch-protobuf_protobuf.gyp) = bb1c9684881199936abb8acd73948d1cb174a1ea
  SHA1 (patch-renderer_renderer.gyp) = 83493259d6b8cd9ab6871512bebc9616d72132d1
  SHA1 (patch-session_session.cc) = 3ae2c8dd056aae4c92d9dbfdac53d9c45261aad2
@@ -222,8 +222,8 @@ diff -urN a/inputmethod/mozc-server226/patches/patch-ipc_ipc__path__manager.cc b
 +     return true;
 diff -urN a/inputmethod/mozc-server226/patches/patch-ipc_unix__ipc.cc b/inputmethod/mozc-server226/patches/patch-ipc_unix__ipc.cc
 --- inputmethod/mozc-server226/patches/patch-ipc_unix__ipc.cc	2026-08-29 05:31:16.704723073 +0000
-+++ inputmethod/mozc-server226/patches/patch-ipc_unix__ipc.cc	2026-08-29 05:31:16.711504661 +0000
-@@ -2,7 +2,19 @@
++++ inputmethod/mozc-server226/patches/patch-ipc_unix__ipc.cc	2026-09-18 05:50:30.832636181 +0000
+@@ -2,7 +2,16 @@
  
  * NetBSD support
  
@@ -237,14 +237,11 @@ diff -urN a/inputmethod/mozc-server226/patches/patch-ipc_unix__ipc.cc b/inputmet
 +  does.  Without it IPCPathManager::IsValidServer() takes its
 +  "if (pid == 0) return true" path and never checks the peer.
 +
-+* kern.proc.args wants four MIB elements, and the third one has to be
-+  KERN_PROC_PATHNAME to get a path rather than the argv block.
-+
 +--- ipc/unix_ipc.cc.orig
  +++ ipc/unix_ipc.cc
  @@ -28,7 +28,7 @@
   // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-@@ -13,7 +25,16 @@
+@@ -13,7 +22,16 @@
   
   #include <arpa/inet.h>
   #include <fcntl.h>
@@ -262,7 +259,7 @@ diff -urN a/inputmethod/mozc-server226/patches/patch-ipc_unix__ipc.cc b/inputmet
     // sometimes doesn't support the getsockopt(sock, SOL_SOCKET, SO_PEERCRED)
     // system call.
     // TODO(yusukes): Add implementation for ARM Linux.
-@@ -22,7 +43,7 @@
+@@ -22,7 +40,7 @@
     struct ucred peer_cred;
     int peer_cred_len = sizeof(peer_cred);
     if (getsockopt(socket, SOL_SOCKET, SO_PEERCRED,
@@ -271,7 +268,7 @@ diff -urN a/inputmethod/mozc-server226/patches/patch-ipc_unix__ipc.cc b/inputmet
     }
   
     *pid = peer_cred.pid;
-@@ -43,11 +64,40 @@
+@@ -43,11 +61,40 @@
  +    LOG(WARNING) << "uid mismatch." << peer_cred.unp_euid << "!=" << ::geteuid();
  +    return false;
  +  }
