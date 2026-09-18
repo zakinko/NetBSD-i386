@@ -236,6 +236,15 @@ EMACS_TYPE=	$ETYPE
 # 建てているものとは関係がない。CDN は pkgsrc が配る distfile を一通り
 # 持っているので、そこに寄せる。
 MASTER_SITE_OVERRIDE=	https://cdn.NetBSD.org/pub/pkgsrc/distfiles/
+# 道具は CDN の binary で入れるが、その set は四半期 branch (2026Q2) の
+# もので、木は trunk。trunk 側で依存が bump されると (2026-09-02 の pcre2
+# 10.48 がそれ)、binary で入った pcre2-10.47 は木の pcre2>=10.48 を満たさず、
+# pkgsrc が pcre2 を建て直して pkg_add する所で
+#	pkg_add: A different version of pcre2-10.48 is already installed: pcre2-10.47
+# と拒まれ、glib2 -> mozc-server226 -> mozc-elisp226 と上まで落ちた。
+# 新しい版は建っているので、置き換えを許す (-U)。make replace が使うのと
+# 同じ旗で、既に入っていなければ何もしない。
+PKG_ADD=	\${NATIVE_PKG_ADD_CMD} \${PKGTOOLS_ARGS} -U
 EOF
 if [ -n "$WRKOBJ" ]; then
 	cat >> /etc/mk.conf <<EOF
@@ -288,36 +297,51 @@ done
 # 取れるので、ここで建てて退避しておく。あとで対にする。
 if [ "$DEEP" = 1 ]; then
 	echo
-	echo "--- (DEEP) 未修正の mozc-server226 を建てて binary を退避する ---"
-	# 未修正の木は gtk2 と qt5 を buildlink する。この PR が直そうとして
-	# いるのがまさにそれで、放っておくと gdk-pixbuf2 -> libjpeg-turbo ->
-	# nasm -> gcc14 まで辿り、11G の disk を使い切って落ちる。実際に
-	# 105% まで行って落ちた。要らない依存を測るために建てる筋合いはないので
-	# binary で入れる。測る対象 (mozc の ipc) はソースから建つので変わらない。
-	echo "    GUI 側の依存を binary で入れる"
-	# pkg_add には時間切れが無い。取得先が黙ると落ちずに待ち続けるので、
-	# 一度 qt5-qtbase で五時間無音のまま上限に当たり、測定が一つも取れずに
-	# 終わった。待つ上限を外から付ける。取れなければ「取れず」で先へ進む
-	# ので、ここで止まる理由はない。
-	for q in glib2 gtk2+ qt5-qtbase zinnia curl; do
-		printf '      %-12s ' "$q"
-		if timeout 900 env PKG_PATH="$BINPKG" pkg_add -U "$q" >/dev/null 2>&1; then
-			echo "入った"
-		else
-			rc=$?
-			[ "$rc" = 124 ] && echo "★ 15 分で時間切れ" || echo "取れず"
-		fi
-	done
-	df -h / | sed 's/^/      /'
-	cd /usr/pkgsrc/inputmethod/mozc-server226
-	if make package-install > /tmp/b-unpatched.log 2>&1; then
-		cp /usr/pkg/libexec/mozc_server /root/mozc_server.unpatched
-		echo "  退避した: $(ls -l /root/mozc_server.unpatched | awk '{print $5}') バイト"
-		pkg_delete -f mozc-server-2.26.4282.100nb45 >/dev/null 2>&1 \
-			|| pkg_delete -f 'mozc-server-2.26*' >/dev/null 2>&1 || true
-		make clean > /dev/null 2>&1 || true
+	echo "--- (DEEP) 未修正の mozc-server226 の binary を退避する ---"
+	# 未修正の server は CDN の binary set が持っている。bulk build が配って
+	# いるその物で、9/2 の bump は PKGREVISION だけなので ipc の code は
+	# trunk の未修正と同じ。tgz から libexec/mozc_server だけ抜けば install
+	# も依存の解決も要らない。9/2 以降、未修正の木は pcre2>=10.48 と
+	# qt5-qtbase nb2 を要求して binary set に無く、建て直すと qt5 まで source
+	# になる。取れなければ下の source build に落ちる。
+	UNP=$(ftp -o - "$BINPKG/" 2>/dev/null | grep -oE 'mozc-server-2\.26\.[0-9.]+(nb[0-9]+)?\.tgz' | sort -u | tail -1)
+	if [ -n "$UNP" ] && timeout 900 ftp -o /tmp/unp.tgz "$BINPKG/$UNP" >/dev/null 2>&1 \
+	   && mkdir -p /tmp/unp && tar xzf /tmp/unp.tgz -C /tmp/unp libexec/mozc_server 2>/dev/null; then
+		cp /tmp/unp/libexec/mozc_server /root/mozc_server.unpatched
+		echo "  CDN の $UNP から抜いた: $(ls -l /root/mozc_server.unpatched | awk '{print $5}') バイト"
+		rm -rf /tmp/unp /tmp/unp.tgz
 	else
-		echo "  ★ 未修正 server が建たない"; tail -20 /tmp/b-unpatched.log | sed 's/^/    /'
+		echo "  CDN に未修正の binary が無い (${UNP:-一覧に出ない})。source から建てる"
+		# 未修正の木は gtk2 と qt5 を buildlink する。この PR が直そうとして
+		# いるのがまさにそれで、放っておくと gdk-pixbuf2 -> libjpeg-turbo ->
+		# nasm -> gcc14 まで辿り、11G の disk を使い切って落ちる。実際に
+		# 105% まで行って落ちた。要らない依存を測るために建てる筋合いはないので
+		# binary で入れる。測る対象 (mozc の ipc) はソースから建つので変わらない。
+		echo "    GUI 側の依存を binary で入れる"
+		# pkg_add には時間切れが無い。取得先が黙ると落ちずに待ち続けるので、
+		# 一度 qt5-qtbase で五時間無音のまま上限に当たり、測定が一つも取れずに
+		# 終わった。待つ上限を外から付ける。取れなければ「取れず」で先へ進む
+		# ので、ここで止まる理由はない。
+		for q in glib2 gtk2+ qt5-qtbase zinnia curl; do
+			printf '      %-12s ' "$q"
+			if timeout 900 env PKG_PATH="$BINPKG" pkg_add -U "$q" >/dev/null 2>&1; then
+				echo "入った"
+			else
+				rc=$?
+				[ "$rc" = 124 ] && echo "★ 15 分で時間切れ" || echo "取れず"
+			fi
+		done
+		df -h / | sed 's/^/      /'
+		cd /usr/pkgsrc/inputmethod/mozc-server226
+		if make package-install > /tmp/b-unpatched.log 2>&1; then
+			cp /usr/pkg/libexec/mozc_server /root/mozc_server.unpatched
+			echo "  退避した: $(ls -l /root/mozc_server.unpatched | awk '{print $5}') バイト"
+			pkg_delete -f mozc-server-2.26.4282.100nb45 >/dev/null 2>&1 \
+				|| pkg_delete -f 'mozc-server-2.26*' >/dev/null 2>&1 || true
+			make clean > /dev/null 2>&1 || true
+		else
+			echo "  ★ 未修正 server が建たない"; tail -20 /tmp/b-unpatched.log | sed 's/^/    /'
+		fi
 	fi
 fi
 
