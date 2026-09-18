@@ -104,13 +104,17 @@ echo "=== 素性 ==="
 uname -a
 sysctl -n hw.ncpu
 df -h / /usr | sed 's/^/  /'
-# KVM で走っているか TCG かを、ゲスト側から見る。qemu に -enable-kvm を渡した
-# ことは host 側の話で、ゲストが実際に何の上で動いているかは別に測れる。
-# TCG だと CPU は "QEMU Virtual CPU" を名乗り、KVM だとホストの実 CPU 名が
-# そのまま見える。速度が 10 倍違うので、遅い回の原因を切り分けるのに要る。
+# CPU の名乗りをゲスト側から見る。ただし KVM か TCG かはここでは決まらない。
+# runvm.sh は -cpu host を渡していないので、KVM でも qemu の既定 model
+# (qemu64) が "QEMU Virtual CPU version 2.5+" を名乗る。TCG でも同じ名前で、
+# 名乗りだけでは二つを分けられない。以前ここで "QEMU Virtual CPU" を TCG と
+# 断じていたが、その回は host 側が -enable-kvm で起動し (起動行に KVM と出る)、
+# 三本が一時間で終わっていた。TCG なら三時間を超える。KVM か TCG かは host
+# 側の「KVM あり」と起動行、それに所要時間で見る。実 CPU 名が見えたときだけ
+# KVM と言える。
 echo "  CPU: $(sysctl -n machdep.cpu_brand 2>/dev/null || sysctl -n hw.model 2>/dev/null)"
 case "$(sysctl -n machdep.cpu_brand 2>/dev/null)" in
-*"QEMU Virtual CPU"*) echo "  → TCG (emulation)。10 倍以上遅い" ;;
+*"QEMU Virtual CPU"*) echo "  → qemu の既定 model。KVM/TCG は名乗りでは分からない (host 側の起動行を見る)" ;;
 "")                   echo "  → 判別できず" ;;
 *)                    echo "  → KVM (実 CPU が見えている)" ;;
 esac
