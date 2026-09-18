@@ -19,6 +19,10 @@ on:
         description: 'JDK 21..25 を三通りの当て方で掃く (15 job。時間がかかる)'
         type: boolean
         default: false
+      local_jdk:
+        description: '二段目の javac を local の JDK にして、当て物のどちらの半分が要るかを測る (3 job)'
+        type: boolean
+        default: false
 
 concurrency:
   group: bazel-bootstrap-jvm-${{ github.ref }}
@@ -208,3 +212,46 @@ jobs:
           # しない。どちらだったかだけ報告させる。
           CONTROL_EXPECT: either
           SMOKE: '1'
+
+  # 当て物の bootstrap.sh 側の半分が、どこで効くのかを出す。
+  #
+  # 9.3.0 の bootstrap.sh は --java_runtime_version=${JAVA_VERSION} (= 遠隔
+  # JDK 21) を指す。二段目の JavacBootstrap genrule は toolchain の
+  # java_runtime の javac を呼ぶので、遠隔 21 が在る箱では二段目は 21 で走り、
+  # bootstrap.sh 側の -proc:full は何も変えない。JDK 掃き (run 35305507603) で
+  # 実際にそうなった。compile.sh だけで 23/24/25 とも建つ。
+  #
+  # 遠隔 JDK が配られていない箱 (BSD) では local の JDK が二段目に来る。
+  # その条件を Linux で作って、bootstrap.sh 側の半分が要るのかを測る。
+  # 要らないなら当て物から落とす。踏んでいない行は送らない。
+  local-jdk:
+    if: inputs.local_jdk
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [control, compile-only, both]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: local_jdk / ${{ matrix.variant }}
+        run: |
+          set -x
+          case "${{ matrix.variant }}" in
+          control)      P=proc-full.patch ;;
+          compile-only) P=proc-full-compile-only.patch ;;
+          both)         P=proc-full.patch ;;
+          esac
+          sh ci/bazel-bootstrap/run-dist.sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/$P"
+        env:
+          DIST_VER: ${{ inputs.dist_ver }}
+          MODE: ${{ matrix.variant == 'control' && 'control' || 'patched' }}
+          CONTROL_EXPECT: either
+          SMOKE: '1'
+          # 二段目の javac を JAVA_HOME の JDK 25 にする。BSD で起きている
+          # ことを Linux で作る。
+          EXTRA_BAZEL_ARGS: '--java_runtime_version=local_jdk --tool_java_runtime_version=local_jdk'
