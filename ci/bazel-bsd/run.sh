@@ -23,13 +23,29 @@
 #	              → pip の hub を落とし、runtime_env_toolchains を足す
 #	java_tools    同上
 #
+#	stock      指定した release の dist を、枝の変更を一切被せずに建てる。
+#	           「今の上流の release がこの BSD でそのまま建つか」を測る段。
+#	           DIST_VER で版を選ぶ (既定 9.3.0rc2)
+#
 # 使い方:
-#	sh ci/bazel-bsd/run.sh [bootstrap|master]
+#	sh ci/bazel-bsd/run.sh [bootstrap|stock|posix-sh|rules-cc|master]
 set -eu
 
 STAGE=${1:-bootstrap}
 BRANCH=${BRANCH:-probe/plain-upstream}
 REPO=${REPO:-https://github.com/zakinko/bazel.git}
+
+# stock の段は素の dist をそのまま建てる。枝の当て物を被せると、上流の
+# release が素で建つかという問いに答えられなくなる。
+if [ "$STAGE" = stock ]; then
+	PLAIN=1
+	export PLAIN
+	DIST_VER=${DIST_VER:-9.3.0rc2}
+fi
+if [ -n "${DIST_VER:-}" ]; then
+	export DIST_VER
+	echo "### dist の版: $DIST_VER"
+fi
 
 # posix-sh の段では bash を入れない。BSD は base に bash を持たないので、
 # 入れなければ本当に存在しない箱になる。そこで bootstrap script の POSIX sh
@@ -346,8 +362,8 @@ echo "踏み台: $B"
 
 # set -e の下で `[ ... ] && { ...; }` を素で置くと、偽のときにその AND 列の
 # 終了値が 1 になって script ごと終わる。if で書く。
-if [ "$STAGE" = bootstrap ]; then
-	say "段 bootstrap まで完了"
+if [ "$STAGE" = bootstrap ] || [ "$STAGE" = stock ]; then
+	say "段 $STAGE まで完了${DIST_VER:+ (dist $DIST_VER)}"
 	exit 0
 fi
 
