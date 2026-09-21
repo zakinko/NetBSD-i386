@@ -27,6 +27,10 @@ on:
         description: 'posix-sh-alpine だけ走らせる (musl の直しを撃つとき)'
         type: boolean
         default: false
+      alpine_musl:
+        description: 'bash 入りの Alpine で musl の直しだけを当てて建てる (sh 化と切り離す)'
+        type: boolean
+        default: false
 
 concurrency:
   group: bazel-bootstrap-jvm-${{ github.ref }}
@@ -36,7 +40,7 @@ jobs:
   # 当てて建て、成功と version を確かめる。Linux / macOS × JDK 21 / 25。
   # JDK 21 は -proc:full が既定なので「変わらない」側の確認。
   patched:
-    if: ${{ !inputs.alpine_only }}
+    if: ${{ !inputs.alpine_only && !inputs.alpine_musl }}
     strategy:
       fail-fast: false
       matrix:
@@ -65,7 +69,7 @@ jobs:
   # run-dist.sh を回す。bazel の cc autoconfig が windows-latest の VS2022 を
   # 見つける。出来る binary は output/bazel.exe。
   windows:
-    if: ${{ !inputs.alpine_only }}
+    if: ${{ !inputs.alpine_only && !inputs.alpine_musl }}
     strategy:
       fail-fast: false
       matrix:
@@ -114,7 +118,7 @@ jobs:
   # 既定が bash でない Linux (Ubuntu/Debian の /bin/sh は dash) と、
   # 既定シェルが zsh になった macOS。どちらも /bin/sh で建てる。
   posix-sh:
-    if: ${{ !inputs.alpine_only }}
+    if: ${{ !inputs.alpine_only && !inputs.alpine_musl }}
     strategy:
       fail-fast: false
       matrix:
@@ -137,6 +141,7 @@ jobs:
   # sh しかない Linux。Alpine の /bin/sh は busybox の ash で、bash は
   # 入っていない。bash が存在しない箱で建つことを示す。
   posix-sh-alpine:
+    if: ${{ !inputs.alpine_musl }}
     runs-on: ubuntu-latest
     container: alpine:latest
     timeout-minutes: 90
@@ -167,7 +172,7 @@ jobs:
   # 当てずに建て、既知の場所で落ちることを確かめる (JDK 25、Linux のみ)。
   # 当て物が実際に何かを直していることの対照。落ちるのが成功なので緑になる。
   control:
-    if: ${{ !inputs.alpine_only }}
+    if: ${{ !inputs.alpine_only && !inputs.alpine_musl }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -194,7 +199,7 @@ jobs:
   #   compile-only   compile.sh だけ (一段目の javac)
   #   both           両方 (出そうとしている当て物そのもの)
   jdk-sweep:
-    if: ${{ inputs.sweep && !inputs.alpine_only }}
+    if: ${{ inputs.sweep && !inputs.alpine_only && !inputs.alpine_musl }}
     strategy:
       fail-fast: false
       matrix:
@@ -237,7 +242,7 @@ jobs:
   # その条件を Linux で作って、bootstrap.sh 側の半分が要るのかを測る。
   # 要らないなら当て物から落とす。踏んでいない行は送らない。
   local-jdk:
-    if: ${{ inputs.local_jdk && !inputs.alpine_only }}
+    if: ${{ inputs.local_jdk && !inputs.alpine_only && !inputs.alpine_musl }}
     strategy:
       fail-fast: false
       matrix:
@@ -267,3 +272,30 @@ jobs:
           # 二段目の javac を JAVA_HOME の JDK 25 にする。BSD で起きている
           # ことを Linux で作る。
           EXTRA_BAZEL_ARGS: '--java_runtime_version=local_jdk --tool_java_runtime_version=local_jdk'
+
+  # musl の直し (unix_jni.h の stat64) を、bash の有無と切り離して測る。
+  # bash を入れた Alpine で、9.3.0rc2 に musl-stat.patch だけを当てて建てる。
+  # bash が無い箱では rules_jvm_external の StampJarManifest (env bash) で
+  # 止まるので、そちらは別の話として分ける。建ったら煙試験まで。
+  alpine-musl:
+    if: inputs.alpine_musl
+    runs-on: ubuntu-latest
+    container: alpine:latest
+    timeout-minutes: 120
+    steps:
+      - name: install the tools Alpine does not ship (bash を含む)
+        run: |
+          set -x
+          apk add --no-cache openjdk21 build-base linux-headers zip unzip curl \
+            python3 patch findutils coreutils grep sed which git bash
+          echo "bash: $(command -v bash)  musl: $(ls /lib/ld-musl-* 2>/dev/null)"
+      - uses: actions/checkout@v4
+      - name: bootstrap 9.3.0rc2 with the musl fix only
+        run: |
+          set -x
+          sh ci/bazel-bootstrap/run-dist.sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/musl-stat.patch"
+        env:
+          DIST_VER: ${{ inputs.dist_ver }}
+          JAVA_HOME: /usr/lib/jvm/java-21-openjdk
+          MODE: patched
+          SMOKE: '1'
