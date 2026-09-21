@@ -27,6 +27,23 @@ OpenBSD)
 esac
 [ -x "$JAVA_HOME/bin/javac" ] || { echo "JDK 25 が $JAVA_HOME に無い"; ls -d /usr/local/*jdk* /usr/local/openjdk* 2>/dev/null; exit 1; }
 export JAVA_HOME
+if ! "$JAVA_HOME/bin/javac" -version >/dev/null 2>&1; then
+	# HardenedBSD では package の javac が libjli.so を見つけられなかった
+	# (run 35611323359)。何が違うのかを箱に言わせてから、LD_LIBRARY_PATH で
+	# 越えられるかを試す。越えたとしてもそれは箱の設定の話で、sh 化の話ではない。
+	echo "=== javac が起動しない。診断"
+	"$JAVA_HOME/bin/javac" -version 2>&1 | head -3 || true
+	ldd "$JAVA_HOME/bin/javac" 2>&1 | head -8 || true
+	readelf -d "$JAVA_HOME/bin/javac" 2>/dev/null | grep -i 'rpath\|runpath\|origin' || true
+	sysctl -a 2>/dev/null | grep -i 'hardening\|pax' | head -12 || true
+	ls -l /proc 2>/dev/null | head -2 || true
+	LD_LIBRARY_PATH="$JAVA_HOME/lib:$JAVA_HOME/lib/server"; export LD_LIBRARY_PATH
+	if "$JAVA_HOME/bin/javac" -version >/dev/null 2>&1; then
+		echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH で起動した"
+	else
+		echo "LD_LIBRARY_PATH でも起動しない"; exit 1
+	fi
+fi
 # 作業場は広い所へ。VM の /var/tmp か /tmp
 for d in /var/tmp /tmp; do [ -w "$d" ] && { WORK=$d/master-sh; break; }; done
 export WORK

@@ -93,6 +93,13 @@ if [ "$LOG_BASH" = 1 ]; then
 	BASH_REAL=$(command -v bash || true)
 	if [ -z "$BASH_REAL" ]; then
 		echo "bash が無い箱なので記録は要らない"
+	elif [ /bin/sh -ef "$BASH_REAL" ] || [ "$(readlink -f /bin/sh 2>/dev/null)" = "$(readlink -f "$BASH_REAL" 2>/dev/null)" ]; then
+		# Fedora や Arch は /bin/sh が bash への symlink。bash を動かすと sh 自身が
+		# 消えて何も動かなくなる (run 35611323359 で "sh: command not found")。
+		# この箱では sh で走らせることと bash で走らせることが同じ物なので、
+		# 数える意味も無い。
+		echo "/bin/sh が bash そのもの ($BASH_REAL) なので記録 wrapper は張らない"
+		BASHLOG=""
 	else
 		SUDO=""; [ "$(id -u)" = 0 ] || SUDO=sudo
 		$SUDO mv "$BASH_REAL" "$BASH_REAL.real"
