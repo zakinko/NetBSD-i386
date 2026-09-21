@@ -36,7 +36,7 @@ on:
         default: false
 
 concurrency:
-  group: bazel-master-sh-${{ github.ref }}-${{ inputs.branch }}-${{ inputs.wide }}
+  group: bazel-master-sh-${{ github.ref }}-${{ inputs.branch }}-${{ inputs.bsd }}-${{ inputs.wide }}-${{ github.run_id }}
   cancel-in-progress: true
 
 jobs:
