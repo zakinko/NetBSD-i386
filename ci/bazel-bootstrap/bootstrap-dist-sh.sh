@@ -36,6 +36,20 @@ if [ -n "$EXTRA_PATCH" ]; then
 	patch -p1 -f -i "$EXTRA_PATCH" </dev/null
 fi
 
+# BSD では rules_python が配る CPython が無く、MODULE.bazel の pip.parse が
+# 評価の時点で interpreter を要って module extension ごと落ちる
+# (hub_builder.bzl の Traceback)。pip の塊を使うのは bazel_nojdk の graph の
+# 外だけなので、踏み台を建てる間は落とす。zakinko/bazel の
+# probe/plain-upstream の ci/master-bootstrap.sh と同じ手当て。
+case "$OS" in
+FreeBSD|OpenBSD|NetBSD|DragonFly)
+	echo "=== pip の塊を落とす (BSD)"
+	python3 "$(dirname "$0")/drop_pip_dev_deps.py" .
+	if grep -rq bazel_pip_dev_deps MODULE.bazel third_party/py 2>/dev/null; then
+		echo "pip の塊が残っている"; exit 1
+	fi ;;
+esac
+
 # OS ごとの手当て。どれも sh 化とは無関係で、素の dist を bash で建てるときにも要る物。
 EXTRA_BAZEL_ARGS="${EXTRA_BAZEL_ARGS:-} --shell_executable=$SH_BIN"
 case "$OS" in

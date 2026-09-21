@@ -13,7 +13,11 @@ FreeBSD|GhostBSD)
 	JAVA_HOME=/usr/local/openjdk25 ;;
 OpenBSD)
 	# jdk%25 は「stem が jdk で版が 25」。無印 jdk-25 は別の意味になる
-	pkg_add -I jdk%25 zip unzip python3 bash git
+	# OpenBSD の package は flavor 付きで、python3 は python%3、unzip は
+	# unzip-- と書く。ci/bazel-bsd/run.sh が踏んだ罠と同じ。
+	pkg_add -I jdk%25 zip bash git
+	pkg_add -I 'python%3'
+	pkg_add -I unzip-- || pkg_add -I unzip
 	JAVA_HOME=/usr/local/jdk-25 ;;
 *) echo "この OS の手当てを持っていない: $OS"; exit 1 ;;
 esac
