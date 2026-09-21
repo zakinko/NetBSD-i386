@@ -6,7 +6,7 @@
 # それとは別の変換なので、枝を実際に建てないと証拠にならない。
 #
 #   1. 配布済みの bazel で、枝の checkout から dist archive を作る
-#      (bazel build //src:bazel-distfile)。ここは何の shell でもよい
+#      (bazel build //:bazel-distfile)。ここは何の shell でもよい
 #   2. その dist を $SH_BIN で bootstrap する (compile.sh を sh で起動し、
 #      genrule の shell も --shell_executable=$SH_BIN にする)
 #   3. 出来た bazel で小さな workspace を建てて走らせる
@@ -55,9 +55,9 @@ for f in compile.sh scripts/bootstrap/*.sh src/main/cpp/generate_jvm_module_opti
 done
 EXTRA="${EXTRA_BAZEL_ARGS:-}"
 case "$(uname -s)" in Darwin) EXTRA="$EXTRA --features=-layering_check" ;; esac
-"$WORK/bazel" build $EXTRA //src:bazel-distfile > "$WORK/distfile.log" 2>&1 \
+"$WORK/bazel" build $EXTRA //:bazel-distfile > "$WORK/distfile.log" 2>&1 \
 	|| { echo "dist archive が作れない"; tail -40 "$WORK/distfile.log"; exit 1; }
-DIST=$(ls bazel-bin/src/bazel-distfile.zip)
+DIST=$(ls bazel-bin/bazel-distfile.zip)
 echo "dist: $DIST ($(du -h "$DIST" | cut -f1))"
 "$WORK/bazel" shutdown >/dev/null 2>&1 || true
 
