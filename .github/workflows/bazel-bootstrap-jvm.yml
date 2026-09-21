@@ -312,6 +312,9 @@ jobs:
           # ld-linux が無く execvp が ENOENT になる。Alpine の利用者は箱の
           # openjdk を使うので、それに合わせる。bootstrap と煙試験の両方に効く。
           EXTRA_BAZEL_ARGS: '--java_runtime_version=local_jdk --tool_java_runtime_version=local_jdk'
+          # ijar / singlejar / turbine の prebuilt も glibc 向け。source から建てる
+          # toolchain を煙試験の workspace で定義して使う。
+          SMOKE_NONPREBUILT: '1'
 
   # master の bash→sh の枝を、枝そのもので踏む。配布済み bazel で枝から dist を
   # 作り、その dist を /bin/sh だけで bootstrap し、出来た bazel で煙試験。
