@@ -76,8 +76,8 @@ index e4097ae..1688a1c 100644
      ],
 -    java_runtime = Label("//toolchains:remotejdk_25"),
 +    # There is no remote JDK for the BSDs or for musl, so the default toolchain
-+    # runs its tools on the JDK that is installed.
-+    java_runtime = Label("//toolchains:local_jdk"),
++    # runs its tools on whichever runtime is registered (local_jdk here).
++    java_runtime = Label("//toolchains:current_java_runtime"),
      oneversion = Label("//toolchains:one_version"),
  )
  

@@ -139,7 +139,9 @@ case "$OS" in
 MINGW*|MSYS*|CYGWIN*)
 	# MSYS は //p:gen を /p:gen に path 変換して "invalid package name" になる。
 	# label を変換の対象から外す。
-	MSYS2_ARG_CONV_EXCL='*'; export MSYS2_ARG_CONV_EXCL ;;
+	# '*' だと --repository_cache= の path 変換まで止まって bazel が動かない。
+	# label だけを外す。
+	MSYS2_ARG_CONV_EXCL='//'; export MSYS2_ARG_CONV_EXCL ;;
 esac
 mkdir -p "$WORK/smoke/p"; cd "$WORK/smoke"
 RJ=$(grep -o 'name = "rules_java", version = "[^"]*"' "$WORK/dist/MODULE.bazel" | sed 's/.*version = "//; s/"//')
