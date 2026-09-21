@@ -308,6 +308,10 @@ jobs:
           JAVA_HOME: /usr/lib/jvm/java-21-openjdk
           MODE: patched
           SMOKE: '1'
+          # rules_java の遠隔 JDK は glibc 向けの binary で、musl では
+          # ld-linux が無く execvp が ENOENT になる。Alpine の利用者は箱の
+          # openjdk を使うので、それに合わせる。bootstrap と煙試験の両方に効く。
+          EXTRA_BAZEL_ARGS: '--java_runtime_version=local_jdk --tool_java_runtime_version=local_jdk'
 
   # master の bash→sh の枝を、枝そのもので踏む。配布済み bazel で枝から dist を
   # 作り、その dist を /bin/sh だけで bootstrap し、出来た bazel で煙試験。
