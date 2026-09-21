@@ -139,8 +139,11 @@ public class Hello {
 EOF
 	SMOKE_ARGS=""
 	if [ "${SMOKE_NONPREBUILT:-0}" = 1 ]; then
-		SMOKE_ARGS="--extra_toolchains=//p:nonprebuilt_definition"
+		# どの java_toolchain が選ばれたかを bazel に言わせる。選ばれていない
+		# ときに、渡し方が悪いのか登録が負けているのかを分けるため。
+		SMOKE_ARGS="--extra_toolchains=//p:nonprebuilt_definition --toolchain_resolution_debug=toolchain_type"
 	fi
+	echo "smoke の追加引数: ${EXTRA_BAZEL_ARGS:-} $SMOKE_ARGS"
 	rc=0
 	for t in gen hello_cc hello_java; do
 		echo "--- //p:$t"
@@ -157,6 +160,7 @@ EOF
 			echo "SMOKE //p:$t OK"
 		else
 			echo "SMOKE NG //p:$t"
+			grep -i 'ToolchainResolution.*java\|Selected\|nonprebuilt' "$WORK/smoke-$t.log" | head -20
 			tail -30 "$WORK/smoke-$t.log"
 			rc=1
 		fi
