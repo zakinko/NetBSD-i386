@@ -13,6 +13,9 @@
 set -eu
 
 DIST=$1
+# 同梱の当て物と script は cd する前に絶対 path で覚える。相対のままだと
+# $WORK へ移ったあとで見つからない (Alpine で rules_java の当て物が見つからず落ちた)。
+CI_DIR=$(cd "$(dirname "$0")" && pwd)
 SH_BIN=${SH_BIN:-/bin/sh}
 LOG_BASH=${LOG_BASH:-0}
 NO_VIS=${NO_VIS:-0}
@@ -44,7 +47,7 @@ fi
 case "$OS" in
 FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|OpenBSD|NetBSD|DragonFly)
 	echo "=== pip の塊を落とす (BSD)"
-	python3 "$(dirname "$0")/drop_pip_dev_deps.py" .
+	python3 "$CI_DIR/drop_pip_dev_deps.py" .
 	if grep -rq bazel_pip_dev_deps MODULE.bazel third_party/py 2>/dev/null; then
 		echo "pip の塊が残っている"; exit 1
 	fi
@@ -54,7 +57,7 @@ FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|OpenBSD|NetBSD|DragonFly)
 	# 自前の当て物 (third_party/protobuf.patch) を差しているので、その末尾に
 	# 同じ 6 行を足す。sh 化とは無関係で、bash で建てても同じ所で落ちる。
 	echo "=== protobuf #29694 を third_party/protobuf.patch に足す (BSD)"
-	cat "$(dirname "$0")/protobuf-29694.patch" >> third_party/protobuf.patch ;;
+	cat "$CI_DIR/protobuf-29694.patch" >> third_party/protobuf.patch ;;
 esac
 
 # OS ごとの手当て。どれも sh 化とは無関係で、素の dist を bash で建てるときにも要る物。
@@ -158,7 +161,7 @@ FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|OpenBSD|NetBSD|DragonFly) RJ_PATCH=1 ;;
 Linux) if [ -e /lib/ld-musl-x86_64.so.1 ]; then RJ_PATCH=1; fi ;;
 esac
 if [ -n "$RJ_PATCH" ]; then
-	P="$(dirname "$0")/rules_java-$RJ-local.patch"
+	P="$CI_DIR/rules_java-$RJ-local.patch"
 	[ -f "$P" ] || { echo "rules_java $RJ 向けの当て物 ($P) が無い"; exit 1; }
 	cp "$P" rules_java-local.patch
 	printf 'single_version_override(\n    module_name = "rules_java",\n    version = "%s",\n    patch_strip = 1,\n    patches = ["//:rules_java-local.patch"],\n)\n' "$RJ" >> MODULE.bazel
