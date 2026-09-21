@@ -32,6 +32,10 @@ if [ "$OS" = HardenedBSD ]; then
 	# "Tainted process refusing to run binary" で拒む (run 35616309433)。
 	# 箱の設定なので、試験の箱では外す。LD_LIBRARY_PATH では越えられなかった。
 	sysctl hardening.harden_rtld=0
+	# その先で JVM が CodeHeap を確保できない。PaX の MPROTECT が JIT の W^X を
+	# 拒む (mozc の CI で確かめた)。試験の箱では外す。
+	sysctl hardening.pax.mprotect.status=0 || true
+	sysctl hardening.pax.pageexec.status=0 || true
 fi
 if ! "$JAVA_HOME/bin/javac" -version >/dev/null 2>&1; then
 	# HardenedBSD では package の javac が libjli.so を見つけられなかった
