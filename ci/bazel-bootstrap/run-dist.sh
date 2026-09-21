@@ -97,6 +97,19 @@ EOF
 	cat > "$WORK/smoke/p/BUILD" <<'EOF'
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_java//java:java_binary.bzl", "java_binary")
+load("@rules_java//toolchains:default_java_toolchain.bzl", "NONPREBUILT_TOOLCHAIN_CONFIGURATION", "default_java_toolchain")
+
+# rules_java は linux_x86_64 なら無条件に glibc 向けの prebuilt (ijar, singlejar,
+# turbine) を選び、musl を見分けない。Alpine ではそれが execvp で ENOENT に
+# なるので、source から建てる構成の toolchain を自分で定義して登録する。
+# SMOKE_NONPREBUILT=1 のときだけ --extra_toolchains で指す。
+default_java_toolchain(
+    name = "nonprebuilt",
+    configuration = NONPREBUILT_TOOLCHAIN_CONFIGURATION,
+    java_runtime = "@rules_java//toolchains:local_jdk",
+    source_version = "21",
+    target_version = "21",
+)
 
 genrule(
     name = "gen",
@@ -124,6 +137,10 @@ public class Hello {
   public static void main(String[] a) { System.out.println("java-ok"); }
 }
 EOF
+	SMOKE_ARGS=""
+	if [ "${SMOKE_NONPREBUILT:-0}" = 1 ]; then
+		SMOKE_ARGS="--extra_toolchains=//p:nonprebuilt_definition"
+	fi
 	rc=0
 	for t in gen hello_cc hello_java; do
 		echo "--- //p:$t"
@@ -133,7 +150,7 @@ EOF
 			act="run"
 		fi
 		if ( cd "$WORK/smoke" && "$bz" $act --repository_cache="$cache" \
-			--verbose_failures ${EXTRA_BAZEL_ARGS:-} "//p:$t" ) \
+			--verbose_failures ${EXTRA_BAZEL_ARGS:-} $SMOKE_ARGS "//p:$t" ) \
 			> "$WORK/smoke-$t.log" 2>&1
 		then
 			tail -2 "$WORK/smoke-$t.log"
