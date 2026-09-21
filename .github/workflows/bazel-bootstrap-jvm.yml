@@ -31,6 +31,10 @@ on:
         description: 'bash 入りの Alpine で musl の直しだけを当てて建てる (sh 化と切り離す)'
         type: boolean
         default: false
+      master_sh:
+        description: 'master の posix-sh-v2 枝そのものを dist にして /bin/sh だけで bootstrap する (Ubuntu と macOS)'
+        type: boolean
+        default: false
 
 concurrency:
   group: bazel-bootstrap-jvm-${{ github.ref }}
@@ -40,7 +44,7 @@ jobs:
   # 当てて建て、成功と version を確かめる。Linux / macOS × JDK 21 / 25。
   # JDK 21 は -proc:full が既定なので「変わらない」側の確認。
   patched:
-    if: ${{ !inputs.alpine_only && !inputs.alpine_musl }}
+    if: ${{ !inputs.alpine_only && !inputs.alpine_musl && !inputs.master_sh }}
     strategy:
       fail-fast: false
       matrix:
@@ -69,7 +73,7 @@ jobs:
   # run-dist.sh を回す。bazel の cc autoconfig が windows-latest の VS2022 を
   # 見つける。出来る binary は output/bazel.exe。
   windows:
-    if: ${{ !inputs.alpine_only && !inputs.alpine_musl }}
+    if: ${{ !inputs.alpine_only && !inputs.alpine_musl && !inputs.master_sh }}
     strategy:
       fail-fast: false
       matrix:
@@ -118,7 +122,7 @@ jobs:
   # 既定が bash でない Linux (Ubuntu/Debian の /bin/sh は dash) と、
   # 既定シェルが zsh になった macOS。どちらも /bin/sh で建てる。
   posix-sh:
-    if: ${{ !inputs.alpine_only && !inputs.alpine_musl }}
+    if: ${{ !inputs.alpine_only && !inputs.alpine_musl && !inputs.master_sh }}
     strategy:
       fail-fast: false
       matrix:
@@ -141,7 +145,7 @@ jobs:
   # sh しかない Linux。Alpine の /bin/sh は busybox の ash で、bash は
   # 入っていない。bash が存在しない箱で建つことを示す。
   posix-sh-alpine:
-    if: ${{ !inputs.alpine_musl }}
+    if: ${{ !inputs.alpine_musl && !inputs.master_sh }}
     runs-on: ubuntu-latest
     container: alpine:latest
     timeout-minutes: 90
@@ -172,7 +176,7 @@ jobs:
   # 当てずに建て、既知の場所で落ちることを確かめる (JDK 25、Linux のみ)。
   # 当て物が実際に何かを直していることの対照。落ちるのが成功なので緑になる。
   control:
-    if: ${{ !inputs.alpine_only && !inputs.alpine_musl }}
+    if: ${{ !inputs.alpine_only && !inputs.alpine_musl && !inputs.master_sh }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -199,7 +203,7 @@ jobs:
   #   compile-only   compile.sh だけ (一段目の javac)
   #   both           両方 (出そうとしている当て物そのもの)
   jdk-sweep:
-    if: ${{ inputs.sweep && !inputs.alpine_only && !inputs.alpine_musl }}
+    if: ${{ inputs.sweep && !inputs.alpine_only && !inputs.alpine_musl && !inputs.master_sh }}
     strategy:
       fail-fast: false
       matrix:
@@ -242,7 +246,7 @@ jobs:
   # その条件を Linux で作って、bootstrap.sh 側の半分が要るのかを測る。
   # 要らないなら当て物から落とす。踏んでいない行は送らない。
   local-jdk:
-    if: ${{ inputs.local_jdk && !inputs.alpine_only && !inputs.alpine_musl }}
+    if: ${{ inputs.local_jdk && !inputs.alpine_only && !inputs.alpine_musl && !inputs.master_sh }}
     strategy:
       fail-fast: false
       matrix:
@@ -302,3 +306,35 @@ jobs:
           JAVA_HOME: /usr/lib/jvm/java-21-openjdk
           MODE: patched
           SMOKE: '1'
+
+  # master の bash→sh の枝を、枝そのもので踏む。配布済み bazel で枝から dist を
+  # 作り、その dist を /bin/sh だけで bootstrap し、出来た bazel で煙試験。
+  # Ubuntu では /bin/bash を記録 wrapper に差し替え、bootstrap の間に誰が bash を
+  # 呼んだかを全部数える (--shell_executable では shebang や env bash は
+  # 消えないので、数えるまで「bash を呼ばない」とは言えない)。
+  # macOS は /bin/bash が SIP で触れないので記録は無し。
+  master-sh:
+    if: inputs.master_sh
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, log_bash: '1' }
+          - { os: macos-latest,  log_bash: '0' }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: master posix-sh-v2 under /bin/sh
+        run: |
+          set -x
+          echo "/bin/sh -> $(readlink -f /bin/sh 2>/dev/null || readlink /bin/sh || echo '(macOS: bash in posix mode)')"
+          sh ci/bazel-bootstrap/run-master-sh.sh
+        env:
+          BRANCH: posix-sh-v2
+          SH_BIN: /bin/sh
+          LOG_BASH: ${{ matrix.log_bash }}
