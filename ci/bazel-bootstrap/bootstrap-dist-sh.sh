@@ -47,7 +47,14 @@ FreeBSD|OpenBSD|NetBSD|DragonFly)
 	python3 "$(dirname "$0")/drop_pip_dev_deps.py" .
 	if grep -rq bazel_pip_dev_deps MODULE.bazel third_party/py 2>/dev/null; then
 		echo "pip の塊が残っている"; exit 1
-	fi ;;
+	fi
+	# master が固定する protobuf 36 は、_POSIX_C_SOURCE を define するせいで
+	# BSD の libc++ の <locale> が isascii を見失って翻訳できない
+	# (protocolbuffers/protobuf#29694 で直しを出してある)。bazel は protobuf に
+	# 自前の当て物 (third_party/protobuf.patch) を差しているので、その末尾に
+	# 同じ 6 行を足す。sh 化とは無関係で、bash で建てても同じ所で落ちる。
+	echo "=== protobuf #29694 を third_party/protobuf.patch に足す (BSD)"
+	cat "$(dirname "$0")/protobuf-29694.patch" >> third_party/protobuf.patch ;;
 esac
 
 # OS ごとの手当て。どれも sh 化とは無関係で、素の dist を bash で建てるときにも要る物。
