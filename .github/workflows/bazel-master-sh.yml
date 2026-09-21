@@ -30,9 +30,13 @@ on:
         description: 'BSD (FreeBSD / OpenBSD / GhostBSD) も回す (VM で時間がかかる)'
         type: boolean
         default: true
+      wide:
+        description: 'さらに広く: Fedora / Arch / openSUSE / Windows / HardenedBSD / MidnightBSD'
+        type: boolean
+        default: false
 
 concurrency:
-  group: bazel-master-sh-${{ github.ref }}-${{ inputs.branch }}
+  group: bazel-master-sh-${{ github.ref }}-${{ inputs.branch }}-${{ inputs.wide }}
   cancel-in-progress: true
 
 jobs:
@@ -63,29 +67,43 @@ jobs:
         include:
           - { name: ubuntu-dash, os: ubuntu-latest, container: '', patch: '' }
           - { name: alpine-ash,  os: ubuntu-latest, container: 'alpine:latest', patch: musl-stat-master.patch }
+          # /bin/sh が bash の glibc Linux。dash 以外の Linux を三つ
+          - { name: fedora-bash,   os: ubuntu-latest, container: 'fedora:latest',         patch: '', wide: true }
+          - { name: arch-bash,     os: ubuntu-latest, container: 'archlinux:latest',      patch: '', wide: true }
+          - { name: opensuse-bash, os: ubuntu-latest, container: 'opensuse/tumbleweed',   patch: '', wide: true }
     name: linux (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     container: ${{ matrix.container }}
     timeout-minutes: 150
     steps:
       - name: Alpine の道具 (bash は rules_jvm_external が env bash で要るので入れる。記録 wrapper で数える)
-        if: matrix.container != ''
+        if: matrix.container == 'alpine:latest'
         run: |
           set -x
           apk add --no-cache openjdk25 build-base linux-headers zip unzip curl \
             python3 patch findutils coreutils grep sed which git bash
           echo "/bin/sh -> $(readlink -f /bin/sh)"
+      - name: Fedora の道具
+        if: matrix.container == 'fedora:latest' && inputs.wide
+        run: dnf install -y gcc gcc-c++ zip unzip curl python3 patch findutils which git tar gzip
+      - name: Arch の道具
+        if: matrix.container == 'archlinux:latest' && inputs.wide
+        run: pacman -Sy --noconfirm gcc zip unzip curl python patch which git
+      - name: openSUSE の道具
+        if: matrix.container == 'opensuse/tumbleweed' && inputs.wide
+        run: zypper --non-interactive install gcc gcc-c++ zip unzip curl python3 patch findutils which git tar gzip
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
-        if: matrix.container == ''
+        if: matrix.container != 'alpine:latest'
         with: { distribution: temurin, java-version: '25' }
       - uses: actions/download-artifact@v4
         with: { name: master-sh-dist, path: master-sh-dist }
       - name: bootstrap the dist under /bin/sh (${{ matrix.name }})
+        if: ${{ !matrix.wide || inputs.wide }}
         run: |
           set -x
           echo "/bin/sh -> $(readlink -f /bin/sh)"
-          if [ -n "${{ matrix.container }}" ]; then export JAVA_HOME=/usr/lib/jvm/java-25-openjdk; fi
+          if [ "${{ matrix.container }}" = alpine:latest ]; then export JAVA_HOME=/usr/lib/jvm/java-25-openjdk; fi
           P=""; if [ -n "${{ matrix.patch }}" ]; then P="$GITHUB_WORKSPACE/ci/bazel-bootstrap/${{ matrix.patch }}"; fi
           EXTRA_PATCH="$P" sh ci/bazel-bootstrap/bootstrap-dist-sh.sh "$GITHUB_WORKSPACE/master-sh-dist/bazel-distfile.zip"
         env:
@@ -160,6 +178,75 @@ jobs:
       - uses: actions/download-artifact@v4
         with: { name: master-sh-dist, path: master-sh-dist }
       - uses: vmactions/ghostbsd-vm@v1
+        with:
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE'
+          run: |
+            set -x
+            sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/bsd-master-sh.sh" "$GITHUB_WORKSPACE/master-sh-dist/bazel-distfile.zip"
+
+  windows:
+    needs: dist
+    if: inputs.wide
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '25' }
+      - uses: actions/download-artifact@v4
+        with: { name: master-sh-dist, path: master-sh-dist }
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: install zip and unzip
+        shell: pwsh
+        run: choco install zip unzip -y --no-progress
+      - name: bootstrap the dist under MSYS sh (Windows)
+        shell: bash
+        run: |
+          set -x
+          export BAZEL_VC="${VCINSTALLDIR%\\}"
+          export BAZEL_SH="$(cygpath -w "$(which bash)")"
+          echo "sh -> $(which sh)  ($(sh -c 'echo $BASH_VERSION'))"
+          sh ci/bazel-bootstrap/bootstrap-dist-sh.sh "$GITHUB_WORKSPACE/master-sh-dist/bazel-distfile.zip"
+        env:
+          SH_BIN: /usr/bin/sh
+          LOG_BASH: '0'
+          NO_VIS: '1'
+
+  hardenedbsd:
+    needs: dist
+    if: inputs.wide
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: master-sh-dist, path: master-sh-dist }
+      - uses: vmactions/hardenedbsd-vm@v1
+        with:
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE'
+          run: |
+            set -x
+            sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/bsd-master-sh.sh" "$GITHUB_WORKSPACE/master-sh-dist/bazel-distfile.zip"
+
+  # MidnightBSD は FreeBSD 派生だが uname -s が違う。bazel がどこで止まるかを
+  # 見るための箱。通ることは期待していない。
+  midnightbsd:
+    needs: dist
+    if: inputs.wide
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: master-sh-dist, path: master-sh-dist }
+      - uses: vmactions/midnightbsd-vm@v1
         with:
           mem: 8192
           cpu: 4

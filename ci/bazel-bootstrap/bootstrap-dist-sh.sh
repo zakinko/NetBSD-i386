@@ -42,7 +42,7 @@ fi
 # 外だけなので、踏み台を建てる間は落とす。zakinko/bazel の
 # probe/plain-upstream の ci/master-bootstrap.sh と同じ手当て。
 case "$OS" in
-FreeBSD|OpenBSD|NetBSD|DragonFly)
+FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|OpenBSD|NetBSD|DragonFly)
 	echo "=== pip の塊を落とす (BSD)"
 	python3 "$(dirname "$0")/drop_pip_dev_deps.py" .
 	if grep -rq bazel_pip_dev_deps MODULE.bazel third_party/py 2>/dev/null; then
@@ -63,11 +63,17 @@ case "$OS" in
 Darwin)
 	# clang の module map で grpc が layering_check に落ちる
 	EXTRA_BAZEL_ARGS="$EXTRA_BAZEL_ARGS --features=-layering_check" ;;
-FreeBSD|OpenBSD|NetBSD|DragonFly)
+FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|OpenBSD|NetBSD|DragonFly)
 	# libm は別 library。FreeBSD の devel/bazel9 も同じ
 	EXTRA_BAZEL_ARGS="$EXTRA_BAZEL_ARGS --host_linkopt=-lm --linkopt=-lm"
 	ulimit -n unlimited 2>/dev/null || ulimit -n 4096 2>/dev/null || true
 	ulimit -d unlimited 2>/dev/null || true ;;
+esac
+case "$OS" in
+MINGW*|MSYS*|CYGWIN*)
+	# exec 構成の genrule (fastutil の zip) に client の PATH を届ける。
+	# 9.3.0 の Windows の job と同じ。
+	EXTRA_BAZEL_ARGS="$EXTRA_BAZEL_ARGS --host_action_env=PATH" ;;
 esac
 if [ "$OS" = OpenBSD ]; then
 	# C++ の object を C の driver で link するので runtime を明示する
@@ -102,8 +108,10 @@ fi
 
 echo "=== bootstrap を $SH_BIN で"
 "$SH_BIN" ./compile.sh > compile.log 2>&1 || true
-if [ -x output/bazel ] && output/bazel version 2>/dev/null | grep -q '^Build label:'; then
-	output/bazel version | grep 'Build label'
+BZ=output/bazel
+if [ -x output/bazel.exe ]; then BZ=output/bazel.exe; fi
+if [ -x "$BZ" ] && "$BZ" version 2>/dev/null | grep -q '^Build label:'; then
+	"$BZ" version | grep 'Build label'
 	echo "RESULT master-sh $OS $SH_BIN OK: 枝の dist を sh だけで bootstrap できた"
 else
 	echo "RESULT master-sh $OS $SH_BIN NG"
@@ -136,7 +144,7 @@ printf 'public class Hello { public static void main(String[] a) { System.out.pr
 rc=0
 for t in gen hello_cc hello_java; do
 	if [ "$t" = gen ]; then act=build; else act=run; fi
-	if "$WORK/dist/output/bazel" $act --repository_cache="$WORK/dist/derived/repository_cache" ${EXTRA_BAZEL_ARGS:-} "//p:$t" > "$WORK/smoke-$t.log" 2>&1; then
+	if "$WORK/dist/$BZ" $act --repository_cache="$WORK/dist/derived/repository_cache" ${EXTRA_BAZEL_ARGS:-} "//p:$t" > "$WORK/smoke-$t.log" 2>&1; then
 		echo "SMOKE //p:$t OK"
 	else
 		echo "SMOKE NG //p:$t"; tail -20 "$WORK/smoke-$t.log"; rc=1

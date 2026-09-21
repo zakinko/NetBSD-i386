@@ -8,8 +8,12 @@ DIST=$1
 OS=$(uname -s)
 echo "### $OS $(uname -r)  /bin/sh は $(/bin/sh -c 'echo $0'; ls -l /bin/sh | sed 's/.* -> //')"
 case "$OS" in
-FreeBSD|GhostBSD)
+FreeBSD|GhostBSD|HardenedBSD)
 	env ASSUME_ALWAYS_YES=yes pkg install -y openjdk25 zip unzip python3 bash git patch
+	JAVA_HOME=/usr/local/openjdk25 ;;
+MidnightBSD)
+	# mports には bazel が無いが openjdk25 は在る。道具は mport で入れる。
+	mport install -y openjdk25 zip unzip python3 bash git patch || mport install openjdk25 zip unzip python3 bash git patch
 	JAVA_HOME=/usr/local/openjdk25 ;;
 OpenBSD)
 	# jdk%25 は「stem が jdk で版が 25」。無印 jdk-25 は別の意味になる
