@@ -36,8 +36,10 @@ on:
         type: boolean
         default: false
 
+# どの組を押したかも group に入れる。ref だけだと、alpine の run が走っている
+# 最中に master-sh を押した瞬間に alpine が打ち消される (実際に起きた)。
 concurrency:
-  group: bazel-bootstrap-jvm-${{ github.ref }}
+  group: bazel-bootstrap-jvm-${{ github.ref }}-${{ inputs.sweep }}-${{ inputs.local_jdk }}-${{ inputs.alpine_only }}-${{ inputs.alpine_musl }}-${{ inputs.master_sh }}
   cancel-in-progress: true
 
 jobs:
