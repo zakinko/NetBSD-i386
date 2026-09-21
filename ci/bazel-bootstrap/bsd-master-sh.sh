@@ -27,7 +27,9 @@ OpenBSD)
 esac
 [ -x "$JAVA_HOME/bin/javac" ] || { echo "JDK 25 が $JAVA_HOME に無い"; ls -d /usr/local/*jdk* /usr/local/openjdk* 2>/dev/null; exit 1; }
 export JAVA_HOME
-if [ "$OS" = HardenedBSD ]; then
+# HardenedBSD の uname -s は FreeBSD を返す (mozc の煙試験も FreeBSD と名乗った)。
+# 名前ではなく kern.features.hbsd_hardening で見分ける。
+if [ "$(sysctl -n kern.features.hbsd_hardening 2>/dev/null)" = 1 ]; then
 	# hardening.harden_rtld=1 が、JDK の RUNPATH ($ORIGIN:$ORIGIN/../lib) を
 	# "Tainted process refusing to run binary" で拒む (run 35616309433)。
 	# 箱の設定なので、試験の箱では外す。LD_LIBRARY_PATH では越えられなかった。
