@@ -84,6 +84,13 @@ WRAP
 fi
 
 EXTRA_BAZEL_ARGS="${EXTRA_BAZEL_ARGS:-} --shell_executable=$SH_BIN"
+# master の bazel が rules_python 1.7.0 の runtime_env_toolchain_interpreter.sh を
+# visibility で弾く (9.3.0 の bazel は同じ 1.7.0 で通す)。sh 化とは無関係で、
+# bash で bootstrap した対照でも同じ所で落ちることを別 job で確かめている。
+# NO_VIS=1 のときだけ検査を切って、sh 化の script を analysis の先まで踏ませる。
+if [ "${NO_VIS:-0}" = 1 ]; then
+	EXTRA_BAZEL_ARGS="$EXTRA_BAZEL_ARGS --check_visibility=false"
+fi
 case "$(uname -s)" in Darwin) EXTRA_BAZEL_ARGS="$EXTRA_BAZEL_ARGS --features=-layering_check" ;; esac
 export EXTRA_BAZEL_ARGS
 "$SH_BIN" ./compile.sh > compile.log 2>&1 || true
@@ -121,7 +128,7 @@ printf 'public class Hello { public static void main(String[] a) { System.out.pr
 rc=0
 for t in gen hello_cc hello_java; do
 	if [ "$t" = gen ]; then act=build; else act=run; fi
-	if "$WORK/dist/output/bazel" $act --shell_executable="$SH_BIN" --repository_cache="$WORK/dist/derived/repository_cache" ${EXTRA_BAZEL_ARGS:-} "//p:$t" > "$WORK/smoke-$t.log" 2>&1; then
+	if "$WORK/dist/output/bazel" $act --repository_cache="$WORK/dist/derived/repository_cache" ${EXTRA_BAZEL_ARGS:-} "//p:$t" > "$WORK/smoke-$t.log" 2>&1; then
 		echo "SMOKE //p:$t OK"
 	else
 		echo "SMOKE NG //p:$t"; tail -20 "$WORK/smoke-$t.log"; rc=1

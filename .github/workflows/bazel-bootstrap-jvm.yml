@@ -325,8 +325,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, log_bash: '1' }
-          - { os: macos-latest,  log_bash: '0' }
+          # 対照: 同じ dist を bash で bootstrap する。ここで落ちる物は sh 化の
+          # せいではない
+          - { os: ubuntu-latest, sh: /bin/bash, log_bash: '0', no_vis: '0', name: control-bash }
+          # 本番: sh で bootstrap し、bash を誰が呼んだかを数える
+          - { os: ubuntu-latest, sh: /bin/sh,   log_bash: '1', no_vis: '0', name: sh }
+          # master の rules_python の visibility の壁を切って、sh 化の script を
+          # analysis の先まで踏ませる
+          - { os: ubuntu-latest, sh: /bin/sh,   log_bash: '1', no_vis: '1', name: sh-novis }
+          - { os: macos-latest,  sh: /bin/sh,   log_bash: '0', no_vis: '1', name: sh-novis }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 180
     steps:
@@ -335,12 +342,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-      - name: master posix-sh-v2 under /bin/sh
+      - name: master posix-sh-v2 (${{ matrix.name }})
         run: |
           set -x
           echo "/bin/sh -> $(readlink -f /bin/sh 2>/dev/null || readlink /bin/sh || echo '(macOS: bash in posix mode)')"
           sh ci/bazel-bootstrap/run-master-sh.sh
         env:
           BRANCH: posix-sh-v2
-          SH_BIN: /bin/sh
+          SH_BIN: ${{ matrix.sh }}
           LOG_BASH: ${{ matrix.log_bash }}
+          NO_VIS: ${{ matrix.no_vis }}
