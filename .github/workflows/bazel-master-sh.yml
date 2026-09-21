@@ -1,0 +1,170 @@
+# master の bash→sh の枝 (posix-sh-v2) を、CI で届く OS 全部で踏む。
+#
+# dist archive は OS に依らないので Linux で一度だけ作って artifact に上げ、
+# 各 OS はそれを落として自分の /bin/sh だけで bootstrap し、出来た bazel で
+# 煙試験まで通す。/bin/sh の実装が OS ごとに違うのが狙い:
+#
+#   Ubuntu    dash
+#   Alpine    busybox ash (musl。unix_jni.h の stat64 の当て物が要る)
+#   macOS     bash の posix mode (既定 shell は zsh)
+#   FreeBSD   ash 系
+#   GhostBSD  同上
+#   OpenBSD   pdksh 系
+#
+# NetBSD と DragonFly は master が host として未対応 (#31069 待ち) で JDK 25 も
+# package に無いので、ここには入れない。
+#
+# master の bazel は rules_python 1.7.0 の interpreter script を visibility で
+# 弾く (bash で bootstrap しても同じ。run 35585160268 の control-bash)。
+# sh 化とは無関係なので --check_visibility=false で越える。
+name: bazel-master-sh
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'zakinko/bazel の枝'
+        type: string
+        default: 'posix-sh-v2'
+      bsd:
+        description: 'BSD (FreeBSD / OpenBSD / GhostBSD) も回す (VM で時間がかかる)'
+        type: boolean
+        default: true
+
+concurrency:
+  group: bazel-master-sh-${{ github.ref }}-${{ inputs.branch }}
+  cancel-in-progress: true
+
+jobs:
+  dist:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '25' }
+      - name: make the dist archive from the branch
+        run: |
+          set -x
+          sh ci/bazel-bootstrap/make-master-dist.sh "$GITHUB_WORKSPACE/bazel-distfile.zip"
+        env:
+          BRANCH: ${{ inputs.branch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: master-sh-dist
+          path: bazel-distfile.zip
+          retention-days: 3
+
+  linux:
+    needs: dist
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: ubuntu-dash, os: ubuntu-latest, container: '', patch: '' }
+          - { name: alpine-ash,  os: ubuntu-latest, container: 'alpine:latest', patch: musl-stat-master.patch }
+    name: linux (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    timeout-minutes: 150
+    steps:
+      - name: Alpine の道具 (bash は rules_jvm_external が env bash で要るので入れる。記録 wrapper で数える)
+        if: matrix.container != ''
+        run: |
+          set -x
+          apk add --no-cache openjdk25 build-base linux-headers zip unzip curl \
+            python3 patch findutils coreutils grep sed which git bash
+          echo "/bin/sh -> $(readlink -f /bin/sh)"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        if: matrix.container == ''
+        with: { distribution: temurin, java-version: '25' }
+      - uses: actions/download-artifact@v4
+        with: { name: master-sh-dist, path: master-sh-dist }
+      - name: bootstrap the dist under /bin/sh (${{ matrix.name }})
+        run: |
+          set -x
+          echo "/bin/sh -> $(readlink -f /bin/sh)"
+          if [ -n "${{ matrix.container }}" ]; then export JAVA_HOME=/usr/lib/jvm/java-25-openjdk; fi
+          P=""; if [ -n "${{ matrix.patch }}" ]; then P="$GITHUB_WORKSPACE/ci/bazel-bootstrap/${{ matrix.patch }}"; fi
+          EXTRA_PATCH="$P" sh ci/bazel-bootstrap/bootstrap-dist-sh.sh "$GITHUB_WORKSPACE/master-sh-dist/bazel-distfile.zip"
+        env:
+          SH_BIN: /bin/sh
+          LOG_BASH: '1'
+          NO_VIS: '1'
+
+  macos:
+    needs: dist
+    runs-on: macos-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '25' }
+      - uses: actions/download-artifact@v4
+        with: { name: master-sh-dist, path: master-sh-dist }
+      - name: bootstrap the dist under /bin/sh (macOS)
+        run: |
+          set -x
+          sh ci/bazel-bootstrap/bootstrap-dist-sh.sh "$GITHUB_WORKSPACE/master-sh-dist/bazel-distfile.zip"
+        env:
+          SH_BIN: /bin/sh
+          LOG_BASH: '0'
+          NO_VIS: '1'
+
+  freebsd:
+    needs: dist
+    if: inputs.bsd
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: master-sh-dist, path: master-sh-dist }
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE'
+          run: |
+            set -x
+            sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/bsd-master-sh.sh" "$GITHUB_WORKSPACE/master-sh-dist/bazel-distfile.zip"
+
+  openbsd:
+    needs: dist
+    if: inputs.bsd
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: master-sh-dist, path: master-sh-dist }
+      - uses: vmactions/openbsd-vm@v1
+        with:
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE'
+          run: |
+            set -x
+            sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/bsd-master-sh.sh" "$GITHUB_WORKSPACE/master-sh-dist/bazel-distfile.zip"
+
+  ghostbsd:
+    needs: dist
+    if: inputs.bsd
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: master-sh-dist, path: master-sh-dist }
+      - uses: vmactions/ghostbsd-vm@v1
+        with:
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE'
+          run: |
+            set -x
+            sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/bsd-master-sh.sh" "$GITHUB_WORKSPACE/master-sh-dist/bazel-distfile.zip"
