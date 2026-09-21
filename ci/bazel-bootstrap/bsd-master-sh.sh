@@ -27,6 +27,12 @@ OpenBSD)
 esac
 [ -x "$JAVA_HOME/bin/javac" ] || { echo "JDK 25 が $JAVA_HOME に無い"; ls -d /usr/local/*jdk* /usr/local/openjdk* 2>/dev/null; exit 1; }
 export JAVA_HOME
+if [ "$OS" = HardenedBSD ]; then
+	# hardening.harden_rtld=1 が、JDK の RUNPATH ($ORIGIN:$ORIGIN/../lib) を
+	# "Tainted process refusing to run binary" で拒む (run 35616309433)。
+	# 箱の設定なので、試験の箱では外す。LD_LIBRARY_PATH では越えられなかった。
+	sysctl hardening.harden_rtld=0
+fi
 if ! "$JAVA_HOME/bin/javac" -version >/dev/null 2>&1; then
 	# HardenedBSD では package の javac が libjli.so を見つけられなかった
 	# (run 35611323359)。何が違うのかを箱に言わせてから、LD_LIBRARY_PATH で

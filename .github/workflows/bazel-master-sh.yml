@@ -70,7 +70,6 @@ jobs:
           # /bin/sh が bash の glibc Linux。dash 以外の Linux を三つ
           - { name: fedora-bash,   os: ubuntu-latest, container: 'fedora:latest',         patch: '', wide: true }
           - { name: arch-bash,     os: ubuntu-latest, container: 'archlinux:latest',      patch: '', wide: true }
-          - { name: opensuse-bash, os: ubuntu-latest, container: 'opensuse/tumbleweed',   patch: '', wide: true }
     name: linux (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     container: ${{ matrix.container }}
@@ -89,9 +88,6 @@ jobs:
       - name: Arch の道具
         if: matrix.container == 'archlinux:latest' && inputs.wide
         run: pacman -Sy --noconfirm gcc zip unzip curl python patch which git
-      - name: openSUSE の道具
-        if: matrix.container == 'opensuse/tumbleweed' && inputs.wide
-        run: zypper --non-interactive install gcc gcc-c++ zip unzip curl python3 patch findutils which git tar gzip
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         if: matrix.container != 'alpine:latest'

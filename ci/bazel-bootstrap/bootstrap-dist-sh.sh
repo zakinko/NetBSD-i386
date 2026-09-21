@@ -148,11 +148,24 @@ java_binary(name = "hello_java", srcs = ["Hello.java"], main_class = "Hello")
 B
 printf '#include <cstdio>\nint main() { std::printf("cc-ok\\n"); return 0; }\n' > p/hello.cc
 printf 'public class Hello { public static void main(String[] a) { System.out.println("java-ok"); } }\n' > p/Hello.java
+# rules_java の遠隔 JDK と prebuilt (ijar, singlejar) は Linux glibc / macOS /
+# Windows の分しか配られていない。BSD と musl では java_binary の煙試験は
+# rules_java の platform 対応を測ることになり、この枝の話ではない。そこでは
+# local の JDK を指して試し、落ちても報告に留めて job は落とさない。
+JAVA_SMOKE_FATAL=1; JAVA_ARGS=""
+case "$OS" in
+FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|OpenBSD|NetBSD|DragonFly) JAVA_SMOKE_FATAL=0; JAVA_ARGS="--java_runtime_version=local_jdk --tool_java_runtime_version=local_jdk" ;;
+Linux) if [ -e /lib/ld-musl-x86_64.so.1 ]; then JAVA_SMOKE_FATAL=0; JAVA_ARGS="--java_runtime_version=local_jdk --tool_java_runtime_version=local_jdk"; fi ;;
+esac
 rc=0
 for t in gen hello_cc hello_java; do
 	if [ "$t" = gen ]; then act=build; else act=run; fi
-	if "$WORK/dist/$BZ" $act --repository_cache="$WORK/dist/derived/repository_cache" ${EXTRA_BAZEL_ARGS:-} "//p:$t" > "$WORK/smoke-$t.log" 2>&1; then
+	extra=""; if [ "$t" = hello_java ]; then extra=$JAVA_ARGS; fi
+	if "$WORK/dist/$BZ" $act --repository_cache="$WORK/dist/derived/repository_cache" ${EXTRA_BAZEL_ARGS:-} $extra "//p:$t" > "$WORK/smoke-$t.log" 2>&1; then
 		echo "SMOKE //p:$t OK"
+	elif [ "$t" = hello_java ] && [ "$JAVA_SMOKE_FATAL" = 0 ]; then
+		echo "SMOKE //p:$t NG (この箱では rules_java の toolchain の話。job は落とさない)"
+		grep -h 'execvp\|not found\|ERROR:' "$WORK/smoke-$t.log" | head -3
 	else
 		echo "SMOKE NG //p:$t"; tail -20 "$WORK/smoke-$t.log"; rc=1
 	fi
