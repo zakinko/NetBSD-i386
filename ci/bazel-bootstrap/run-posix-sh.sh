@@ -11,9 +11,13 @@
 #   SH_BIN  compile.sh を回す shell と、bazel の genrule に渡す shell。
 #           既定 /bin/sh。busybox の ash を測るなら /bin/busybox ash ではなく
 #           ash への path を渡す (例 /usr/bin/ash)。
+#   EXTRA_PATCH  sh 化とは別の当て物をもう一枚当てる。Alpine (musl) は
+#           unix_jni.h の stat64 で建たないので、その直し (musl-stat.patch) を
+#           当てて、sh 化の先まで進むかを見るのに使う
 set -eu
 
 PATCH=$1
+EXTRA_PATCH=${EXTRA_PATCH:-}
 DIST_VER=${DIST_VER:-9.3.0rc1}
 SH_BIN=${SH_BIN:-/bin/sh}
 WORK=${WORK:-$PWD/posix-sh-work}
@@ -50,6 +54,12 @@ for f in compile.sh scripts/bootstrap/compile.sh scripts/bootstrap/buildenv.sh \
 		&& { echo "$f に bash 専用構文が残っている"; exit 1; }
 done
 echo "  5 本とも #!/bin/sh、bash 専用構文なし"
+
+if [ -n "$EXTRA_PATCH" ]; then
+	echo "=== もう一枚当てる ($EXTRA_PATCH)"
+	[ -f "$EXTRA_PATCH" ] || { echo "$EXTRA_PATCH が無い"; exit 1; }
+	patch -p1 -f -i "$EXTRA_PATCH" </dev/null
+fi
 
 # bazel の genrule も同じ shell で回す。/bin/bash に依らないことを示す。
 EXTRA_BAZEL_ARGS="--shell_executable=$SH_BIN"
