@@ -145,6 +145,24 @@ mkdir -p "$WORK/smoke/p"; cd "$WORK/smoke"
 RJ=$(grep -o 'name = "rules_java", version = "[^"]*"' "$WORK/dist/MODULE.bazel" | sed 's/.*version = "//; s/"//')
 RC=$(grep -o 'name = "rules_cc", version = "[^"]*"' "$WORK/dist/MODULE.bazel" | sed 's/.*version = "//; s/"//')
 printf 'bazel_dep(name = "rules_cc", version = "%s")\nbazel_dep(name = "rules_java", version = "%s")\n' "$RC" "$RJ" > MODULE.bazel
+# rules_java の既定 toolchain は java_runtime に remotejdk_25 を決め打ちし、
+# ijar / singlejar / turbine は linux_x86_64 なら glibc 向けの prebuilt を選ぶ。
+# 遠隔 JDK の無い BSD と、prebuilt が動かない musl では、rules_java に当て物を
+# 差して既定 toolchain を local の JDK と source 建ての道具に向ける。glibc の
+# Linux と macOS と Windows は素の rules_java のまま (そこは素で通る)。
+RJ_PATCH=""
+case "$OS" in
+FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|OpenBSD|NetBSD|DragonFly) RJ_PATCH=1 ;;
+Linux) if [ -e /lib/ld-musl-x86_64.so.1 ]; then RJ_PATCH=1; fi ;;
+esac
+if [ -n "$RJ_PATCH" ]; then
+	P="$(dirname "$0")/rules_java-$RJ-local.patch"
+	[ -f "$P" ] || { echo "rules_java $RJ 向けの当て物 ($P) が無い"; exit 1; }
+	cp "$P" rules_java-local.patch
+	printf 'single_version_override(\n    module_name = "rules_java",\n    version = "%s",\n    patch_strip = 1,\n    patches = ["//:rules_java-local.patch"],\n)\n' "$RJ" >> MODULE.bazel
+	: > BUILD
+	echo "rules_java $RJ に当て物を差した"
+fi
 cat > p/BUILD <<'B'
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_java//java:java_binary.bzl", "java_binary")
@@ -158,10 +176,10 @@ printf 'public class Hello { public static void main(String[] a) { System.out.pr
 # Windows の分しか配られていない。BSD と musl では java_binary の煙試験は
 # rules_java の platform 対応を測ることになり、この枝の話ではない。そこでは
 # local の JDK を指して試し、落ちても報告に留めて job は落とさない。
-JAVA_SMOKE_FATAL=1; JAVA_ARGS=""
+JAVA_ARGS=""
 case "$OS" in
-FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|OpenBSD|NetBSD|DragonFly) JAVA_SMOKE_FATAL=0; JAVA_ARGS="--java_runtime_version=local_jdk --tool_java_runtime_version=local_jdk" ;;
-Linux) if [ -e /lib/ld-musl-x86_64.so.1 ]; then JAVA_SMOKE_FATAL=0; JAVA_ARGS="--java_runtime_version=local_jdk --tool_java_runtime_version=local_jdk"; fi ;;
+FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|OpenBSD|NetBSD|DragonFly) JAVA_ARGS="--java_runtime_version=local_jdk --tool_java_runtime_version=local_jdk" ;;
+Linux) if [ -e /lib/ld-musl-x86_64.so.1 ]; then JAVA_ARGS="--java_runtime_version=local_jdk --tool_java_runtime_version=local_jdk"; fi ;;
 esac
 rc=0
 for t in gen hello_cc hello_java; do
@@ -169,9 +187,6 @@ for t in gen hello_cc hello_java; do
 	extra=""; if [ "$t" = hello_java ]; then extra=$JAVA_ARGS; fi
 	if "$WORK/dist/$BZ" $act --repository_cache="$WORK/dist/derived/repository_cache" ${EXTRA_BAZEL_ARGS:-} $extra "//p:$t" > "$WORK/smoke-$t.log" 2>&1; then
 		echo "SMOKE //p:$t OK"
-	elif [ "$t" = hello_java ] && [ "$JAVA_SMOKE_FATAL" = 0 ]; then
-		echo "SMOKE //p:$t NG (この箱では rules_java の toolchain の話。job は落とさない)"
-		grep -h 'execvp\|not found\|ERROR:' "$WORK/smoke-$t.log" | head -3
 	else
 		echo "SMOKE NG //p:$t"; tail -20 "$WORK/smoke-$t.log"; rc=1
 	fi
