@@ -290,10 +290,13 @@ jobs:
             python3 patch findutils coreutils grep sed which git bash
           echo "bash: $(command -v bash)  musl: $(ls /lib/ld-musl-* 2>/dev/null)"
       - uses: actions/checkout@v4
-      - name: bootstrap 9.3.0rc2 with the musl fix only
+      # 当て物は二枚重ね: musl-stat.patch (master 宛の直しそのもの) と
+      # singlejar-off64-9.3.0.patch (9.3.0 だけに要る port.h の腕。master は
+      # #30317 で off64_t を使わなくなっているので不要)。
+      - name: bootstrap 9.3.0rc2 with the musl fixes
         run: |
           set -x
-          sh ci/bazel-bootstrap/run-dist.sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/musl-stat.patch"
+          sh ci/bazel-bootstrap/run-dist.sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/alpine-9.3.0.patch"
         env:
           DIST_VER: ${{ inputs.dist_ver }}
           JAVA_HOME: /usr/lib/jvm/java-21-openjdk
