@@ -38,6 +38,12 @@ if [ -n "$EXTRA_PATCH" ]; then
 	echo "=== 当て物を当てる ($EXTRA_PATCH)"
 	patch -p1 -f -i "$EXTRA_PATCH" </dev/null
 fi
+# musl の箱 (Alpine, Void musl, Chimera) は unix_jni.h の stat64 で翻訳できない。
+# 当て物 (= bazelbuild/bazel へ出す物と同じ) を、ld-musl の有無で自動で当てる。
+if [ "$OS" = Linux ] && ls /lib/ld-musl-* >/dev/null 2>&1; then
+	echo "=== musl: unix_jni.h の当て物を当てる"
+	patch -p1 -f -i "$CI_DIR/musl-stat-master.patch" </dev/null
+fi
 
 # BSD では rules_python が配る CPython が無く、MODULE.bazel の pip.parse が
 # 評価の時点で interpreter を要って module extension ごと落ちる
@@ -255,7 +261,7 @@ printf 'bazel_dep(name = "rules_cc", version = "%s")\nbazel_dep(name = "rules_ja
 RJ_PATCH=""
 case "$OS" in
 FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|OpenBSD|NetBSD|DragonFly) RJ_PATCH=1 ;;
-Linux) if [ -e /lib/ld-musl-x86_64.so.1 ]; then RJ_PATCH=1; fi ;;
+Linux) if ls /lib/ld-musl-* >/dev/null 2>&1; then RJ_PATCH=1; fi ;;
 esac
 if [ -n "$RJ_PATCH" ]; then
 	P="$CI_DIR/rules_java-$RJ-local.patch"
