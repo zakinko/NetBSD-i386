@@ -34,9 +34,13 @@ on:
         description: 'さらに広く: Fedora / Arch / openSUSE / Windows / HardenedBSD / MidnightBSD'
         type: boolean
         default: false
+      jdk21:
+        description: 'master を JDK 21 (JAVA_VERSION=21) で建てられるかを Ubuntu で測るだけ'
+        type: boolean
+        default: false
 
 concurrency:
-  group: bazel-master-sh-${{ github.ref }}-${{ inputs.branch }}-${{ inputs.bsd }}-${{ inputs.wide }}-${{ github.run_id }}
+  group: bazel-master-sh-${{ github.ref }}-${{ inputs.branch }}-${{ inputs.bsd }}-${{ inputs.wide }}-${{ inputs.jdk21 }}-${{ github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -61,6 +65,7 @@ jobs:
 
   linux:
     needs: dist
+    if: ${{ !inputs.jdk21 }}
     strategy:
       fail-fast: false
       matrix:
@@ -109,6 +114,7 @@ jobs:
 
   macos:
     needs: dist
+    if: ${{ !inputs.jdk21 }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:
@@ -128,7 +134,7 @@ jobs:
 
   freebsd:
     needs: dist
-    if: inputs.bsd
+    if: ${{ inputs.bsd && !inputs.jdk21 }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
@@ -147,7 +153,7 @@ jobs:
 
   openbsd:
     needs: dist
-    if: inputs.bsd
+    if: ${{ inputs.bsd && !inputs.jdk21 }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
@@ -166,7 +172,7 @@ jobs:
 
   ghostbsd:
     needs: dist
-    if: inputs.bsd
+    if: ${{ inputs.bsd && !inputs.jdk21 }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
@@ -185,7 +191,7 @@ jobs:
 
   windows:
     needs: dist
-    if: inputs.wide
+    if: ${{ inputs.wide && !inputs.jdk21 }}
     runs-on: windows-latest
     timeout-minutes: 180
     steps:
@@ -213,7 +219,7 @@ jobs:
 
   hardenedbsd:
     needs: dist
-    if: inputs.wide
+    if: ${{ inputs.wide && !inputs.jdk21 }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
@@ -234,7 +240,7 @@ jobs:
   # 見るための箱。通ることは期待していない。
   midnightbsd:
     needs: dist
-    if: inputs.wide
+    if: ${{ inputs.wide && !inputs.jdk21 }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     continue-on-error: true
@@ -251,3 +257,27 @@ jobs:
           run: |
             set -x
             sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/bsd-master-sh.sh" "$GITHUB_WORKSPACE/master-sh-dist/bazel-distfile.zip"
+
+  # master は JAVA_VERSION の既定が 25 だが、Java の source が本当に 25 の言語
+  # 機能を使っているかは別。JDK 21 と JAVA_VERSION=21 で建つなら、package の
+  # JDK が 21 止まりの NetBSD と DragonFly でも kit 無しで建てられる。
+  jdk21:
+    needs: dist
+    if: inputs.jdk21
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21' }
+      - uses: actions/download-artifact@v4
+        with: { name: master-sh-dist, path: master-sh-dist }
+      - name: bootstrap the dist with JDK 21
+        run: |
+          set -x
+          sh ci/bazel-bootstrap/bootstrap-dist-sh.sh "$GITHUB_WORKSPACE/master-sh-dist/bazel-distfile.zip"
+        env:
+          SH_BIN: /bin/sh
+          LOG_BASH: '0'
+          NO_VIS: '1'
+          JAVA_VERSION: '21'
