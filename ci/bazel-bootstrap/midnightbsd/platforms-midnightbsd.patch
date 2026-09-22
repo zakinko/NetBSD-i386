@@ -1,0 +1,19 @@
+The host platform's os constraint comes from this extension, which reads the
+JVM's os.name.  On MidnightBSD that is "midnightbsd", which matches nothing, so
+the host platform carries no os constraint and every select() falls to its
+linux default: the build stops in unix_jni_linux.cc for want of sys/xattr.h
+(run 35745771678).  It is a FreeBSD derivative and its packages are the FreeBSD
+builds, so answer freebsd.  CI only.
+
+diff -u -r a/host/extension.bzl b/host/extension.bzl
+--- a/host/extension.bzl
++++ b/host/extension.bzl
+@@ -22,6 +22,8 @@
+ def _translate_os(os):
+     if os.startswith("mac os"):
+         return "osx"
++    if os.startswith("midnightbsd"):
++        return "freebsd"
+     if os.startswith("freebsd"):
+         return "freebsd"
+     if os.startswith("openbsd"):

@@ -1,0 +1,13 @@
+zstd-jni's MODULE.bazel does not ask for @platforms, so the conditions the
+next patch defines cannot see it (run 35741255342).  Kept in its own file:
+bazel's PatchUtil takes one file per patch.  CI only.
+
+--- a/MODULE.bazel	2026-09-23 00:12:46
++++ b/MODULE.bazel	2026-09-23 00:12:46
+@@ -5,5 +5,6 @@
+ )
+ 
+ bazel_dep(name = "bazel_skylib", version = "1.8.2")
++bazel_dep(name = "platforms", version = "0.0.11")
+ bazel_dep(name = "rules_cc", version = "0.2.17")
+ bazel_dep(name = "rules_java", version = "9.5.0")

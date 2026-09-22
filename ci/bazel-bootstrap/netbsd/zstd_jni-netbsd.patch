@@ -9,15 +9,6 @@ condition bazel #31069 adds to the source tree (run 35736537908).  That needs
 @platforms visible from this module, which its MODULE.bazel does not ask for
 (run 35741255342), so add the bazel_dep as well.  CI only.
 
---- a/MODULE.bazel	2026-09-23 00:12:46
-+++ b/MODULE.bazel	2026-09-23 00:12:46
-@@ -5,5 +5,6 @@
- )
- 
- bazel_dep(name = "bazel_skylib", version = "1.8.2")
-+bazel_dep(name = "platforms", version = "0.0.11")
- bazel_dep(name = "rules_cc", version = "0.2.17")
- bazel_dep(name = "rules_java", version = "9.5.0")
 --- a/BUILD.bazel	2026-09-23 00:12:46
 +++ b/BUILD.bazel	2026-09-23 00:12:46
 @@ -3,11 +3,23 @@

@@ -88,7 +88,8 @@ NetBSD|DragonFly)
 	RG=$(grep -o 'name = "rules_go", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
 	[ -f "$CI_DIR/rules_java-$RJ-local.patch" ] || { echo "rules_java $RJ 向けの当て物が無い"; exit 1; }
 	mkdir -p toolchain_local
-	cp "$NB/platforms-pr142-pr143.patch" "$NB/zstd_jni-netbsd.patch" "$NB/rules_go-pr4711.patch" toolchain_local/
+	cp "$NB/platforms-pr142-pr143.patch" "$NB/zstd_jni-netbsd.patch" \
+		"$NB/zstd_jni-module.patch" "$NB/rules_go-pr4711.patch" toolchain_local/
 	cp "$CI_DIR/rules_java-$RJ-local.patch" toolchain_local/rules_java-local.patch
 	cp "$NB/rules_java-dragonfly.patch" toolchain_local/
 	printf 'exports_files(glob(["*.patch"]))\n' > toolchain_local/BUILD
@@ -112,7 +113,10 @@ single_version_override(
 single_version_override(
     module_name = "zstd-jni",
     patch_strip = 1,
-    patches = ["//toolchain_local:zstd_jni-netbsd.patch"],
+    patches = [
+        "//toolchain_local:zstd_jni-module.patch",
+        "//toolchain_local:zstd_jni-netbsd.patch",
+    ],
 )
 single_version_override(
     module_name = "rules_go",
@@ -150,6 +154,21 @@ MidnightBSD)
 	# いないと言って落ちる、run 35741255342)。macOS で既にしているのと同じく、
 	# 踏み台を建てる間だけ切る
 	EXTRA_BAZEL_ARGS="$EXTRA_BAZEL_ARGS --features=-layering_check"
+	# host platform の os 制約は platforms の extension が os.name から決める。
+	# "midnightbsd" はどれにも当たらず制約無しになり、select が全部 linux の
+	# 既定へ落ちる (run 35745771678)。freebsd と答えさせる
+	mkdir -p toolchain_local
+	cp "$CI_DIR/midnightbsd/platforms-midnightbsd.patch" toolchain_local/
+	printf 'exports_files(glob(["*.patch"]))\n' > toolchain_local/BUILD
+	cat >> MODULE.bazel <<MOD
+
+# MidnightBSD is a FreeBSD derivative the host detection does not know (CI only).
+single_version_override(
+    module_name = "platforms",
+    patch_strip = 1,
+    patches = ["//toolchain_local:platforms-midnightbsd.patch"],
+)
+MOD
 	# 次の壁は rules_go (run 35676218786)。JVM の os.name "midnightbsd" を
 	# そのまま GOOS にするが、Go に MidnightBSD の port は無く、mports の go は
 	# FreeBSD の build。rules_go に midnightbsd → freebsd の一行を差す。
@@ -195,8 +214,12 @@ MINGW*|MSYS*|CYGWIN*)
 esac
 # Chimera は clang だけで gcc を持たない。rules_cc の cc_configure は gcc を
 # 探して落ちる (run 35741255342)。CC で教える
-if [ "$OS" = Linux ] && [ -f /etc/os-release ] && grep -q '^ID=chimera' /etc/os-release; then
-	EXTRA_BAZEL_ARGS="${EXTRA_BAZEL_ARGS:-} --repo_env=CC=clang"
+# ID は引用符付きのこともある (ID="chimera") ので grep ではなく読んだ値で見る
+if [ "$OS" = Linux ] && [ -f /etc/os-release ]; then
+	DISTRO_ID=$(. /etc/os-release 2>/dev/null; echo "${ID:-}")
+	if [ "$DISTRO_ID" = chimera ]; then
+		EXTRA_BAZEL_ARGS="${EXTRA_BAZEL_ARGS:-} --repo_env=CC=clang"
+	fi
 fi
 if [ "$OS" = OpenBSD ]; then
 	# C++ の object を C の driver で link するので runtime を明示する
