@@ -23,6 +23,34 @@ OpenBSD)
 	pkg_add -I 'python%3'
 	pkg_add -I unzip-- || pkg_add -I unzip
 	JAVA_HOME=/usr/local/jdk-25 ;;
+NetBSD)
+	# pkgsrc の openjdk21 は X の library に link されているので xbase を先に展開する
+	# (ci/bazel-bsd/run.sh と同じ)。go は rules_go の SDK が NetBSD に無いので host の物。
+	ftp -o /var/tmp/xbase.tar.xz "https://cdn.NetBSD.org/pub/NetBSD/NetBSD-$(uname -r)/$(uname -m)/binary/sets/xbase.tar.xz" \
+		&& tar -C / -xf /var/tmp/xbase.tar.xz || echo "xbase が取れなかった"
+	/usr/sbin/pkg_add -U pkgin
+	pkgin -y install bash zip unzip python313 go126 git-base patch gtar
+	ln -sf /usr/pkg/bin/python3.13 /usr/pkg/bin/python3
+	PATH=/usr/pkg/bin:/usr/pkg/sbin:/usr/pkg/go126/bin:$PATH; export PATH
+	if [ "${JDK_KIT:-}" = 1 ]; then
+		# zakinko/jdk25u の bootstrap kit (NetBSD 10/11 amd64、170MB)。PaX の印を
+		# paxctl +m で付けないと JIT が動かない。
+		mkdir -p /usr/pkg/java/kit25
+		ftp -o /var/tmp/kit25.tar.xz "https://github.com/zakinko/jdk25u/releases/download/bootstrap-kit-25-20260921/bootstrap-jdk-1.25.0.5.0-netbsd-10-amd64-20260921.tar.xz"
+		tar -C /usr/pkg/java/kit25 --strip-components=1 -xf /var/tmp/kit25.tar.xz
+		paxctl +m /usr/pkg/java/kit25/bin/* 2>/dev/null || true
+		find /usr/pkg/java/kit25/lib -name '*.so' -exec paxctl +m {} \; 2>/dev/null || true
+		JAVA_HOME=/usr/pkg/java/kit25
+	else
+		pkgin -y install openjdk21
+		JAVA_HOME=/usr/pkg/java/openjdk21
+		JAVA_VERSION=21; export JAVA_VERSION
+	fi ;;
+DragonFly)
+	pkg install -y git bash zip unzip python3 go curl patch
+	pkg install -y openjdk21 || true
+	JAVA_HOME=/usr/local/openjdk21
+	JAVA_VERSION=21; export JAVA_VERSION ;;
 *) echo "この OS の手当てを持っていない: $OS"; exit 1 ;;
 esac
 [ -x "$JAVA_HOME/bin/javac" ] || { echo "JDK 25 が $JAVA_HOME に無い"; ls -d /usr/local/*jdk* /usr/local/openjdk* 2>/dev/null; exit 1; }

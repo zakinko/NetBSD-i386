@@ -1,0 +1,119 @@
+diff --git a/toolchains/BUILD b/toolchains/BUILD
+index 920ae5f..230c6ea 100644
+--- a/toolchains/BUILD
++++ b/toolchains/BUILD
+@@ -129,6 +129,19 @@ java_runtime_files(
+     srcs = ["include/openbsd/jni_md.h"],
+ )
+ 
++java_runtime_files(
++    name = "jni_md_header-netbsd",
++    srcs = ["include/netbsd/jni_md.h"],
++)
++
++# Defined here rather than taken from @bazel_tools//src/conditions so that it
++# resolves with every Bazel version: @platforms//os:netbsd has been in the
++# platforms module since 0.0.11.
++config_setting(
++    name = "netbsd",
++    constraint_values = ["@platforms//os:netbsd"],
++)
++
+ # The Java native interface. Depend on this package if you #include <jni.h>.
+ #
+ # See test_jni in third_party/bazel/src/test/shell/bazel/bazel_java_test.sh for
+@@ -140,6 +153,7 @@ cc_library(
+         "@bazel_tools//src/conditions:freebsd": [":jni_md_header-freebsd"],
+         "@bazel_tools//src/conditions:linux": [":jni_md_header-linux"],
+         "@bazel_tools//src/conditions:openbsd": [":jni_md_header-openbsd"],
++        ":netbsd": [":jni_md_header-netbsd"],
+         "@bazel_tools//src/conditions:windows": [":jni_md_header-windows"],
+         "//conditions:default": [],
+     }),
+@@ -148,6 +162,7 @@ cc_library(
+         "@bazel_tools//src/conditions:freebsd": ["include/freebsd"],
+         "@bazel_tools//src/conditions:linux": ["include/linux"],
+         "@bazel_tools//src/conditions:openbsd": ["include/openbsd"],
++        ":netbsd": ["include/netbsd"],
+         "@bazel_tools//src/conditions:windows": ["include/win32"],
+         "//conditions:default": [],
+     }),
+@@ -204,7 +219,6 @@ alias(
+     actual = select({
+         "@bazel_tools//src/conditions:darwin_arm64": ":ijar_prebuilt_binary_darwin_arm64",
+         "@bazel_tools//src/conditions:darwin_x86_64": ":ijar_prebuilt_binary_darwin_x86_64",
+-        "@bazel_tools//src/conditions:linux_x86_64": ":ijar_prebuilt_binary_linux",
+         "@bazel_tools//src/conditions:linux_aarch64": ":ijar_prebuilt_binary_linux_aarch64",
+         "@bazel_tools//src/conditions:windows": ":ijar_prebuilt_binary_windows",
+         "//conditions:default": "@remote_java_tools//:ijar_cc_binary",
+@@ -216,7 +230,6 @@ alias(
+     actual = select({
+         "@bazel_tools//src/conditions:darwin_arm64": ":ijar_prebuilt_binary_darwin_arm64",
+         "@bazel_tools//src/conditions:darwin_x86_64": ":ijar_prebuilt_binary_darwin_x86_64",
+-        "@bazel_tools//src/conditions:linux_x86_64": ":ijar_prebuilt_binary_linux",
+         "@bazel_tools//src/conditions:linux_aarch64": "ijar_prebuilt_binary_linux_aarch64",
+         "@bazel_tools//src/conditions:windows": ":ijar_prebuilt_binary_windows",
+     }),
+@@ -232,7 +245,6 @@ alias(
+     actual = select({
+         "@bazel_tools//src/conditions:darwin_arm64": ":prebuilt_singlejar_darwin_arm64",
+         "@bazel_tools//src/conditions:darwin_x86_64": ":prebuilt_singlejar_darwin_x86_64",
+-        "@bazel_tools//src/conditions:linux_x86_64": ":prebuilt_singlejar_linux",
+         "@bazel_tools//src/conditions:linux_aarch64": ":prebuilt_singlejar_linux_aarch64",
+         "@bazel_tools//src/conditions:windows": ":prebuilt_singlejar_windows",
+         "//conditions:default": "@remote_java_tools//:singlejar_cc_bin",
+@@ -244,7 +256,6 @@ alias(
+     actual = select({
+         "@bazel_tools//src/conditions:darwin_arm64": ":prebuilt_singlejar_darwin_arm64",
+         "@bazel_tools//src/conditions:darwin_x86_64": ":prebuilt_singlejar_darwin_x86_64",
+-        "@bazel_tools//src/conditions:linux_x86_64": ":prebuilt_singlejar_linux",
+         "@bazel_tools//src/conditions:linux_aarch64": ":prebuilt_singlejar_linux_aarch64",
+         "@bazel_tools//src/conditions:windows": ":prebuilt_singlejar_windows",
+     }),
+@@ -260,7 +271,6 @@ alias(
+     actual = select({
+         "@bazel_tools//src/conditions:darwin_arm64": ":prebuilt_one_version_darwin_arm64",
+         "@bazel_tools//src/conditions:darwin_x86_64": ":prebuilt_one_version_darwin_x86_64",
+-        "@bazel_tools//src/conditions:linux_x86_64": ":prebuilt_one_version_linux",
+         "@bazel_tools//src/conditions:linux_aarch64": ":prebuilt_one_version_linux_aarch64",
+         "@bazel_tools//src/conditions:windows": ":prebuilt_one_version_windows",
+         "//conditions:default": "@remote_java_tools//:one_version_cc_bin",
+@@ -272,7 +282,6 @@ alias(
+     actual = select({
+         "@bazel_tools//src/conditions:darwin_arm64": ":prebuilt_one_version_darwin_arm64",
+         "@bazel_tools//src/conditions:darwin_x86_64": ":prebuilt_one_version_darwin_x86_64",
+-        "@bazel_tools//src/conditions:linux_x86_64": ":prebuilt_one_version_linux",
+         "@bazel_tools//src/conditions:linux_aarch64": ":prebuilt_one_version_linux_aarch64",
+         "@bazel_tools//src/conditions:windows": ":prebuilt_one_version_windows",
+     }),
+@@ -287,7 +296,6 @@ alias(
+     name = "turbine_direct_graal_or_java",
+     actual = select({
+         "@bazel_tools//src/conditions:darwin_arm64": ":turbine_direct_graal_darwin_arm64",
+-        "@bazel_tools//src/conditions:linux_x86_64": ":turbine_direct_graal_linux",
+         "@bazel_tools//src/conditions:linux_aarch64": ":turbine_direct_graal_linux_aarch64",
+         "@bazel_tools//src/conditions:windows": ":turbine_direct_graal_windows",
+         "//conditions:default": "@remote_java_tools//:TurbineDirect",
+@@ -298,7 +306,6 @@ alias(
+     name = "turbine_direct_graal",
+     actual = select({
+         "@bazel_tools//src/conditions:darwin_arm64": ":turbine_direct_graal_darwin_arm64",
+-        "@bazel_tools//src/conditions:linux_x86_64": ":turbine_direct_graal_linux",
+         "@bazel_tools//src/conditions:linux_aarch64": ":turbine_direct_graal_linux_aarch64",
+         "@bazel_tools//src/conditions:windows": ":turbine_direct_graal_windows",
+     }),
+diff --git a/toolchains/default_java_toolchain.bzl b/toolchains/default_java_toolchain.bzl
+index e4097ae..1b2a9c5 100644
+--- a/toolchains/default_java_toolchain.bzl
++++ b/toolchains/default_java_toolchain.bzl
+@@ -99,7 +99,9 @@ _BASE_TOOLCHAIN_CONFIGURATION = dict(
+     reduced_classpath_incompatible_processors = [
+         "dagger.hilt.processor.internal.root.RootProcessor",  # see b/21307381
+     ],
+-    java_runtime = Label("//toolchains:remotejdk_25"),
++    # There is no remote JDK for the BSDs or for musl, so the default toolchain
++    # runs its tools on whichever runtime is registered (local_jdk here).
++    java_runtime = Label("//toolchains:current_java_runtime"),
+     oneversion = Label("//toolchains:one_version"),
+ )
+ 

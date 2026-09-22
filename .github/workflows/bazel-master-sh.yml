@@ -38,9 +38,17 @@ on:
         description: 'master を JDK 21 (JAVA_VERSION=21) で建てられるかを Ubuntu で測るだけ'
         type: boolean
         default: false
+      netbsd:
+        description: 'NetBSD と DragonFly も回す (bazel #31069 と module の当て物を差す)'
+        type: boolean
+        default: false
+      jdk_kit:
+        description: 'NetBSD では jdk25u の bootstrap kit (JDK 25) を使う。false なら pkgsrc の openjdk21 と JAVA_VERSION=21'
+        type: boolean
+        default: false
 
 concurrency:
-  group: bazel-master-sh-${{ github.ref }}-${{ inputs.branch }}-${{ inputs.bsd }}-${{ inputs.wide }}-${{ inputs.jdk21 }}-${{ github.run_id }}
+  group: bazel-master-sh-${{ github.ref }}-${{ inputs.branch }}-${{ inputs.bsd }}-${{ inputs.wide }}-${{ inputs.jdk21 }}-${{ inputs.netbsd }}-${{ github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -281,3 +289,47 @@ jobs:
           LOG_BASH: '0'
           NO_VIS: '1'
           JAVA_VERSION: '21'
+
+  netbsd:
+    needs: dist
+    if: ${{ inputs.netbsd && !inputs.jdk21 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Make room on the runner
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: master-sh-dist, path: master-sh-dist }
+      - uses: vmactions/netbsd-vm@v1
+        with:
+          release: "11.0"
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE JDK_KIT'
+          run: |
+            set -x
+            sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/bsd-master-sh.sh" "$GITHUB_WORKSPACE/master-sh-dist/bazel-distfile.zip"
+    env:
+      JDK_KIT: ${{ inputs.jdk_kit && '1' || '0' }}
+
+  dragonfly:
+    needs: dist
+    if: ${{ inputs.netbsd && !inputs.jdk21 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: master-sh-dist, path: master-sh-dist }
+      - uses: vmactions/dragonflybsd-vm@v1
+        with:
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE'
+          run: |
+            set -x
+            sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/bsd-master-sh.sh" "$GITHUB_WORKSPACE/master-sh-dist/bazel-distfile.zip"

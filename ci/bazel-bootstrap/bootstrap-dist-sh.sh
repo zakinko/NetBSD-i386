@@ -60,6 +60,59 @@ FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|OpenBSD|NetBSD|DragonFly)
 	cat "$CI_DIR/protobuf-29694.patch" >> third_party/protobuf.patch ;;
 esac
 
+# NetBSD と DragonFly は master が host として未対応 (#31069 が open)。#31069 の
+# diff を dist に当て (build_unix_jni.sh の腕は sh 形に写した物、unix_jni.h は
+# musl の当て物が代わり)、platforms / rules_java / zstd-jni / rules_go に
+# NetBSD の当て物を single_version_override で差す。pkgsrc の bazel9 が
+# 9.2.0 に対してしている物と同じ束。
+case "$OS" in
+NetBSD|DragonFly)
+	NB=$CI_DIR/netbsd
+	echo "=== NetBSD/DragonFly: bazel #31069 と module の当て物を差す"
+	patch -p1 -f -i "$NB/bazel-31069-netbsd.patch" </dev/null
+	patch -p1 -f -i "$NB/build_unix_jni-netbsd.patch" </dev/null
+	patch -p1 -f -i "$CI_DIR/musl-stat-master.patch" </dev/null
+	RJ=$(grep -o 'name = "rules_java", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
+	RG=$(grep -o 'name = "rules_go", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
+	[ -f "$CI_DIR/rules_java-$RJ-local.patch" ] || { echo "rules_java $RJ 向けの当て物が無い"; exit 1; }
+	mkdir -p toolchain_local
+	cp "$NB/platforms-pr142-pr143.patch" "$NB/zstd_jni-netbsd.patch" "$NB/rules_go-pr4711.patch" toolchain_local/
+	cp "$CI_DIR/rules_java-$RJ-local.patch" toolchain_local/rules_java-local.patch
+	printf 'exports_files(glob(["*.patch"]))\n' > toolchain_local/BUILD
+	cat >> MODULE.bazel <<MOD
+
+# NetBSD is not among the platforms these modules know about (CI only).
+single_version_override(
+    module_name = "platforms",
+    patch_strip = 1,
+    patches = ["//toolchain_local:platforms-pr142-pr143.patch"],
+)
+single_version_override(
+    module_name = "rules_java",
+    version = "$RJ",
+    patch_strip = 1,
+    patches = ["//toolchain_local:rules_java-local.patch"],
+)
+single_version_override(
+    module_name = "zstd-jni",
+    patch_strip = 1,
+    patches = ["//toolchain_local:zstd_jni-netbsd.patch"],
+)
+single_version_override(
+    module_name = "rules_go",
+    version = "$RG",
+    patch_strip = 1,
+    patches = ["//toolchain_local:rules_go-pr4711.patch"],
+)
+go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.host(name = "go_default_sdk")
+MOD
+	# 煙試験は dist の外の workspace なので、そこでは rules_java の当て物だけを
+	# 差す (下の RJ_PATCH の道)。host の go は GOROOT で教える
+	EXTRA_BAZEL_ARGS="${EXTRA_BAZEL_ARGS:-} --repo_env=GOROOT=$(go env GOROOT 2>/dev/null || echo /usr/pkg/go126)"
+	;;
+esac
+
 # OS ごとの手当て。どれも sh 化とは無関係で、素の dist を bash で建てるときにも要る物。
 EXTRA_BAZEL_ARGS="${EXTRA_BAZEL_ARGS:-} --shell_executable=$SH_BIN"
 case "$OS" in
@@ -167,6 +220,12 @@ if [ -n "$RJ_PATCH" ]; then
 	printf 'single_version_override(\n    module_name = "rules_java",\n    version = "%s",\n    patch_strip = 1,\n    patches = ["//:rules_java-local.patch"],\n)\n' "$RJ" >> MODULE.bazel
 	: > BUILD
 	echo "rules_java $RJ に当て物を差した"
+	case "$OS" in
+	NetBSD|DragonFly)
+		# host の OS 検出 (platforms の _translate_os) も NetBSD を知らない
+		cp "$CI_DIR/netbsd/platforms-pr142-pr143.patch" platforms-local.patch
+		printf 'single_version_override(\n    module_name = "platforms",\n    patch_strip = 1,\n    patches = ["//:platforms-local.patch"],\n)\n' >> MODULE.bazel ;;
+	esac
 fi
 cat > p/BUILD <<'B'
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")

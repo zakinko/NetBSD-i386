@@ -1,0 +1,494 @@
+diff --git a/scripts/packages/BUILD b/scripts/packages/BUILD
+index 776ac7a2f66b09..24933a86ba8dee 100644
+--- a/scripts/packages/BUILD
++++ b/scripts/packages/BUILD
+@@ -25,6 +25,7 @@ filegroup(
+         ],
+         "//src/conditions:freebsd": [],
+         "//src/conditions:openbsd": [],
++        "//src/conditions:netbsd": [],
+         "//src/conditions:darwin": [
+             ":generate-package-info",
+             ":with-jdk/install.sh",
+@@ -92,6 +93,7 @@ genrule(
+         "//src/conditions:darwin": "\"darwin\"",
+         "//src/conditions:freebsd": "\"freebsd\"",
+         "//src/conditions:openbsd": "\"openbsd\"",
++        "//src/conditions:netbsd": "\"netbsd\"",
+         "//conditions:default": "\"linux\"",
+     }) + """
+         target_arch=""" + select({
+diff --git a/src/BUILD b/src/BUILD
+index 7ee416b0e556a0..1939c7845a0887 100644
+--- a/src/BUILD
++++ b/src/BUILD
+@@ -24,6 +24,7 @@ sh_binary(
+         "//src/conditions:darwin": ["md5_darwin_freebsd.sh"],
+         "//src/conditions:freebsd": ["md5_darwin_freebsd.sh"],
+         "//src/conditions:openbsd": ["md5_openbsd.sh"],
++        "//src/conditions:netbsd": ["md5_netbsd.sh"],
+         "//conditions:default": ["md5_default.sh"],
+     }),
+ )
+@@ -322,6 +323,7 @@ genrule(
+     cmd = select({
+         "//src/conditions:freebsd": "cat $(SRCS) | sed -e 's@#!/bin/bash@#!/usr/local/bin/bash@' > $@",
+         "//src/conditions:openbsd": "cat $(SRCS) | sed -e 's@#!/bin/bash@#!/usr/local/bin/bash@' > $@",
++        "//src/conditions:netbsd": "cat $(SRCS) | sed -e 's@#!/bin/bash@#!/usr/pkg/bin/bash@' > $@",
+         "//conditions:default": "cp $(SRCS) $@",
+     }),
+ )
+diff --git a/src/conditions/BUILD b/src/conditions/BUILD
+index a0326917d6448c..9759a3300fd35d 100644
+--- a/src/conditions/BUILD
++++ b/src/conditions/BUILD
+@@ -168,6 +168,12 @@ config_setting(
+     visibility = ["//visibility:public"],
+ )
+ 
++config_setting(
++    name = "netbsd",
++    constraint_values = ["@platforms//os:netbsd"],
++    visibility = ["//visibility:public"],
++)
++
+ config_setting(
+     name = "windows",
+     constraint_values = ["@platforms//os:windows"],
+diff --git a/src/main/cpp/BUILD b/src/main/cpp/BUILD
+index 5803207378f14e..d3ddfedf1d787e 100644
+--- a/src/main/cpp/BUILD
++++ b/src/main/cpp/BUILD
+@@ -33,6 +33,10 @@ cc_library(
+             "blaze_util_bsd.cc",
+             "blaze_util_posix.cc",
+         ],
++        "//src/conditions:netbsd": [
++            "blaze_util_bsd.cc",
++            "blaze_util_posix.cc",
++        ],
+         "//src/conditions:windows": [
+             "blaze_util_windows.cc",
+         ],
+@@ -54,6 +58,8 @@ cc_library(
+         ],
+         "//src/conditions:openbsd": [
+         ],
++        "//src/conditions:netbsd": [
++        ],
+         "//src/conditions:windows": WIN_LINK_OPTS,
+         "//conditions:default": [
+             "-lrt",
+@@ -123,6 +129,8 @@ cc_binary(
+         ],
+         "//src/conditions:openbsd": [
+         ],
++        "//src/conditions:netbsd": [
++        ],
+         "//src/conditions:windows": [
+         ],
+         "//conditions:default": [
+diff --git a/src/main/cpp/blaze_util_bsd.cc b/src/main/cpp/blaze_util_bsd.cc
+index 805c83db749c80..338d240e7ff5ed 100644
+--- a/src/main/cpp/blaze_util_bsd.cc
++++ b/src/main/cpp/blaze_util_bsd.cc
+@@ -17,6 +17,8 @@
+ #define STANDARD_JAVABASE "/usr/local/openjdk21"
+ #elif defined(__OpenBSD__)
+ #define STANDARD_JAVABASE "/usr/local/jdk-21"
++#elif defined(__NetBSD__)
++# define STANDARD_JAVABASE "/usr/pkg/java/openjdk21"
+ #else
+ # error This BSD is not supported
+ #endif
+@@ -84,8 +86,15 @@ string GetCacheDir() {
+ }
+ 
+ void WarnFilesystemType(const blaze_util::Path &output_base) {
++#if defined(__NetBSD__)
++  // NetBSD dropped statfs(2); statvfs(2) carries f_fstypename all
++  // the same.
++  struct statvfs buf = {};
++  if (statvfs(output_base.AsNativePath().c_str(), &buf) < 0) {
++#else
+   struct statfs buf = {};
+   if (statfs(output_base.AsNativePath().c_str(), &buf) < 0) {
++#endif
+     BAZEL_LOG(WARNING) << "couldn't get file system type information for '"
+                        << output_base.AsPrintablePath()
+                        << "': " << strerror(errno);
+@@ -122,7 +131,7 @@ string GetSelfPath(const char* argv0) {
+   }
+   procstat_close(procstat);
+   return string(buffer);
+-#elif defined(__OpenBSD__)
++#elif defined(__OpenBSD__) || defined(__NetBSD__)
+   // OpenBSD does not provide a way for a running process to find a path to its
+   // own executable, so we try to figure out a path by inspecting argv[0]. In
+   // theory this is inadequate, since the parent process can set argv[0] to
+diff --git a/src/main/cpp/option_processor.cc b/src/main/cpp/option_processor.cc
+index 91e0f4acb25b60..e5d702d9654e90 100644
+--- a/src/main/cpp/option_processor.cc
++++ b/src/main/cpp/option_processor.cc
+@@ -504,6 +504,8 @@ blaze_exit_code::ExitCode OptionProcessor::ParseStartupOptions(
+   platform_config = "windows";
+ #elif defined(__FreeBSD__)
+   platform_config = "freebsd";
++#elif defined(__NetBSD__)
++  platform_config = "netbsd";
+ #elif defined(__OpenBSD__)
+   platform_config = "openbsd";
+ #endif
+diff --git a/src/main/cpp/util/md5.h b/src/main/cpp/util/md5.h
+index 269c1f56687a23..74e1947d69aee4 100644
+--- a/src/main/cpp/util/md5.h
++++ b/src/main/cpp/util/md5.h
+@@ -26,7 +26,7 @@
+ 
+ #if defined(__linux__)
+ #include <endian.h>
+-#elif defined(__FreeBSD__) || defined(__OpenBSD__)
++#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+ #include <sys/endian.h>
+ #elif defined(__APPLE__) || defined(_WIN32)
+ // Hopefully OSX and Windows will keep running solely on little endian CPUs, so:
+diff --git a/src/main/java/com/google/devtools/build/lib/analysis/config/AutoCpuConverter.java b/src/main/java/com/google/devtools/build/lib/analysis/config/AutoCpuConverter.java
+index 3cef313834a5d1..9d29a1759d8d51 100644
+--- a/src/main/java/com/google/devtools/build/lib/analysis/config/AutoCpuConverter.java
++++ b/src/main/java/com/google/devtools/build/lib/analysis/config/AutoCpuConverter.java
+@@ -40,6 +40,7 @@ public String convert(String input) throws OptionsParsingException {
+             };
+         case FREEBSD -> "freebsd";
+         case OPENBSD -> "openbsd";
++        case NETBSD -> "netbsd";
+         case WINDOWS ->
+             switch (CPU.getCurrent()) {
+               case X86_64 -> "x64_windows";
+diff --git a/src/main/java/com/google/devtools/build/lib/analysis/constraints/ConstraintConstants.java b/src/main/java/com/google/devtools/build/lib/analysis/constraints/ConstraintConstants.java
+index 3b27e064633257..dc50d0de8d0175 100644
+--- a/src/main/java/com/google/devtools/build/lib/analysis/constraints/ConstraintConstants.java
++++ b/src/main/java/com/google/devtools/build/lib/analysis/constraints/ConstraintConstants.java
+@@ -63,6 +63,10 @@ public final class ConstraintConstants {
+               OS_CONSTRAINT_SETTING,
+               Label.parseCanonicalUnchecked("@platforms//os:openbsd")),
+           OS.OPENBSD,
++          ConstraintValueInfo.create(
++              OS_CONSTRAINT_SETTING,
++              Label.parseCanonicalUnchecked("@platforms//os:netbsd")),
++          OS.NETBSD,
+           ConstraintValueInfo.create(
+               OS_CONSTRAINT_SETTING,
+               Label.parseCanonicalUnchecked("@platforms//os:none")),
+diff --git a/src/main/java/com/google/devtools/build/lib/bazel/rules/BazelRuleClassProvider.java b/src/main/java/com/google/devtools/build/lib/bazel/rules/BazelRuleClassProvider.java
+index 2639ed2e225f67..a3bb75ae1fd0b6 100644
+--- a/src/main/java/com/google/devtools/build/lib/bazel/rules/BazelRuleClassProvider.java
++++ b/src/main/java/com/google/devtools/build/lib/bazel/rules/BazelRuleClassProvider.java
+@@ -95,6 +95,7 @@ public abstract static class StrictActionEnvOptions extends FragmentOptions {
+           .put(OS.WINDOWS, PathFragment.create("c:/msys64/usr/bin/bash.exe"))
+           .put(OS.FREEBSD, PathFragment.create("/usr/local/bin/bash"))
+           .put(OS.OPENBSD, PathFragment.create("/usr/local/bin/bash"))
++          .put(OS.NETBSD, PathFragment.create("/usr/pkg/bin/bash"))
+           .put(OS.LINUX, PathFragment.create("/bin/bash"))
+           .put(OS.DARWIN, PathFragment.create("/bin/bash"))
+           .put(OS.UNKNOWN, FALLBACK_SHELL)
+@@ -347,7 +348,7 @@ public static String pathOrDefault(OS os, @Nullable String path, @Nullable PathF
+     // up in /usr/local/bin, so we need to include that in the default PATH. On
+     // other Unix platforms we want to exclude /usr/local/bin which commonly
+     // holds user installed tools making things less hermetic.
+-    if (os == OS.FREEBSD || os == OS.OPENBSD) {
++    if (os == OS.FREEBSD || os == OS.OPENBSD || os == OS.NETBSD) {
+       return "/bin:/usr/bin:/sbin:/usr/sbin:/usr/local/bin";
+     } else if (os != OS.WINDOWS) {
+       return "/bin:/usr/bin:/sbin:/usr/sbin";
+diff --git a/src/main/java/com/google/devtools/build/lib/jni/JniLoader.java b/src/main/java/com/google/devtools/build/lib/jni/JniLoader.java
+index b095c97dcded93..4769285919b3b0 100644
+--- a/src/main/java/com/google/devtools/build/lib/jni/JniLoader.java
++++ b/src/main/java/com/google/devtools/build/lib/jni/JniLoader.java
+@@ -38,7 +38,7 @@ public final class JniLoader {
+     Throwable jniLoadError;
+     try {
+       switch (OS.getCurrent()) {
+-        case LINUX, FREEBSD, OPENBSD, UNKNOWN -> {
++        case LINUX, FREEBSD, OPENBSD, NETBSD, UNKNOWN -> {
+           loadLibrary("main/native/libunix_jni.so");
+         }
+         case DARWIN -> {
+diff --git a/src/main/java/com/google/devtools/build/lib/runtime/ConfigExpander.java b/src/main/java/com/google/devtools/build/lib/runtime/ConfigExpander.java
+index d5af61ddc8540e..7f7df17a60d92c 100644
+--- a/src/main/java/com/google/devtools/build/lib/runtime/ConfigExpander.java
++++ b/src/main/java/com/google/devtools/build/lib/runtime/ConfigExpander.java
+@@ -51,6 +51,8 @@ private static String getPlatformName() {
+         return "freebsd";
+       case OPENBSD:
+         return "openbsd";
++      case NETBSD:
++        return "netbsd";
+       default:
+         return OS.getCurrent().getCanonicalName();
+     }
+diff --git a/src/main/java/com/google/devtools/build/lib/util/OS.java b/src/main/java/com/google/devtools/build/lib/util/OS.java
+index 68d31a1d8a58b9..ccf84188a857d1 100644
+--- a/src/main/java/com/google/devtools/build/lib/util/OS.java
++++ b/src/main/java/com/google/devtools/build/lib/util/OS.java
+@@ -20,6 +20,7 @@ public enum OS {
+   DARWIN("osx", "Mac OS X", true),
+   FREEBSD("freebsd", "FreeBSD", true),
+   OPENBSD("openbsd", "OpenBSD", true),
++  NETBSD("netbsd", "NetBSD", true),
+   LINUX("linux", "Linux", true),
+   WINDOWS("windows", "Windows", false),
+   UNKNOWN("unknown", "", false);
+diff --git a/src/main/native/BUILD b/src/main/native/BUILD
+index 04200f7966367c..ae6e90e271991a 100644
+--- a/src/main/native/BUILD
++++ b/src/main/native/BUILD
+@@ -8,6 +8,7 @@ copy_file(
+         "//src/conditions:darwin": "@rules_java//toolchains:jni_md_header-darwin",
+         "//src/conditions:freebsd": "@rules_java//toolchains:jni_md_header-freebsd",
+         "//src/conditions:openbsd": "@rules_java//toolchains:jni_md_header-openbsd",
++        "//src/conditions:netbsd": "@rules_java//toolchains:jni_md_header-netbsd",
+         "//src/conditions:windows": "@rules_java//toolchains:jni_md_header-windows",
+         "//conditions:default": "@rules_java//toolchains:jni_md_header-linux",
+     }),
+@@ -43,6 +44,7 @@ filegroup(
+         ],
+         "//src/conditions:freebsd": ["unix_jni_bsd.cc"],
+         "//src/conditions:openbsd": ["unix_jni_bsd.cc"],
++        "//src/conditions:netbsd": ["unix_jni_bsd.cc"],
+         "//conditions:default": ["unix_jni_linux.cc"],
+     }),
+ )
+diff --git a/src/main/native/unix_jni_bsd.cc b/src/main/native/unix_jni_bsd.cc
+index da1e4e92ed9b20..a33f52a237d53e 100644
+--- a/src/main/native/unix_jni_bsd.cc
++++ b/src/main/native/unix_jni_bsd.cc
+@@ -15,6 +15,10 @@
+ #if defined(__FreeBSD__)
+ # define HAVE_EXTATTR
+ # define HAVE_SYSCTLBYNAME
++#elif defined(__NetBSD__)
++// NetBSD has both extattr(2), including the _link variants, and
++// sysctlbyname(3); neither is enabled here yet, as the extattr path has
++// not been exercised on NetBSD.
+ #elif defined(__OpenBSD__)
+ // No sys/extattr.h or sysctlbyname on this platform.
+ #else
+diff --git a/src/main/tools/BUILD b/src/main/tools/BUILD
+index c7b44f38b42f37..0b0d34561004c8 100644
+--- a/src/main/tools/BUILD
++++ b/src/main/tools/BUILD
+@@ -23,6 +23,7 @@ cc_library(
+     srcs = ["process-tools.cc"] + select({
+         "//src/conditions:darwin": ["process-tools-darwin.cc"],
+         "//src/conditions:openbsd": ["process-tools-darwin.cc"],
++        "//src/conditions:netbsd": ["process-tools-darwin.cc"],
+         "//conditions:default": ["process-tools-linux.cc"],
+     }),
+     hdrs = ["process-tools.h"],
+@@ -69,6 +70,7 @@ cc_binary(
+         "//src/conditions:darwin": ["dummy-sandbox.c"],
+         "//src/conditions:freebsd": ["dummy-sandbox.c"],
+         "//src/conditions:openbsd": ["dummy-sandbox.c"],
++        "//src/conditions:netbsd": ["dummy-sandbox.c"],
+         "//src/conditions:windows": ["dummy-sandbox.c"],
+         "//conditions:default": [
+             "linux-sandbox.cc",
+@@ -83,6 +85,7 @@ cc_binary(
+         "//src/conditions:darwin": [],
+         "//src/conditions:freebsd": [],
+         "//src/conditions:openbsd": [],
++        "//src/conditions:netbsd": [],
+         "//src/conditions:windows": [],
+         "//conditions:default": [
+             "-lm",
+@@ -93,6 +96,7 @@ cc_binary(
+         "//src/conditions:darwin": [],
+         "//src/conditions:freebsd": [],
+         "//src/conditions:openbsd": [],
++        "//src/conditions:netbsd": [],
+         "//src/conditions:windows": [],
+         "//conditions:default": [
+             ":logging",
+diff --git a/src/main/tools/process-tools-darwin.cc b/src/main/tools/process-tools-darwin.cc
+index f2421823f03ef3..274f22dc51d591 100644
+--- a/src/main/tools/process-tools-darwin.cc
++++ b/src/main/tools/process-tools-darwin.cc
+@@ -24,6 +24,12 @@
+ #include "src/main/tools/logging.h"
+ #include "src/main/tools/process-tools.h"
+ 
++#if defined(__NetBSD__)
++// NetBSD declares struct kinfo_proc for the kernel only.  Userland asks
++// KERN_PROC2 instead and gets struct kinfo_proc2, whose pid lives in p_pid.
++#define kinfo_proc kinfo_proc2
++#endif
++
+ namespace {
+ 
+ int WaitForProcessToTerminate(uintptr_t ident) {
+@@ -72,7 +78,15 @@ int WaitForProcessToTerminate(pid_t pid) {
+ }
+ 
+ int WaitForProcessGroupToTerminate(pid_t pgid) {
++#if defined(__NetBSD__)
++  // KERN_PROC2 takes the record size and the record count in the mib itself.
++  int name[] = {CTL_KERN, KERN_PROC2, KERN_PROC_PGRP, pgid,
++                static_cast<int>(sizeof(struct kinfo_proc)), 0};
++  const unsigned int name_len = 6;
++#else
+   int name[] = {CTL_KERN, KERN_PROC, KERN_PROC_PGRP, pgid};
++  const unsigned int name_len = 4;
++#endif
+ 
+   for (;;) {
+     // Query the list of processes in the group by using sysctl(3).
+@@ -84,11 +98,14 @@ int WaitForProcessGroupToTerminate(pid_t pgid) {
+     size_t nprocs = 0;
+     do {
+       size_t len;
+-      if (sysctl(name, 4, 0, &len, nullptr, 0) == -1) {
++      if (sysctl(name, name_len, 0, &len, nullptr, 0) == -1) {
+         return -1;
+       }
++#if defined(__NetBSD__)
++      name[5] = len / sizeof(struct kinfo_proc);
++#endif
+       procs = (struct kinfo_proc *)malloc(len);
+-      if (sysctl(name, 4, procs, &len, nullptr, 0) == -1) {
++      if (sysctl(name, name_len, procs, &len, nullptr, 0) == -1) {
+         if (errno != ENOMEM) {
+           DIE("Unexpected error code %d", errno);
+         }
+@@ -105,7 +122,7 @@ int WaitForProcessGroupToTerminate(pid_t pgid) {
+     if (nprocs == 1) {
+       // Found only one process, which must be the leader because we have
+       // purposely expect it as a zombie with WaitForProcess.
+-#if defined(__OpenBSD__)
++#if defined(__OpenBSD__) || defined(__NetBSD__)
+       if (procs->p_pid != pgid) {
+ #else
+       if (procs->kp_proc.p_pid != pgid) {
+diff --git a/src/main/tools/process-wrapper-legacy.cc b/src/main/tools/process-wrapper-legacy.cc
+index 664f272ddc0c0a..66d75c0ddd5437 100644
+--- a/src/main/tools/process-wrapper-legacy.cc
++++ b/src/main/tools/process-wrapper-legacy.cc
+@@ -135,7 +135,10 @@ void LegacyProcessWrapper::WaitForChild() {
+     status = WaitChild(child_pid, child_subreaper_enabled);
+   }
+ 
+-#if !defined(__APPLE__) && !defined(__OpenBSD__)
++// TerminateAndWaitForAll lives in process-tools-linux.cc; the platforms that
++// take process-tools-darwin.cc instead do not have it, and do not need it
++// because they never enable the child subreaper above.
++#if !defined(__APPLE__) && !defined(__OpenBSD__) && !defined(__NetBSD__)
+   if (child_subreaper_enabled) {
+     // If we enabled the child subreaper feature (on Linux), now that we have
+     // collected the status of the PID we were interested in, terminate the
+diff --git a/src/md5_netbsd.sh b/src/md5_netbsd.sh
+new file mode 100755
+index 00000000000000..50462210ecef6a
+--- /dev/null
++++ b/src/md5_netbsd.sh
+@@ -0,0 +1,19 @@
++#!/usr/bin/env bash
++#
++# Copyright 2025 The Bazel Authors. All rights reserved.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#    http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++#
++# NetBSD has md5(1) but neither md5sum nor head's -c is a problem here;
++# double the hash the way md5_openbsd.sh does and take the 32 hex digits.
++/usr/bin/md5 "$@" | /usr/bin/md5 | head -c 32
+diff --git a/src/tools/singlejar/BUILD b/src/tools/singlejar/BUILD
+index 9d3da4d250d72e..ad1318eba78db9 100644
+--- a/src/tools/singlejar/BUILD
++++ b/src/tools/singlejar/BUILD
+@@ -87,6 +87,7 @@ cc_binary(
+     ],
+     linkopts = select({
+         "//src/conditions:freebsd": ["-lm"],
++        "//src/conditions:netbsd": ["-lm"],
+         "//src/conditions:openbsd": ["-lm"],
+         "//conditions:default": [],
+     }),
+@@ -108,6 +109,7 @@ cc_binary(
+     ],
+     linkopts = select({
+         "//src/conditions:freebsd": ["-lm"],
++        "//src/conditions:netbsd": ["-lm"],
+         "//src/conditions:openbsd": ["-lm"],
+         "//conditions:default": [],
+     }),
+diff --git a/src/tools/singlejar/diag.h b/src/tools/singlejar/diag.h
+index f2e3e24028b9b1..fe6b584dfd7f3d 100644
+--- a/src/tools/singlejar/diag.h
++++ b/src/tools/singlejar/diag.h
+@@ -20,7 +20,7 @@
+  * for portability.
+  */
+ #if defined(__APPLE__) || defined(__linux__) || defined(__FreeBSD__) || \
+-    defined(__OpenBSD__)
++    defined(__OpenBSD__) || defined(__NetBSD__)
+ 
+ #include <err.h>
+ #define diag_err(...) err(__VA_ARGS__)
+diff --git a/src/tools/singlejar/mapped_file_posix.inc b/src/tools/singlejar/mapped_file_posix.inc
+index 0bf3a95da76dc6..7025246e8ac854 100644
+--- a/src/tools/singlejar/mapped_file_posix.inc
++++ b/src/tools/singlejar/mapped_file_posix.inc
+@@ -26,7 +26,7 @@
+ 
+ // The implementation is specific to 64-bit Linux / OS X / BSD.
+ #if !((defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || \
+-       defined(__OpenBSD__)) &&                                            \
++       defined(__OpenBSD__) || defined(__NetBSD__)) &&                     \
+       __SIZEOF_POINTER__ == 8)
+ #error This code for 64 bit Unix.
+ #endif
+diff --git a/src/tools/singlejar/zip_headers.h b/src/tools/singlejar/zip_headers.h
+index 4bb8e6edd0163f..b65f36d7e2f156 100644
+--- a/src/tools/singlejar/zip_headers.h
++++ b/src/tools/singlejar/zip_headers.h
+@@ -28,7 +28,7 @@
+ 
+ #if defined(__linux__)
+ #include <endian.h>
+-#elif defined(__FreeBSD__) || defined(__OpenBSD__)
++#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+ #include <sys/endian.h>
+ #elif defined(__APPLE__) || defined(_WIN32)
+ // Hopefully OSX and Windows will keep running solely on little endian CPUs, so:
+diff --git a/third_party/BUILD b/third_party/BUILD
+index 448a3b77503068..a1b7323343a54f 100644
+--- a/third_party/BUILD
++++ b/third_party/BUILD
+@@ -547,6 +547,7 @@ UNNECESSARY_DYNAMIC_LIBRARIES = select({
+     "//src/conditions:linux_aarch64": "*.so *.jnilib *.dll *.pyd",
+     "//src/conditions:linux_ppc": "*.so *.jnilib *.dll *.pyd",
+     "//src/conditions:freebsd": "*.so *.jnilib *.dll *.pyd",
++    "//src/conditions:netbsd": "*.so *.jnilib *.dll *.pyd",
+     "//src/conditions:openbsd": "*.so *.jnilib *.dll *.pyd",
+     # Default is to play it safe -- better have a big binary than a slow binary
+     #   The empty string means nothing is to be removed from the library;
+diff --git a/tools/jdk/BUILD.tools b/tools/jdk/BUILD.tools
+index 0648e9e137947d..5c372696fa21cc 100644
+--- a/tools/jdk/BUILD.tools
++++ b/tools/jdk/BUILD.tools
+@@ -185,6 +185,7 @@ TARGET_NAMES = [
+     "jni_md_header-darwin",
+     "jni_md_header-freebsd",
+     "jni_md_header-linux",
++    "jni_md_header-netbsd",
+     "jni_md_header-openbsd",
+     "jni_md_header-windows",
+     "platformclasspath",
