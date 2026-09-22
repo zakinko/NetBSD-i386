@@ -84,6 +84,10 @@ NetBSD|DragonFly)
 	if [ "$OS" = DragonFly ]; then
 		patch -p1 -f -i "$NB/bazel-dragonfly.patch" </dev/null
 	fi
+	# NetBSD の patch(1) は "new file mode 100755" を見ないので、当て物が作った
+	# script に実行の印が付かず、sh_binary が「実行できない」と言って落ちる
+	# (run 35749586358)。付け直す
+	chmod +x src/md5_netbsd.sh
 	RJ=$(grep -o 'name = "rules_java", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
 	RG=$(grep -o 'name = "rules_go", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
 	[ -f "$CI_DIR/rules_java-$RJ-local.patch" ] || { echo "rules_java $RJ 向けの当て物が無い"; exit 1; }
@@ -91,6 +95,7 @@ NetBSD|DragonFly)
 	cp "$NB/platforms-pr142-pr143.patch" "$NB/zstd_jni-netbsd.patch" \
 		"$NB/zstd_jni-module.patch" "$NB/rules_go-pr4711.patch" toolchain_local/
 	cp "$CI_DIR/rules_java-$RJ-local.patch" toolchain_local/rules_java-local.patch
+	cp "$NB/abseil-dragonfly.patch" toolchain_local/
 	cp "$NB/rules_java-dragonfly.patch" toolchain_local/
 	printf 'exports_files(glob(["*.patch"]))\n' > toolchain_local/BUILD
 	cat >> MODULE.bazel <<MOD
@@ -123,6 +128,11 @@ single_version_override(
     version = "$RG",
     patch_strip = 1,
     patches = ["//toolchain_local:rules_go-pr4711.patch"],
+)
+single_version_override(
+    module_name = "abseil-cpp",
+    patch_strip = 1,
+    patches = ["//toolchain_local:abseil-dragonfly.patch"],
 )
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.host(name = "go_default_sdk")
