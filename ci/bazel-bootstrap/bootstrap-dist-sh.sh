@@ -113,6 +113,15 @@ MOD
 	;;
 esac
 
+# MidnightBSD は __FreeBSD__ も定義する FreeBSD 派生で、JDK は FreeBSD 向けの
+# build (include/freebsd)。uname -s だけが違うので、綴りを知る箇所を一つずつ
+# 教えて、次にどこで止まるかを見る。
+case "$OS" in
+MidnightBSD)
+	echo "=== MidnightBSD: build_unix_jni.sh に腕を足す"
+	patch -p1 -f -i "$CI_DIR/midnightbsd/build_unix_jni-midnightbsd.patch" </dev/null ;;
+esac
+
 # OS ごとの手当て。どれも sh 化とは無関係で、素の dist を bash で建てるときにも要る物。
 EXTRA_BAZEL_ARGS="${EXTRA_BAZEL_ARGS:-} --shell_executable=$SH_BIN"
 case "$OS" in

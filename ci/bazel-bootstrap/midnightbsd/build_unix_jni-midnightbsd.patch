@@ -1,0 +1,11 @@
+--- a/scripts/bootstrap/build_unix_jni.sh
++++ b/scripts/bootstrap/build_unix_jni.sh
+@@ -50,7 +50,7 @@
+   SOURCES="$SOURCES src/main/native/unix_jni_bsd.cc"
+   set -- "$@" "-I${JAVA_HOME}/include/openbsd"
+   ;;
+-freebsd)
++freebsd|midnightbsd)
+   SOURCES="$SOURCES src/main/native/unix_jni_bsd.cc"
+   set -- "$@" "-I${JAVA_HOME}/include/freebsd"
+   ;;
