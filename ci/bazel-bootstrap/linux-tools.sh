@@ -43,4 +43,9 @@ gentoo)
 	emerge-webrsync -q; emerge -q app-arch/zip app-arch/unzip dev-vcs/git ;;
 *) echo "この distro の入れ方を持っていない: $ID"; exit 1 ;;
 esac
+# Rocky の像は Config.Env に PATH を持たず、setup-java が GITHUB_PATH に足すと
+# runner が組み立てる次の step の PATH が JDK の bin だけになり、sh すら
+# 見つからなくなる (run 35692632379: exec: "sh": executable file not found)。
+# 今の PATH を GITHUB_ENV に書いておくと、runner はそれに足す形になる。
+echo "PATH=$PATH" >> "$GITHUB_ENV"
 echo "### done"
