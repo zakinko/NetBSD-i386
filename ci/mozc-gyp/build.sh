@@ -85,7 +85,13 @@ PY=$(command -v python3 || command -v python)
 "$PY" --version
 
 echo "=== gyp"
-"$PY" build_mozc.py gyp --noqt 2>&1 | tail -20
+# pipe に繋ぐと gyp の失敗が tail の成功に化ける (FreeBSD で実際にそうなり、
+# 次の build まで進んでから "Unknown target_platform: None" で落ちた)。
+# file に落として、落ちたらそこで止める
+if ! "$PY" build_mozc.py gyp --noqt > gyp.log 2>&1; then
+	echo "RESULT mozc-gyp $OS NG (gyp)"; tail -30 gyp.log; exit 1
+fi
+tail -5 gyp.log
 
 echo "=== build"
 TARGETS=${TARGETS:-"server/server.gyp:mozc_server unix/emacs/emacs.gyp:mozc_emacs_helper"}
@@ -93,14 +99,21 @@ TARGETS=${TARGETS:-"server/server.gyp:mozc_server unix/emacs/emacs.gyp:mozc_emac
 # --no_ibus_build と --no_gtk_build は 2.29 の doc の話で、3.33 の
 # build_mozc.py には無い ("no such option")。build 側が取るのは -c と
 # --target_platform ほか数個だけ
-if "$PY" build_mozc.py build -c Release $TARGETS 2>&1 | tail -40; then
+if "$PY" build_mozc.py build -c Release $TARGETS > build.log 2>&1; then
 	echo "=== 出来た物"
 	ls -l out_linux/Release out_bsd/Release 2>/dev/null | head -20
+	n=0
 	for f in out_linux/Release/mozc_server out_bsd/Release/mozc_server \
 		out_linux/Release/mozc_emacs_helper out_bsd/Release/mozc_emacs_helper; do
-		[ -x "$f" ] && { echo "RESULT mozc-gyp $OS OK: $f"; file "$f" 2>/dev/null || true; }
+		if [ -x "$f" ]; then
+			echo "RESULT mozc-gyp $OS OK: $f"
+			file "$f" 2>/dev/null || true
+			n=$((n + 1))
+		fi
 	done
+	[ "$n" -ge 2 ] || { echo "RESULT mozc-gyp $OS NG: binary が $n 個しか出ていない"; exit 1; }
 else
-	echo "RESULT mozc-gyp $OS NG"
+	echo "RESULT mozc-gyp $OS NG (build)"
+	tail -40 build.log
 	exit 1
 fi
