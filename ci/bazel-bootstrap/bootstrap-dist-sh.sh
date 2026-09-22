@@ -90,12 +90,16 @@ NetBSD|DragonFly)
 	chmod +x src/md5_netbsd.sh
 	RJ=$(grep -o 'name = "rules_java", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
 	RG=$(grep -o 'name = "rules_go", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
+	# c-ares は bazel_dep ではなく single_version_override で版が決まっている
+	# (BCR の overlay を使う形)。その版を引く
+	CA=$(sed -n '/module_name = "c-ares"/,/)/p' MODULE.bazel | sed -n 's/.*version = "\([^"]*\)".*/\1/p')
+	[ -n "$CA" ] || { echo "c-ares の版が読めない"; exit 1; }
 	[ -f "$CI_DIR/rules_java-$RJ-local.patch" ] || { echo "rules_java $RJ 向けの当て物が無い"; exit 1; }
 	mkdir -p toolchain_local
 	cp "$NB/platforms-pr142-pr143.patch" "$NB/zstd_jni-netbsd.patch" \
 		"$NB/zstd_jni-module.patch" "$NB/rules_go-pr4711.patch" toolchain_local/
 	cp "$CI_DIR/rules_java-$RJ-local.patch" toolchain_local/rules_java-local.patch
-	cp "$NB/abseil-dragonfly.patch" toolchain_local/
+	cp "$NB/abseil-dragonfly.patch" "$NB/c-ares-dragonfly.patch" toolchain_local/
 	cp "$NB/rules_java-dragonfly.patch" toolchain_local/
 	printf 'exports_files(glob(["*.patch"]))\n' > toolchain_local/BUILD
 	cat >> MODULE.bazel <<MOD
@@ -133,6 +137,12 @@ single_version_override(
     module_name = "abseil-cpp",
     patch_strip = 1,
     patches = ["//toolchain_local:abseil-dragonfly.patch"],
+)
+single_version_override(
+    module_name = "c-ares",
+    version = "$CA",
+    patch_strip = 1,
+    patches = ["//toolchain_local:c-ares-dragonfly.patch"],
 )
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.host(name = "go_default_sdk")

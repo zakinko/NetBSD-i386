@@ -1,0 +1,27 @@
+c-ares picks a prebuilt ares_config.h per OS and falls back to the Linux one,
+which sets HAVE_MALLOC_H; DragonFly has no malloc.h, so ares_setup.h stops the
+build (run 35763299274).  The FreeBSD config is the right one for a FreeBSD
+derivative.  CI only.
+
+--- a/BUILD.bazel	2026-09-23 04:23:36
++++ b/BUILD.bazel	2026-09-23 04:23:36
+@@ -46,6 +46,11 @@
+ )
+ 
+ config_setting(
++    name = "dragonfly",
++    constraint_values = ["@platforms//os:dragonfly"],
++)
++
++config_setting(
+     name = "freebsd",
+     constraint_values = ["@platforms//os:freebsd"],
+ )
+@@ -62,6 +67,7 @@
+         ":android": "include/config_android/ares_config.h",
+         ":openbsd": "include/config_openbsd/ares_config.h",
+         ":freebsd": "include/config_freebsd/ares_config.h",
++        ":dragonfly": "include/config_freebsd/ares_config.h",
+         "//conditions:default": "include/config_linux/ares_config.h",
+     }),
+     out = "ares_config.h",
