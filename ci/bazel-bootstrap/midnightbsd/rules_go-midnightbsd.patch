@@ -1,0 +1,16 @@
+MidnightBSD reports itself as "midnightbsd" to the JVM, which rules_go
+turns into a GOOS of the same name; there is no such GOOS.  Go itself has
+no MidnightBSD port: mports ships the FreeBSD build, and the kernel runs
+FreeBSD binaries, so the freebsd SDK is the one to use.  CI only.
+
+--- a/go/private/sdk.bzl
++++ b/go/private/sdk.bzl
+@@ -467,6 +467,8 @@ def detect_host_platform(ctx):
+         goos = "darwin"
+     elif goos.startswith("windows"):
+         goos = "windows"
++    elif goos == "midnightbsd":
++        goos = "freebsd"
+ 
+     goarch = ctx.os.arch
+     if goarch == "aarch64":

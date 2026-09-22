@@ -13,7 +13,9 @@ alpine)
 debian|ubuntu)
 	apt-get update -q; DEBIAN_FRONTEND=noninteractive apt-get install -y -q build-essential zip unzip curl python3 patch git ;;
 fedora|rocky|almalinux)
-	dnf install -y -q gcc gcc-c++ zip unzip curl python3 patch findutils which git tar gzip ;;
+	# Rocky 9 の像は curl-minimal を持ち、curl と衝突する (run 35676218786)。
+	# --allowerasing で入れ替えさせる
+	dnf install -y -q --allowerasing gcc gcc-c++ zip unzip curl python3 patch findutils which git tar gzip ;;
 arch)
 	pacman -Sy --noconfirm --quiet gcc zip unzip curl python patch which git ;;
 opensuse-leap|opensuse-tumbleweed)

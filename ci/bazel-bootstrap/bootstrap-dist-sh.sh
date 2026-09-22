@@ -125,7 +125,25 @@ esac
 case "$OS" in
 MidnightBSD)
 	echo "=== MidnightBSD: build_unix_jni.sh に腕を足す"
-	patch -p1 -f -i "$CI_DIR/midnightbsd/build_unix_jni-midnightbsd.patch" </dev/null ;;
+	patch -p1 -f -i "$CI_DIR/midnightbsd/build_unix_jni-midnightbsd.patch" </dev/null
+	# 次の壁は rules_go (run 35676218786)。JVM の os.name "midnightbsd" を
+	# そのまま GOOS にするが、Go に MidnightBSD の port は無く、mports の go は
+	# FreeBSD の build。rules_go に midnightbsd → freebsd の一行を差す。
+	RG=$(grep -o 'name = "rules_go", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
+	mkdir -p toolchain_local
+	cp "$CI_DIR/midnightbsd/rules_go-midnightbsd.patch" toolchain_local/
+	printf 'exports_files(glob(["*.patch"]))\n' > toolchain_local/BUILD
+	cat >> MODULE.bazel <<MOD
+
+# MidnightBSD is not a GOOS; use the freebsd SDK (CI only).
+single_version_override(
+    module_name = "rules_go",
+    version = "$RG",
+    patch_strip = 1,
+    patches = ["//toolchain_local:rules_go-midnightbsd.patch"],
+)
+MOD
+	;;
 esac
 
 # OS ごとの手当て。どれも sh 化とは無関係で、素の dist を bash で建てるときにも要る物。
