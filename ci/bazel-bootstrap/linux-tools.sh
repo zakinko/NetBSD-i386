@@ -5,7 +5,7 @@
 # glibc の箱は JDK を入れず、あとの setup-java (temurin 25) に任せる。
 set -eu
 . /etc/os-release
-echo "### distro: $ID $VERSION_ID  /bin/sh -> $(readlink -f /bin/sh)  musl: $(ls /lib/ld-musl-* 2>/dev/null || echo no)"
+echo "### distro: $ID ${VERSION_ID:-}  /bin/sh -> $(readlink -f /bin/sh)  musl: $(ls /lib/ld-musl-* 2>/dev/null || echo no)"
 case "$ID" in
 alpine)
 	apk add --no-cache openjdk25 build-base linux-headers zip unzip curl python3 patch findutils coreutils grep sed which git bash
