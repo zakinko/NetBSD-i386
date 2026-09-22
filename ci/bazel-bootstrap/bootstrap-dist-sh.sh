@@ -251,6 +251,15 @@ else
 	tail -40 compile.log
 	# JVM が落ちたなら hs_err の頭 (どの frame、どの命令) を残す。VM は job と
 	# 一緒に消えるので、log に無ければ二度と読めない。
+	# rules_java の当て物が効いていないように見えるとき (run 35692632379 の
+	# NetBSD: jni_md_header-netbsd が無いと言われた) に、override が MODULE に
+	# 在るか、取って来た rules_java に当たっているかを並べる。
+	echo "--- MODULE.bazel の override"; grep -n -A4 'single_version_override' MODULE.bazel | head -40
+	for d in "${TMPDIR:-/tmp}"/bazel_*/out/external/rules_java+ /tmp/bazel_*/out/external/rules_java+; do
+		[ -d "$d" ] || continue
+		echo "--- $d/toolchains/BUILD: netbsd $(grep -c netbsd "$d/toolchains/BUILD") 行, jni_md_header $(grep -c jni_md_header "$d/toolchains/BUILD") 行"
+		ls "$d" | head; grep -n 'netbsd' "$d/toolchains/BUILD" | head -5
+	done
 	for h in hs_err_pid*.log; do
 		[ -f "$h" ] || continue
 		echo "--- $h"; sed -n '1,40p' "$h"
