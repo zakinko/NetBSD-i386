@@ -50,6 +50,10 @@ on:
         description: 'rules_python を当て物ではなくこの版へ上げて建てる (例 2.3.3)。空なら export の当て物'
         type: string
         default: ''
+      only:
+        description: 'この job だけ回す (job 名を , 区切り。例 midnightbsd,rocky-bash)。空なら他の入力どおり。CI が混むので、通った箱を撃ち直さないため'
+        type: string
+        default: ''
 
 concurrency:
   group: bazel-master-sh-${{ github.ref }}-${{ inputs.branch }}-${{ inputs.bsd }}-${{ inputs.wide }}-${{ inputs.jdk21 }}-${{ inputs.netbsd }}-${{ github.run_id }}
@@ -98,18 +102,18 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
-        if: ${{ !matrix.wide || inputs.wide }}
+        if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), format(',{0},', matrix.name))) || (inputs.only == '' && (!matrix.wide || inputs.wide)) }}
       - name: distro の道具 (musl の箱は distro の JDK も)
-        if: ${{ matrix.container != '' && (!matrix.wide || inputs.wide) }}
+        if: ${{ matrix.container != '' && ((inputs.only != '' && contains(format(',{0},', inputs.only), format(',{0},', matrix.name))) || (inputs.only == '' && (!matrix.wide || inputs.wide))) }}
         run: sh ci/bazel-bootstrap/linux-tools.sh
       - uses: actions/setup-java@v4
-        if: ${{ (!matrix.wide || inputs.wide) && !contains(matrix.name, 'musl') && matrix.container != 'alpine:latest' }}
+        if: ${{ ((inputs.only != '' && contains(format(',{0},', inputs.only), format(',{0},', matrix.name))) || (inputs.only == '' && (!matrix.wide || inputs.wide))) && !contains(matrix.name, 'musl') && matrix.container != 'alpine:latest' }}
         with: { distribution: temurin, java-version: '25' }
       - uses: actions/download-artifact@v4
-        if: ${{ !matrix.wide || inputs.wide }}
+        if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), format(',{0},', matrix.name))) || (inputs.only == '' && (!matrix.wide || inputs.wide)) }}
         with: { name: master-sh-dist, path: master-sh-dist }
       - name: bootstrap the dist under /bin/sh (${{ matrix.name }})
-        if: ${{ !matrix.wide || inputs.wide }}
+        if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), format(',{0},', matrix.name))) || (inputs.only == '' && (!matrix.wide || inputs.wide)) }}
         run: |
           set -x
           echo "/bin/sh -> $(readlink -f /bin/sh)  JAVA_HOME=$JAVA_HOME  JAVA_VERSION=${JAVA_VERSION:-}"
@@ -125,7 +129,7 @@ jobs:
   # docker run で素の image を起こし、中で linux-in-docker.sh に回させる。
   linux-docker:
     needs: dist
-    if: ${{ !inputs.jdk21 && inputs.wide }}
+    if: ${{ !inputs.jdk21 && (inputs.wide || inputs.only != '') }}
     strategy:
       fail-fast: false
       matrix:
@@ -138,9 +142,12 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
+        if: ${{ inputs.only == '' || contains(format(',{0},', inputs.only), format(',{0},', matrix.name)) }}
       - uses: actions/download-artifact@v4
+        if: ${{ inputs.only == '' || contains(format(',{0},', inputs.only), format(',{0},', matrix.name)) }}
         with: { name: master-sh-dist, path: master-sh-dist }
       - name: bootstrap the dist under /bin/sh in docker (${{ matrix.name }})
+        if: ${{ inputs.only == '' || contains(format(',{0},', inputs.only), format(',{0},', matrix.name)) }}
         run: |
           docker run --rm -v "$GITHUB_WORKSPACE:/w" -w /w \
             -e SH_BIN=/bin/sh -e LOG_BASH=1 -e NO_VIS=0 -e "RP_BUMP=${{ inputs.rp_bump }}" \
@@ -150,7 +157,7 @@ jobs:
 
   macos:
     needs: dist
-    if: ${{ !inputs.jdk21 }}
+    if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), ',macos,')) || (inputs.only == '' && (!inputs.jdk21)) }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:
@@ -171,7 +178,7 @@ jobs:
 
   freebsd:
     needs: dist
-    if: ${{ inputs.bsd && !inputs.jdk21 }}
+    if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), ',freebsd,')) || (inputs.only == '' && (inputs.bsd && !inputs.jdk21)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
@@ -190,7 +197,7 @@ jobs:
 
   openbsd:
     needs: dist
-    if: ${{ inputs.bsd && !inputs.jdk21 }}
+    if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), ',openbsd,')) || (inputs.only == '' && (inputs.bsd && !inputs.jdk21)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
@@ -209,7 +216,7 @@ jobs:
 
   ghostbsd:
     needs: dist
-    if: ${{ inputs.bsd && !inputs.jdk21 }}
+    if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), ',ghostbsd,')) || (inputs.only == '' && (inputs.bsd && !inputs.jdk21)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
@@ -228,7 +235,7 @@ jobs:
 
   windows:
     needs: dist
-    if: ${{ inputs.wide && !inputs.jdk21 }}
+    if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), ',windows,')) || (inputs.only == '' && (inputs.wide && !inputs.jdk21)) }}
     runs-on: windows-latest
     timeout-minutes: 180
     steps:
@@ -257,7 +264,7 @@ jobs:
 
   hardenedbsd:
     needs: dist
-    if: ${{ inputs.wide && !inputs.jdk21 }}
+    if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), ',hardenedbsd,')) || (inputs.only == '' && (inputs.wide && !inputs.jdk21)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
@@ -278,7 +285,7 @@ jobs:
   # 見るための箱。通ることは期待していない。
   midnightbsd:
     needs: dist
-    if: ${{ inputs.wide && !inputs.jdk21 }}
+    if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), ',midnightbsd,')) || (inputs.only == '' && (inputs.wide && !inputs.jdk21)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     continue-on-error: true
@@ -301,7 +308,7 @@ jobs:
   # JDK が 21 止まりの NetBSD と DragonFly でも kit 無しで建てられる。
   jdk21:
     needs: dist
-    if: inputs.jdk21
+    if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), ',jdk21,')) || (inputs.only == '' && (inputs.jdk21)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -323,7 +330,7 @@ jobs:
 
   netbsd:
     needs: dist
-    if: ${{ inputs.netbsd && !inputs.jdk21 }}
+    if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), ',netbsd,')) || (inputs.only == '' && (inputs.netbsd && !inputs.jdk21)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     steps:
@@ -347,7 +354,7 @@ jobs:
 
   dragonfly:
     needs: dist
-    if: ${{ inputs.netbsd && !inputs.jdk21 }}
+    if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), ',dragonfly,')) || (inputs.only == '' && (inputs.netbsd && !inputs.jdk21)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     continue-on-error: true
@@ -367,7 +374,7 @@ jobs:
 
   macos-intel:
     needs: dist
-    if: ${{ inputs.wide && !inputs.jdk21 }}
+    if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), ',macos-intel,')) || (inputs.only == '' && (inputs.wide && !inputs.jdk21)) }}
     runs-on: macos-15-intel
     timeout-minutes: 180
     steps:
@@ -388,7 +395,7 @@ jobs:
 
   windows-arm64:
     needs: dist
-    if: ${{ inputs.wide && !inputs.jdk21 }}
+    if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), ',windows-arm64,')) || (inputs.only == '' && (inputs.wide && !inputs.jdk21)) }}
     runs-on: windows-11-arm
     timeout-minutes: 180
     continue-on-error: true
@@ -422,7 +429,7 @@ jobs:
   # 収まらないかもしれない。どこまで行くかを見る箱。
   freebsd-arm64:
     needs: dist
-    if: ${{ inputs.wide && inputs.bsd && !inputs.jdk21 }}
+    if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), ',freebsd-arm64,')) || (inputs.only == '' && (inputs.wide && inputs.bsd && !inputs.jdk21)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 355
     continue-on-error: true
@@ -444,7 +451,7 @@ jobs:
 
   openbsd-arm64:
     needs: dist
-    if: ${{ inputs.wide && inputs.bsd && !inputs.jdk21 }}
+    if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), ',openbsd-arm64,')) || (inputs.only == '' && (inputs.wide && inputs.bsd && !inputs.jdk21)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 355
     continue-on-error: true
