@@ -264,11 +264,13 @@ else
 	# rules_java の当て物が効いていないように見えるとき (run 35692632379 の
 	# NetBSD: jni_md_header-netbsd が無いと言われた) に、override が MODULE に
 	# 在るか、取って来た rules_java に当たっているかを並べる。
-	echo "--- MODULE.bazel の override"; grep -n -A4 'single_version_override' MODULE.bazel | head -40
-	for d in "${TMPDIR:-/tmp}"/bazel_*/out/external/rules_java+ /tmp/bazel_*/out/external/rules_java+; do
-		[ -d "$d" ] || continue
-		echo "--- $d/toolchains/BUILD: netbsd $(grep -c netbsd "$d/toolchains/BUILD") 行, jni_md_header $(grep -c jni_md_header "$d/toolchains/BUILD") 行"
-		ls "$d" | head; grep -n 'netbsd' "$d/toolchains/BUILD" | head -5
+	echo "--- MODULE.bazel の rules_java の override (末尾に足した分)"
+	grep -n -B2 -A6 'module_name = "rules_java"' MODULE.bazel
+	echo "--- toolchain_local"; ls -l toolchain_local 2>&1 | head
+	echo "--- 取って来た rules_java に当たっているか"
+	find / -maxdepth 6 -type d -name 'rules_java+' -path '*external*' 2>/dev/null | while read d; do
+		[ -f "$d/toolchains/BUILD" ] || continue
+		echo "$d: netbsd $(grep -c netbsd "$d/toolchains/BUILD") 行"
 	done
 	for h in hs_err_pid*.log; do
 		[ -f "$h" ] || continue
