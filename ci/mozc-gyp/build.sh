@@ -15,6 +15,8 @@
 # 出来た binary を動かすところまではここではしない。まず「建つか」を測る。
 set -eu
 
+CI_DIR=$(cd "$(dirname "$0")" && pwd)
+
 MOZC_TAG=${MOZC_TAG:-3.33.6089}
 OS=$(uname -s)
 echo "=== $OS $(uname -r) $(uname -m)  mozc $MOZC_TAG"
@@ -63,10 +65,20 @@ esac
 echo "=== mozc $MOZC_TAG を取る"
 git clone -q --depth 1 -b "$MOZC_TAG" https://github.com/google/mozc.git mozc
 cd mozc
-git submodule update --init --recursive --depth 1 -- src/third_party/gyp 2>/dev/null \
-	|| git submodule update --init --recursive --depth 1 || true
+# submodule は abseil / protobuf / gyp などで、無いと ninja が source を
+# 見つけられない (run 35794480006 の Ubuntu: exponential_biased.cc が missing)。
+# 落ちたらそこで止める
+git submodule update --init --recursive --depth 1
 cd src
 echo "=== third_party の中身"; ls third_party 2>/dev/null | head
+
+# BSD では build_mozc.py が target_platform を決められない
+# ("Unknown target_platform: None")。五つの BSD を教える
+case "$OS" in
+FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|NetBSD|OpenBSD|DragonFly)
+	echo "=== BSD の当て物"
+	patch -p1 -f -i "$CI_DIR/bsd-build_mozc.patch" </dev/null ;;
+esac
 
 PY=$(command -v python3 || command -v python)
 [ -n "$PY" ] || { echo "python3 が無い"; exit 1; }

@@ -1,0 +1,99 @@
+Teach the GYP build about the BSDs.
+
+build_mozc.py knows Linux, Mac and Windows, so on a BSD AddTargetPlatformOption
+leaves default_target unset and the script dies with "Unknown target_platform:
+None" (run 35794480006).  Name the five BSDs, send them down the Linux path,
+and put their output in out_bsd.
+
+This follows what pkgsrc carries for mozc 2.26 (inputmethod/mozc-server226),
+written against 3.33.6089.  CI only for now.
+
+diff -ur a/build_mozc.py b/build_mozc.py
+--- a/build_mozc.py	2026-09-23 07:53:28
++++ b/build_mozc.py	2026-09-23 07:53:40
+@@ -54,6 +54,8 @@
+ from build_tools.util import ColoredLoggingFilter
+ from build_tools.util import ColoredText
+ from build_tools.util import CopyFile
++from build_tools.util import GetBSDName
++from build_tools.util import IsBSD
+ from build_tools.util import IsLinux
+ from build_tools.util import IsMac
+ from build_tools.util import IsWindows
+@@ -100,6 +102,11 @@
+       'Windows': 'out_win',
+       'Mac': 'out_mac',
+       'Linux': 'out_linux',
++      'FreeBSD': 'out_bsd',
++      'NetBSD': 'out_bsd',
++      'OpenBSD': 'out_bsd',
++      'DragonFly': 'out_bsd',
++      'MidnightBSD': 'out_bsd',
+   }
+ 
+   if target_platform not in platform_dict:
+@@ -162,7 +169,8 @@
+   # Include subdirectory of win32 and breakpad for Windows
+   if options.target_platform == 'Windows':
+     gyp_file_names.extend(glob.glob('%s/win32/*/*.gyp' % OSS_SRC_DIR))
+-  elif options.target_platform == 'Linux':
++  elif options.target_platform == 'Linux' or IsBSDTarget(
++      options.target_platform):
+     gyp_file_names.extend(glob.glob('%s/unix/emacs/*.gyp' % OSS_SRC_DIR))
+   gyp_file_names.sort()
+   return gyp_file_names
+@@ -181,10 +189,18 @@
+   logging.getLogger().setLevel(logging.DEBUG)
+ 
+ 
++def IsBSDTarget(target_platform):
++  """Returns true for the BSDs, which build the same way as Linux here."""
++  return target_platform in ('FreeBSD', 'NetBSD', 'OpenBSD', 'DragonFly',
++                             'MidnightBSD')
++
++
+ # TODO(b/68382821): Remove this method. We no longer need --target_platform.
+ def AddTargetPlatformOption(parser):
+   if IsLinux():
+     default_target = 'Linux'
++  elif IsBSD():
++    default_target = GetBSDName()
+   elif IsWindows():
+     default_target = 'Windows'
+   elif IsMac():
+@@ -287,7 +303,7 @@
+   if meta_target_name != 'package':
+     return dependencies + [meta_target_name]
+ 
+-  if target_platform == 'Linux':
++  if target_platform == 'Linux' or IsBSDTarget(target_platform):
+     targets = [
+         OSS_SRC_DIR + '/server/server.gyp:mozc_server',
+         OSS_SRC_DIR + '/gui/gui.gyp:mozc_tool',
+diff -ur a/build_tools/util.py b/build_tools/util.py
+--- a/build_tools/util.py	2026-09-23 07:53:28
++++ b/build_tools/util.py	2026-09-23 07:53:28
+@@ -54,6 +54,23 @@
+   return os.name == 'posix' and os.uname()[0] == 'Linux'
+ 
+ 
++def GetBSDName():
++  """Returns the uname of the running BSD, or None elsewhere."""
++  if os.name != 'posix':
++    return None
++  name = os.uname()[0]
++  # GhostBSD and HardenedBSD both answer FreeBSD; MidnightBSD does not, but
++  # its kernel runs FreeBSD binaries and its ports are the FreeBSD ones.
++  if name in ('FreeBSD', 'NetBSD', 'OpenBSD', 'DragonFly', 'MidnightBSD'):
++    return name
++  return None
++
++
++def IsBSD():
++  """Returns true if the platform is one of the BSDs."""
++  return GetBSDName() is not None
++
++
+ def CaseAwareAbsPath(path: str) -> str:
+   """Wraps os.path.abspath() with case normalization.
+ 
