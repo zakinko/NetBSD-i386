@@ -46,6 +46,10 @@ on:
         description: 'NetBSD では jdk25u の bootstrap kit (JDK 25) を使う。false なら pkgsrc の openjdk21 と JAVA_VERSION=21'
         type: boolean
         default: false
+      rp_bump:
+        description: 'rules_python を当て物ではなくこの版へ上げて建てる (例 2.3.3)。空なら export の当て物'
+        type: string
+        default: ''
 
 concurrency:
   group: bazel-master-sh-${{ github.ref }}-${{ inputs.branch }}-${{ inputs.bsd }}-${{ inputs.wide }}-${{ inputs.jdk21 }}-${{ inputs.netbsd }}-${{ github.run_id }}
@@ -119,6 +123,7 @@ jobs:
           SH_BIN: /bin/sh
           LOG_BASH: '1'
           NO_VIS: '0'
+          RP_BUMP: ${{ inputs.rp_bump }}
 
   macos:
     needs: dist

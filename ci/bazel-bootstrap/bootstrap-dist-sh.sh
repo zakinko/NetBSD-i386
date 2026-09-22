@@ -153,6 +153,18 @@ fi
 # 既に在る) を当てる。#30914 (rules_python の bump) が入れば要らなくなる。
 if [ "$NO_VIS" = 1 ]; then
 	EXTRA_BAZEL_ARGS="$EXTRA_BAZEL_ARGS --check_visibility=false"
+elif [ -n "${RP_BUMP:-}" ]; then
+	# 当て物ではなく、export を持つ版 (2.0.0 以降) へ上げる。上流の #30914 と同じ
+	# 向き。2.x の互換性の変更に bazel の tree が耐えるかは、これで測る。
+	cat >> MODULE.bazel <<MOD
+
+# rules_python bumped past the missing exports_files (CI only; bazel#30914 does the same).
+single_version_override(
+    module_name = "rules_python",
+    version = "$RP_BUMP",
+)
+MOD
+	echo "rules_python を $RP_BUMP に上げた (当て物なし)"
 else
 	RP=$(grep -o 'name = "rules_python", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
 	[ -f "$CI_DIR/rules_python-$RP-export.patch" ] || { echo "rules_python $RP 向けの export の当て物が無い"; exit 1; }
