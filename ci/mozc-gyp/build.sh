@@ -37,26 +37,26 @@ rm -rf "$WORK"; mkdir -p "$WORK"; cd "$WORK"
 echo "=== 道具を入れる"
 case "$OS" in
 FreeBSD|GhostBSD|HardenedBSD)
-	pkg install -y python3 ninja git gmake pkgconf || pkg install -y python3 ninja git gmake pkgconf ;;
+	pkg install -y python3 py311-six ninja git gmake pkgconf || pkg install -y python3 py312-six ninja git gmake pkgconf ;;
 MidnightBSD)
-	mport install -y python3 ninja git gmake pkgconf || mport install python3 ninja git gmake pkgconf ;;
+	mport install -y python3 py311-six ninja git gmake pkgconf || mport install python3 ninja git gmake pkgconf ;;
 DragonFly)
-	pkg install -y python3 ninja git gmake pkgconf ;;
+	pkg install -y python3 py311-six ninja git gmake pkgconf ;;
 NetBSD)
 	/usr/sbin/pkg_add -U pkgin || true
-	pkgin -y install python313 ninja-build git-base gmake pkg-config
+	pkgin -y install python313 py313-six ninja-build git-base gmake pkg-config
 	ln -sf /usr/pkg/bin/python3.13 /usr/pkg/bin/python3
 	PATH=/usr/pkg/bin:/usr/pkg/sbin:$PATH; export PATH ;;
 OpenBSD)
-	pkg_add -I python%3 ninja git gmake pkgconf || true
+	pkg_add -I python%3 py3-six ninja git gmake pkgconf || true
 	ln -sf /usr/local/bin/python3 /usr/local/bin/python 2>/dev/null || true ;;
 Linux)
 	if [ -f /etc/os-release ]; then
 		ID=$(. /etc/os-release; echo "${ID:-}")
 	fi
 	case "${ID:-}" in
-	debian|ubuntu) apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q python3 ninja-build git g++ make pkg-config ;;
-	alpine) apk add --no-cache python3 ninja-build git g++ make pkgconf bash ;;
+	debian|ubuntu) apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q python3 python3-six ninja-build git g++ make pkg-config ;;
+	alpine) apk add --no-cache python3 py3-six ninja-build git g++ make pkgconf bash ;;
 	*) echo "この distro の入れ方を持っていない: ${ID:-}"; exit 1 ;;
 	esac ;;
 *) echo "この OS の手当てを持っていない: $OS"; exit 1 ;;
@@ -81,6 +81,14 @@ FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|NetBSD|OpenBSD|DragonFly)
 esac
 
 PY=$(command -v python3 || command -v python)
+# gyp の pylib は six を import する。package 名が箱ごとに違ううえ、無い箱も
+# あるので、届かなければその場で確かめてから進む
+if ! "$PY" -c 'import six' 2>/dev/null; then
+	echo "six が無い。gyp は import gyp で落ちる"
+	"$PY" -m pip install --break-system-packages six 2>/dev/null \
+		|| "$PY" -m pip install --user six 2>/dev/null \
+		|| { echo "six を入れられない"; exit 1; }
+fi
 [ -n "$PY" ] || { echo "python3 が無い"; exit 1; }
 "$PY" --version
 
