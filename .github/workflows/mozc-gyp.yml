@@ -1,0 +1,108 @@
+# mozc を GYP で、いろいろな port で建てる。
+#
+# master の mozc は gyp を捨てている (2026-03-11 の 0e55551e) ので、gyp が
+# 残っている最後のあたりの tag を建てる。bazel を通さないぶん、port の側の
+# 問題だけが出る。
+#
+# 手で押したときだけ走る。only= で箱を絞れる。
+name: mozc-gyp
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '建てる mozc の tag'
+        type: string
+        default: '3.33.6089'
+      only:
+        description: 'この job だけ回す (, 区切り)。空なら全部'
+        type: string
+        default: ''
+
+concurrency:
+  group: mozc-gyp-${{ github.ref }}-${{ inputs.tag }}-${{ github.run_id }}
+  cancel-in-progress: true
+
+env:
+  MOZC_TAG: ${{ inputs.tag }}
+
+jobs:
+  linux:
+    if: ${{ inputs.only == '' || contains(format(',{0},', inputs.only), ',ubuntu,') }}
+    name: ubuntu
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo -E sh ci/mozc-gyp/build.sh
+
+  freebsd:
+    if: ${{ inputs.only == '' || contains(format(',{0},', inputs.only), ',freebsd,') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE MOZC_TAG'
+          run: sh "$GITHUB_WORKSPACE/ci/mozc-gyp/build.sh"
+
+  netbsd:
+    if: ${{ inputs.only == '' || contains(format(',{0},', inputs.only), ',netbsd,') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/netbsd-vm@v1
+        with:
+          release: "11.0"
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE MOZC_TAG'
+          run: sh "$GITHUB_WORKSPACE/ci/mozc-gyp/build.sh"
+
+  openbsd:
+    if: ${{ inputs.only == '' || contains(format(',{0},', inputs.only), ',openbsd,') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/openbsd-vm@v1
+        with:
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE MOZC_TAG'
+          run: sh "$GITHUB_WORKSPACE/ci/mozc-gyp/build.sh"
+
+  dragonfly:
+    if: ${{ inputs.only == '' || contains(format(',{0},', inputs.only), ',dragonfly,') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/dragonflybsd-vm@v1
+        with:
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE MOZC_TAG'
+          run: sh "$GITHUB_WORKSPACE/ci/mozc-gyp/build.sh"
+
+  midnightbsd:
+    if: ${{ inputs.only == '' || contains(format(',{0},', inputs.only), ',midnightbsd,') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/midnightbsd-vm@v1
+        with:
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE MOZC_TAG'
+          run: sh "$GITHUB_WORKSPACE/ci/mozc-gyp/build.sh"
