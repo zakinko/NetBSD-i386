@@ -118,7 +118,7 @@ jobs:
         env:
           SH_BIN: /bin/sh
           LOG_BASH: '1'
-          NO_VIS: '1'
+          NO_VIS: '0'
 
   macos:
     needs: dist
@@ -138,7 +138,7 @@ jobs:
         env:
           SH_BIN: /bin/sh
           LOG_BASH: '0'
-          NO_VIS: '1'
+          NO_VIS: '0'
 
   freebsd:
     needs: dist
@@ -223,7 +223,7 @@ jobs:
         env:
           SH_BIN: /usr/bin/sh
           LOG_BASH: '0'
-          NO_VIS: '1'
+          NO_VIS: '0'
 
   hardenedbsd:
     needs: dist
@@ -287,7 +287,7 @@ jobs:
         env:
           SH_BIN: /bin/sh
           LOG_BASH: '0'
-          NO_VIS: '1'
+          NO_VIS: '0'
           JAVA_VERSION: '21'
 
   netbsd:

@@ -146,8 +146,31 @@ if [ "$OS" = OpenBSD ]; then
 		EXTRA_BAZEL_ARGS="$EXTRA_BAZEL_ARGS --host_linkopt=$l --linkopt=$l"
 	done
 fi
+# master の bazel は incompatible_no_implicit_file_export が既定 true で、
+# rules_python 1.7.0 は runtime_env_toolchain_interpreter.sh を export して
+# いないので、bootstrap.sh が渡す --extra_toolchains=@rules_python//... で
+# analysis が落ちる。検査を切るのではなく、rules_python にその一行 (main には
+# 既に在る) を当てる。#30914 (rules_python の bump) が入れば要らなくなる。
 if [ "$NO_VIS" = 1 ]; then
 	EXTRA_BAZEL_ARGS="$EXTRA_BAZEL_ARGS --check_visibility=false"
+else
+	RP=$(grep -o 'name = "rules_python", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
+	[ -f "$CI_DIR/rules_python-$RP-export.patch" ] || { echo "rules_python $RP 向けの export の当て物が無い"; exit 1; }
+	mkdir -p toolchain_local
+	cp "$CI_DIR/rules_python-$RP-export.patch" toolchain_local/rules_python-export.patch
+	[ -f toolchain_local/BUILD ] || printf 'exports_files(glob(["*.patch"]))\n' > toolchain_local/BUILD
+	cat >> MODULE.bazel <<MOD
+
+# rules_python $RP does not export runtime_env_toolchain_interpreter.sh (CI only;
+# main does, and bazel#30914 bumps past it).
+single_version_override(
+    module_name = "rules_python",
+    version = "$RP",
+    patch_strip = 1,
+    patches = ["//toolchain_local:rules_python-export.patch"],
+)
+MOD
+	echo "rules_python $RP に export の一行を当てた (--check_visibility は既定のまま)"
 fi
 export EXTRA_BAZEL_ARGS
 echo "EXTRA_BAZEL_ARGS=$EXTRA_BAZEL_ARGS"
