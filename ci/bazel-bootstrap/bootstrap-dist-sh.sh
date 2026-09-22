@@ -354,6 +354,17 @@ if [ -n "$BASHLOG" ]; then
 fi
 
 echo "=== 煙試験"
+# 煙試験は dist の外の workspace なので、module の解決で BCR を引きに行く
+# (bootstrap の方は dist の repository_cache で足りている)。NetBSD の VM では
+# そこが "No route to host" になった (run 35763299274)。箱に network が在るのか、
+# bazel の JVM だけが届かないのかを分けるために、先に素の取得で確かめる。
+if command -v ftp >/dev/null 2>&1; then
+	ftp -o /dev/null "https://bcr.bazel.build/bazel_registry.json" 2>&1 | tail -2 \
+		&& echo "BCR へは ftp(1) で届く" || echo "BCR へ ftp(1) でも届かない"
+elif command -v curl >/dev/null 2>&1; then
+	curl -fsS -o /dev/null "https://bcr.bazel.build/bazel_registry.json" \
+		&& echo "BCR へは curl で届く" || echo "BCR へ curl でも届かない"
+fi
 case "$OS" in
 MINGW*|MSYS*|CYGWIN*)
 	# MSYS は //p:gen を /p:gen に path 変換して "invalid package name" になる。
@@ -412,7 +423,8 @@ rc=0
 for t in gen hello_cc hello_java; do
 	if [ "$t" = gen ]; then act=build; else act=run; fi
 	extra=""; if [ "$t" = hello_java ]; then extra=$JAVA_ARGS; fi
-	if "$WORK/dist/$BZ" $act --repository_cache="$WORK/dist/derived/repository_cache" ${EXTRA_BAZEL_ARGS:-} $extra "//p:$t" > "$WORK/smoke-$t.log" 2>&1; then
+	# JVM が IPv6 を先に試して届かない箱があるので IPv4 を先にする
+	if "$WORK/dist/$BZ" --host_jvm_args=-Djava.net.preferIPv4Stack=true $act --repository_cache="$WORK/dist/derived/repository_cache" ${EXTRA_BAZEL_ARGS:-} $extra "//p:$t" > "$WORK/smoke-$t.log" 2>&1; then
 		echo "SMOKE //p:$t OK"
 	else
 		echo "SMOKE NG //p:$t"; tail -20 "$WORK/smoke-$t.log"; rc=1
