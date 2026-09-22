@@ -53,9 +53,23 @@ NetBSD)
 	fi ;;
 DragonFly)
 	pkg install -y git bash zip unzip python3 go curl patch
-	pkg install -y openjdk21 || true
-	JAVA_HOME=/usr/local/openjdk21
-	JAVA_VERSION=21; export JAVA_VERSION ;;
+	if [ "${JDK_KIT:-}" = 1 ]; then
+		# dports は openjdk21 止まりで、master は 22 以上が要る。zakinko/jdk25u の
+		# bootstrap kit (DragonFly 6.4 x86_64、cross build、174MB)。DragonFly に
+		# PaX は無いので印は要らない。include は BSD port の作りで include/bsd/。
+		mkdir -p /usr/local/kit25
+		curl -fsSL -o /var/tmp/kit25.tar.xz "https://github.com/zakinko/jdk25u/releases/download/bootstrap-kit-25-dragonfly-20260922/bootstrap-jdk-1.25.0.5.0-dragonfly-6.4-x86_64-20260922.tar.xz"
+		tar -C /usr/local/kit25 --strip-components=1 -xf /var/tmp/kit25.tar.xz
+		# dports の openjdk は include/freebsd を include/dragonfly に写して置く。
+		# kit は include/bsd/ なので、NetBSD の kit と同じく symlink で dports の
+		# 形に見せる (build_unix_jni の当て物は dports の形を指す)。
+		ln -s bsd /usr/local/kit25/include/dragonfly
+		JAVA_HOME=/usr/local/kit25
+	else
+		pkg install -y openjdk21 || true
+		JAVA_HOME=/usr/local/openjdk21
+		JAVA_VERSION=21; export JAVA_VERSION
+	fi ;;
 *) echo "この OS の手当てを持っていない: $OS"; exit 1 ;;
 esac
 [ -x "$JAVA_HOME/bin/javac" ] || { echo "JDK 25 が $JAVA_HOME に無い"; ls -d /usr/local/*jdk* /usr/local/openjdk* 2>/dev/null; exit 1; }

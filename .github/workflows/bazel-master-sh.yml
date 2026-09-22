@@ -43,7 +43,7 @@ on:
         type: boolean
         default: false
       jdk_kit:
-        description: 'NetBSD では jdk25u の bootstrap kit (JDK 25) を使う。false なら pkgsrc の openjdk21 と JAVA_VERSION=21'
+        description: 'NetBSD と DragonFly では jdk25u の bootstrap kit (JDK 25) を使う。false なら package の openjdk21 と JAVA_VERSION=21'
         type: boolean
         default: false
       rp_bump:
@@ -367,10 +367,12 @@ jobs:
           mem: 8192
           cpu: 4
           copyback: false
-          envs: 'GITHUB_WORKSPACE'
+          envs: 'GITHUB_WORKSPACE JDK_KIT'
           run: |
             set -x
             sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/bsd-master-sh.sh" "$GITHUB_WORKSPACE/master-sh-dist/bazel-distfile.zip"
+    env:
+      JDK_KIT: ${{ inputs.jdk_kit && '1' || '0' }}
 
   macos-intel:
     needs: dist

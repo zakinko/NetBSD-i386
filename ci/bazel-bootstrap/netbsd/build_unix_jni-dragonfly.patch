@@ -1,0 +1,17 @@
+DragonFly's dports openjdk copies include/freebsd to include/dragonfly
+(java/openjdk21/Makefile in DPorts), so that is the directory to name.
+Applies on top of build_unix_jni-netbsd.patch.  CI only for now.
+
+--- a/scripts/bootstrap/build_unix_jni.sh
++++ b/scripts/bootstrap/build_unix_jni.sh
+@@ -58,6 +58,10 @@
+   SOURCES="$SOURCES src/main/native/unix_jni_bsd.cc"
+   set -- "$@" "-I${JAVA_HOME}/include/netbsd"
+   ;;
++dragonfly)
++  SOURCES="$SOURCES src/main/native/unix_jni_bsd.cc"
++  set -- "$@" "-I${JAVA_HOME}/include/dragonfly"
++  ;;
+ esac
+ 
+ # shellcheck disable=SC2086  # $SOURCES is a list

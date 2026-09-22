@@ -77,6 +77,7 @@ NetBSD|DragonFly)
 	echo "=== NetBSD/DragonFly: bazel #31069 と module の当て物を差す"
 	patch -p1 -f -i "$NB/bazel-31069-netbsd.patch" </dev/null
 	patch -p1 -f -i "$NB/build_unix_jni-netbsd.patch" </dev/null
+	patch -p1 -f -i "$NB/build_unix_jni-dragonfly.patch" </dev/null
 	patch -p1 -f -i "$CI_DIR/musl-stat-master.patch" </dev/null
 	RJ=$(grep -o 'name = "rules_java", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
 	RG=$(grep -o 'name = "rules_go", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
