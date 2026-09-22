@@ -1,16 +1,19 @@
-abseil does not recognise DragonFly.  sysinfo.cc falls through to the generic
-branch and casts a pthread_t to pid_t, and cctz defines _XOPEN_SOURCE 500,
-which on DragonFly hides isblank, wcstof and the wide scanf family from
-libstdc++'s headers (runs 35749586358 and 35757966151).  DragonFly derives
-from FreeBSD: it has pthread_np.h and the same sysctl, and its headers behave
-the same way, so take the FreeBSD arms in both places.
+abseil does not recognise DragonFly, so three places take the wrong branch:
 
-These are the two files of abseil-cpp#2160 that the bootstrap actually needs;
-the rest of that PR is not carried here.  CI only.
+  sysinfo.cc   casts a pthread_t to pid_t in the generic GetTID, and misses
+               pthread_np.h and sys/sysctl.h
+  cctz         defines _XOPEN_SOURCE 500, which on DragonFly hides isblank,
+               wcstof and the wide scanf family from libstdc++'s headers
+  vdso_support the Elf64_auxv_t alias is only declared for FreeBSD and NetBSD
 
-diff -ur abs/absl/base/internal/sysinfo.cc abs2/absl/base/internal/sysinfo.cc
+DragonFly derives from FreeBSD and has pthread_np.h, the same sysctl and the
+same Elf64_Auxinfo, so take the FreeBSD arm in each.  These are the files of
+abseil-cpp#2160 that the bootstrap actually needs; the rest of that PR is not
+carried here.  CI only.
+
+diff -ur abs/absl/base/internal/sysinfo.cc abs3/absl/base/internal/sysinfo.cc
 --- a/absl/base/internal/sysinfo.cc	2026-09-23 02:00:56
-+++ b/absl/base/internal/sysinfo.cc	2026-09-23 02:49:56
++++ b/absl/base/internal/sysinfo.cc	2026-09-23 06:33:52
 @@ -30,11 +30,11 @@
  #include <sys/syscall.h>
  #endif
@@ -34,10 +37,21 @@ diff -ur abs/absl/base/internal/sysinfo.cc abs2/absl/base/internal/sysinfo.cc
  
  pid_t GetTID() { return static_cast<pid_t>(pthread_getthreadid_np()); }
  
-Only in abs2/absl/base/internal: sysinfo.cc.orig
-diff -ur abs/absl/time/internal/cctz/src/time_zone_format.cc abs2/absl/time/internal/cctz/src/time_zone_format.cc
+diff -ur abs/absl/debugging/internal/vdso_support.cc abs3/absl/debugging/internal/vdso_support.cc
+--- a/absl/debugging/internal/vdso_support.cc	2026-09-23 02:00:56
++++ b/absl/debugging/internal/vdso_support.cc	2026-09-23 06:33:52
+@@ -55,7 +55,7 @@
+ using Elf32_auxv_t = Aux32Info;
+ using Elf64_auxv_t = Aux64Info;
+ #endif
+-#if defined(__FreeBSD__)
++#if defined(__FreeBSD__) || defined(__DragonFly__)
+ #if defined(__ELF_WORD_SIZE) && __ELF_WORD_SIZE == 64
+ using Elf64_auxv_t = Elf64_Auxinfo;
+ #endif
+diff -ur abs/absl/time/internal/cctz/src/time_zone_format.cc abs3/absl/time/internal/cctz/src/time_zone_format.cc
 --- a/absl/time/internal/cctz/src/time_zone_format.cc	2026-09-23 02:00:57
-+++ b/absl/time/internal/cctz/src/time_zone_format.cc	2026-09-23 02:49:56
++++ b/absl/time/internal/cctz/src/time_zone_format.cc	2026-09-23 06:33:52
 @@ -19,7 +19,8 @@
  #endif
  
