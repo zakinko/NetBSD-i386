@@ -17,6 +17,7 @@ set -eu
 WS=$1; DIST=$2
 cd "$WS"
 GITHUB_ENV=$WS/.docker-env; : > "$GITHUB_ENV"; export GITHUB_ENV
+IN_DOCKER=1; export IN_DOCKER
 # leap の像には sh が無い。道具が入るまでは、起こした shell (IN_SHELL) で呼ぶ。
 "${IN_SHELL:-sh}" ci/bazel-bootstrap/linux-tools.sh
 while IFS='=' read -r k v; do

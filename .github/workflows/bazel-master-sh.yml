@@ -94,7 +94,6 @@ jobs:
           # wide: /bin/sh が bash の glibc、dash の Debian、musl の別の二つ、aarch64
           - { name: debian-dash,   os: ubuntu-latest,    container: 'debian:stable',              wide: true }
           - { name: fedora-bash,   os: ubuntu-latest,    container: 'fedora:latest',              wide: true }
-          - { name: rocky-bash,    os: ubuntu-latest,    container: 'rockylinux/rockylinux:9',    wide: true }
           - { name: arch-bash,     os: ubuntu-latest,    container: 'archlinux:latest',           wide: true }
           - { name: gentoo-bash,   os: ubuntu-latest,    container: 'gentoo/stage3:latest',       wide: true }
           - { name: ubuntu-arm64,  os: ubuntu-24.04-arm, container: '',                           wide: true }
@@ -137,6 +136,7 @@ jobs:
       matrix:
         include:
           - { name: leap-bash,    image: 'opensuse/leap:latest',            shell: /bin/bash }
+          - { name: rocky-bash,   image: 'rockylinux/rockylinux:9',         shell: /bin/bash }
           - { name: void-musl,    image: 'voidlinux/voidlinux-musl:latest', shell: /bin/sh }
           - { name: chimera-musl, image: 'chimeralinux/chimera:latest',     shell: /bin/sh }
     name: linux (${{ matrix.name }})
