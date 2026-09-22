@@ -1,0 +1,39 @@
+# bazel master が未対応の BSD で、何が要るかを箱に訊くだけ。数分。
+name: bsd-probe
+on:
+  workflow_dispatch:
+concurrency:
+  group: bsd-probe-${{ github.run_id }}
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [netbsd, dragonflybsd, midnightbsd]
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: NetBSD
+        if: matrix.os == 'netbsd'
+        uses: vmactions/netbsd-vm@v1
+        with:
+          envs: 'GITHUB_WORKSPACE'
+          prepare: |
+            /usr/sbin/pkg_add -U pkgin
+            pkgin -y install openjdk21 || true
+          run: sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/probe-bsd.sh"
+      - name: DragonFly
+        if: matrix.os == 'dragonflybsd'
+        uses: vmactions/dragonflybsd-vm@v1
+        with:
+          envs: 'GITHUB_WORKSPACE'
+          prepare: pkg install -y openjdk21 || true
+          run: sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/probe-bsd.sh"
+      - name: MidnightBSD
+        if: matrix.os == 'midnightbsd'
+        uses: vmactions/midnightbsd-vm@v1
+        with:
+          envs: 'GITHUB_WORKSPACE'
+          prepare: mport install -y openjdk25 || mport install openjdk25 || true
+          run: sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/probe-bsd.sh"
