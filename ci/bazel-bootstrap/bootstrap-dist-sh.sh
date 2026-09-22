@@ -95,13 +95,23 @@ NetBSD|DragonFly)
 	cp "$NB/platforms-pr142-pr143.patch" "$NB/zstd_jni-netbsd.patch" \
 		"$NB/zstd_jni-module.patch" "$NB/rules_go-pr4711.patch" toolchain_local/
 	cp "$CI_DIR/rules_java-$RJ-local.patch" toolchain_local/rules_java-local.patch
-	cp "$NB/abseil-dragonfly.patch" "$NB/c-ares-dragonfly.patch" toolchain_local/
+	cp "$NB/abseil-dragonfly.patch" "$NB/c-ares-dragonfly.patch" \
+		"$NB/grpc-dragonfly.patch" toolchain_local/
 	cp "$NB/rules_java-dragonfly.patch" toolchain_local/
 	printf 'exports_files(glob(["*.patch"]))\n' > toolchain_local/BUILD
 	# c-ares は dist の MODULE.bazel が既に single_version_override で版を
 	# 決めている。二つ目を足すと "multiple overrides for dep c-ares" になる
 	# (run 35774683548) ので、在る方へ patches を差し込む
 	awk '
+		/module_name = "grpc"/ { ingrpc = 1 }
+		ingrpc && /patches = \[/ {
+			print "    patches = ["
+			print "        \"//third_party:grpc-load-fixes.patch\","
+			print "        \"//toolchain_local:grpc-dragonfly.patch\","
+			print "    ]," 
+			ingrpc = 0
+			next
+		}
 		/module_name = "c-ares"/ { inca = 1 }
 		inca && /^\)/ {
 			print "    patch_strip = 1,"
@@ -110,7 +120,9 @@ NetBSD|DragonFly)
 		}
 		{ print }
 	' MODULE.bazel > MODULE.bazel.new && mv MODULE.bazel.new MODULE.bazel
-	grep -q 'c-ares-dragonfly.patch' MODULE.bazel || { echo "c-ares の override に当て物を差せなかった"; exit 1; }
+	for want in c-ares-dragonfly.patch grpc-dragonfly.patch; do
+		grep -q "$want" MODULE.bazel || { echo "override に $want を差せなかった"; exit 1; }
+	done
 	cat >> MODULE.bazel <<MOD
 
 # NetBSD is not among the platforms these modules know about (CI only).
