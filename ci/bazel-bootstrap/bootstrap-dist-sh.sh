@@ -145,6 +145,11 @@ MidnightBSD)
 	# C driver は cc (clang) で gcc は無い。CC で教える (rules_cc #862 の BSD の
 	# 判定に midnightbsd は無い)。
 	EXTRA_BAZEL_ARGS="${EXTRA_BAZEL_ARGS:-} --repo_env=CC=cc"
+	# clang は module map を持つので cc_configure が layering_check を立て、
+	# grpc がその検査に通らない (wait_for_single_owner.h が absl を export して
+	# いないと言って落ちる、run 35741255342)。macOS で既にしているのと同じく、
+	# 踏み台を建てる間だけ切る
+	EXTRA_BAZEL_ARGS="$EXTRA_BAZEL_ARGS --features=-layering_check"
 	# 次の壁は rules_go (run 35676218786)。JVM の os.name "midnightbsd" を
 	# そのまま GOOS にするが、Go に MidnightBSD の port は無く、mports の go は
 	# FreeBSD の build。rules_go に midnightbsd → freebsd の一行を差す。
@@ -188,6 +193,11 @@ MINGW*|MSYS*|CYGWIN*)
 		patch -p1 -f -i "$CI_DIR/build_windows_jni-arm64.patch" </dev/null
 	fi ;;
 esac
+# Chimera は clang だけで gcc を持たない。rules_cc の cc_configure は gcc を
+# 探して落ちる (run 35741255342)。CC で教える
+if [ "$OS" = Linux ] && [ -f /etc/os-release ] && grep -q '^ID=chimera' /etc/os-release; then
+	EXTRA_BAZEL_ARGS="${EXTRA_BAZEL_ARGS:-} --repo_env=CC=clang"
+fi
 if [ "$OS" = OpenBSD ]; then
 	# C++ の object を C の driver で link するので runtime を明示する
 	for l in -lc++ -lc++abi -lpthread; do
