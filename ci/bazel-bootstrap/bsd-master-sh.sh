@@ -14,7 +14,11 @@ FreeBSD|GhostBSD|HardenedBSD)
 MidnightBSD)
 	# mports には bazel が無いが openjdk25 は在る。道具は mport で入れる。
 	mport install -y openjdk25 zip unzip python3 bash git patch || mport install openjdk25 zip unzip python3 bash git patch
-	JAVA_HOME=/usr/local/openjdk25 ;;
+	JAVA_HOME=/usr/local/openjdk25
+	# rules_java の local_jdk は MidnightBSD を知らず、include/linux の
+	# jni_md.h を写そうとして落ちる (run 35730047335)。package は FreeBSD 向けの
+	# build なので include/freebsd が正。そこへ向ける
+	[ -e "$JAVA_HOME/include/linux" ] || ln -s freebsd "$JAVA_HOME/include/linux" ;;
 OpenBSD)
 	# jdk%25 は「stem が jdk で版が 25」。無印 jdk-25 は別の意味になる
 	# OpenBSD の package は flavor 付きで、python3 は python%3、unzip は
@@ -62,7 +66,10 @@ DragonFly)
 		# from previous errors" で落ちた (run 35692632379)。素に展開して mv する。
 		# locale の警告 (Failed to set default locale) は LC_ALL=C で黙らせる。
 		rm -rf /usr/local/kit25 /usr/local/bootstrap
-		LC_ALL=C tar -C /usr/local -xf /var/tmp/kit25.tar.xz || { echo "kit の展開に失敗"; ls -la /usr/local/bootstrap 2>&1 | head; exit 1; }
+		# macOS で固めた tar は xattr を運ぶ。DragonFly の bsdtar はそれを
+		# 「復元できない」と言って rc=1 で終わる。--no-xattrs で無視させる
+		# (release の tarball 自体も xattr 無しで作り直した)
+		LC_ALL=C tar --no-xattrs -C /usr/local -xf /var/tmp/kit25.tar.xz || { echo "kit の展開に失敗"; ls -la /usr/local/bootstrap 2>&1 | head; exit 1; }
 		mv /usr/local/bootstrap /usr/local/kit25
 		# dports の openjdk は include/freebsd を include/dragonfly に写して置く。
 		# kit は include/bsd/ なので、NetBSD の kit と同じく symlink で dports の

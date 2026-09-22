@@ -1,11 +1,15 @@
-diff -u -r a/BUILD.bazel b/BUILD.bazel
---- a/BUILD.bazel	2026-08-26 09:57:42.012449625 +0000
-+++ b/BUILD.bazel	2026-08-26 09:58:38.292605902 +0000
-@@ -6,6 +6,7 @@
-     srcs = select({
-         "@bazel_tools//src/conditions:darwin": ["@bazel_tools//tools/jdk:jni_md_header-darwin"],
-         "@bazel_tools//src/conditions:freebsd": ["@bazel_tools//tools/jdk:jni_md_header-freebsd"],
-+        "@bazel_tools//src/conditions:netbsd": ["@bazel_tools//tools/jdk:jni_md_header-netbsd"],
-         "@bazel_tools//src/conditions:openbsd": ["@bazel_tools//tools/jdk:jni_md_header-openbsd"],
-         "@bazel_tools//src/conditions:windows": ["@bazel_tools//tools/jdk:jni_md_header-windows"],
-         "//conditions:default": ["@bazel_tools//tools/jdk:jni_md_header-linux"],
+zstd-jni's BUILD.bazel (added by the BCR's add_build_file.patch) names a
+jni_md.h per OS and falls back to the linux one.  On NetBSD that header is
+wrong.  bazel #31069 adds jni_md_header-netbsd and the netbsd condition to
+@bazel_tools, so name them here too.  CI only.
+
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -8,6 +8,7 @@
+     src = select({
+         "@bazel_tools//src/conditions:darwin": "@bazel_tools//tools/jdk:jni_md_header-darwin",
+         "@bazel_tools//src/conditions:freebsd": "@bazel_tools//tools/jdk:jni_md_header-freebsd",
++        "@bazel_tools//src/conditions:netbsd": "@bazel_tools//tools/jdk:jni_md_header-netbsd",
+         "@bazel_tools//src/conditions:openbsd": "@bazel_tools//tools/jdk:jni_md_header-openbsd",
+         "@bazel_tools//src/conditions:windows": "@bazel_tools//tools/jdk:jni_md_header-windows",
+         "//conditions:default": "@bazel_tools//tools/jdk:jni_md_header-linux",
