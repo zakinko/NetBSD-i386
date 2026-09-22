@@ -1,0 +1,29 @@
+#!/bin/sh
+# Dry-apply every emacs-*/<cat>_<pkg>.diff from pkgsrc-zakinko against a
+# pkgsrc checkout, and say which no longer apply without fuzz.  Run this
+# after the freeze, before telling upstream the diffs are still good.
+#
+#   pkgsrc-diffs-apply [-t /usr/pkgsrc] [-b origin/emacs-patches ...]
+#
+# Needs NetBSD/BSD patch semantics only for -C (dry run); on macOS use
+# GNU patch (gpatch) via PATCH=.
+set -u
+tree=/usr/pkgsrc; repo=$HOME/git/pkgsrc-zakinko; branches=""
+PATCH=${PATCH:-patch}
+while getopts t:b:r: o; do case $o in t) tree=$OPTARG;; b) branches="$branches $OPTARG";; r) repo=$OPTARG;; esac; done
+[ -n "$branches" ] || branches="origin/emacs-patches origin/emacs-updates"
+tmp=$(mktemp -d) || exit 1; trap 'rm -rf "$tmp"' 0
+ok=0; bad=0
+for br in $branches; do
+	dir=${br#origin/}
+	for f in $(git -C "$repo" ls-tree -r --name-only "$br" "$dir" | grep '\.diff$'); do
+		git -C "$repo" show "$br:$f" > "$tmp/d"
+		if (cd "$tree" && $PATCH -p0 -N -C -F0 -s -f < "$tmp/d" >/dev/null 2>"$tmp/err" </dev/null); then
+			ok=$((ok+1))
+		else
+			bad=$((bad+1)); printf '%s: %s\n' "$f" "$(head -1 "$tmp/err")"
+		fi
+	done
+done
+printf '%d apply, %d do not\n' "$ok" "$bad"
+[ "$bad" -eq 0 ]
