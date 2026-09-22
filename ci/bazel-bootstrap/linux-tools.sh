@@ -17,7 +17,15 @@ fedora|rocky|almalinux)
 arch)
 	pacman -Sy --noconfirm --quiet gcc zip unzip curl python patch which git ;;
 opensuse-leap|opensuse-tumbleweed)
-	zypper --non-interactive --quiet install gcc gcc-c++ zip unzip curl python3 patch findutils which git tar gzip ;;
+	zypper --non-interactive --quiet install gcc gcc-c++ zip unzip curl python3 patch findutils which git tar gzip
+	# docker run で回すので setup-java が無い。distro の JDK を入れる。25 が
+	# 無ければ 21 で JAVA_VERSION=21
+	if zypper --non-interactive --quiet install java-25-openjdk-devel 2>/dev/null; then
+		echo "JAVA_HOME=$(ls -d /usr/lib64/jvm/java-25-openjdk* | head -1)" >> "$GITHUB_ENV"
+	else
+		zypper --non-interactive --quiet install java-21-openjdk-devel
+		echo "JAVA_HOME=$(ls -d /usr/lib64/jvm/java-21-openjdk* | head -1)" >> "$GITHUB_ENV"; echo "JAVA_VERSION=21" >> "$GITHUB_ENV"
+	fi ;;
 void)
 	xbps-install -Syu xbps >/dev/null; xbps-install -Sy gcc zip unzip curl python3 patch git which findutils bash tar
 	# musl の Void。JDK は distro の物。25 が在れば 25、無ければ 21 で JAVA_VERSION=21

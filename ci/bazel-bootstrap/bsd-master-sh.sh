@@ -40,6 +40,11 @@ NetBSD)
 		tar -C /usr/pkg/java/kit25 --strip-components=1 -xf /var/tmp/kit25.tar.xz
 		paxctl +m /usr/pkg/java/kit25/bin/* 2>/dev/null || true
 		find /usr/pkg/java/kit25/lib -name '*.so' -exec paxctl +m {} \; 2>/dev/null || true
+		# kit は BSD port の作りで jni_md.h が include/bsd/ に在る。pkgsrc の
+		# openjdk は include/netbsd/ に置き、build_unix_jni.sh と rules_java の
+		# 当て物はそちらを指す。当て物を kit に合わせて曲げず、kit を pkgsrc の
+		# 形に見せる。
+		ln -s bsd /usr/pkg/java/kit25/include/netbsd
 		JAVA_HOME=/usr/pkg/java/kit25
 	else
 		pkgin -y install openjdk21
@@ -84,6 +89,18 @@ if ! "$JAVA_HOME/bin/javac" -version >/dev/null 2>&1; then
 		echo "LD_LIBRARY_PATH でも起動しない"; exit 1
 	fi
 fi
+# aarch64 の箱は x86_64 の runner で TCG (全命令 emulation) で動いている。
+# そこで JDK 25 の javac が SIGSEGV (pc=0) で落ちた (run 35676218786、
+# FreeBSD 15.1 aarch64)。実機ではなく emulation の側の問題と見て、JIT を C1
+# だけにし、SVE を切って試す。効いたとしても「aarch64 で建つ」ではなく
+# 「TCG の下でも建つ」と読む。hs_err は失敗時に bootstrap-dist-sh.sh が出す。
+case "$(sysctl -n hw.machine 2>/dev/null)$(uname -m)" in
+*arm64*|*aarch64*|*evbarm*)
+	if [ "$(sysctl -n kern.vm_guest 2>/dev/null)" != none ]; then
+		JAVA_TOOL_OPTIONS="-XX:TieredStopAtLevel=1 -XX:UseSVE=0"; export JAVA_TOOL_OPTIONS
+		echo "aarch64 の VM: JAVA_TOOL_OPTIONS=$JAVA_TOOL_OPTIONS"
+	fi ;;
+esac
 # 作業場は広い所へ。VM の /var/tmp か /tmp
 for d in /var/tmp /tmp; do [ -w "$d" ] && { WORK=$d/master-sh; break; }; done
 export WORK

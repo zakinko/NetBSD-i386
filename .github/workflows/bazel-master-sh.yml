@@ -90,10 +90,7 @@ jobs:
           - { name: fedora-bash,   os: ubuntu-latest,    container: 'fedora:latest',              wide: true }
           - { name: rocky-bash,    os: ubuntu-latest,    container: 'rockylinux/rockylinux:9',    wide: true }
           - { name: arch-bash,     os: ubuntu-latest,    container: 'archlinux:latest',           wide: true }
-          - { name: leap-bash,     os: ubuntu-latest,    container: 'opensuse/leap:latest',       wide: true }
           - { name: gentoo-bash,   os: ubuntu-latest,    container: 'gentoo/stage3:latest',       wide: true }
-          - { name: void-musl,     os: ubuntu-latest,    container: 'voidlinux/voidlinux-musl:latest', wide: true }
-          - { name: chimera-musl,  os: ubuntu-latest,    container: 'chimeralinux/chimera:latest', wide: true }
           - { name: ubuntu-arm64,  os: ubuntu-24.04-arm, container: '',                           wide: true }
     name: linux (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
@@ -122,6 +119,34 @@ jobs:
           LOG_BASH: '1'
           NO_VIS: '0'
           RP_BUMP: ${{ inputs.rp_bump }}
+
+  # runner の container: が起こせない箱。Void と Chimera は runner の glibc 向け
+  # node が musl で exec に落ち、leap は像に sh が無くて runner の sh -c で落ちる。
+  # docker run で素の image を起こし、中で linux-in-docker.sh に回させる。
+  linux-docker:
+    needs: dist
+    if: ${{ !inputs.jdk21 && inputs.wide }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: leap-bash,    image: 'opensuse/leap:latest',            shell: /bin/bash }
+          - { name: void-musl,    image: 'voidlinux/voidlinux-musl:latest', shell: /bin/sh }
+          - { name: chimera-musl, image: 'chimeralinux/chimera:latest',     shell: /bin/sh }
+    name: linux (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: master-sh-dist, path: master-sh-dist }
+      - name: bootstrap the dist under /bin/sh in docker (${{ matrix.name }})
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/w" -w /w \
+            -e SH_BIN=/bin/sh -e LOG_BASH=1 -e NO_VIS=0 -e "RP_BUMP=${{ inputs.rp_bump }}" \
+            -e "IN_SHELL=${{ matrix.shell }}" \
+            "${{ matrix.image }}" "${{ matrix.shell }}" \
+            ci/bazel-bootstrap/linux-in-docker.sh /w /w/master-sh-dist/bazel-distfile.zip
 
   macos:
     needs: dist
@@ -370,7 +395,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: '25' }
+        # temurin は Windows の aarch64 を配っていない (setup-java が
+        # "Could not find satisfied version for SemVer '25'")。zulu は在る。
+        with: { distribution: zulu, java-version: '25' }
       - uses: actions/download-artifact@v4
         with: { name: master-sh-dist, path: master-sh-dist }
       - uses: ilammy/msvc-dev-cmd@v1

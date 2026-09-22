@@ -230,6 +230,13 @@ else
 	echo "RESULT master-sh $OS $SH_BIN NG"
 	grep -n 'error\|ERROR\|not found\|Syntax\|syntax\|Bad substitution\|Bad fd\|unexpected' compile.log | tail -20
 	tail -40 compile.log
+	# JVM が落ちたなら hs_err の頭 (どの frame、どの命令) を残す。VM は job と
+	# 一緒に消えるので、log に無ければ二度と読めない。
+	for h in hs_err_pid*.log; do
+		[ -f "$h" ] || continue
+		echo "--- $h"; sed -n '1,40p' "$h"
+		grep -n -A8 '^Instructions:' "$h" | head -12
+	done
 	exit 1
 fi
 
