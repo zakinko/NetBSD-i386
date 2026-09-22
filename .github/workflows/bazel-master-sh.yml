@@ -142,6 +142,7 @@ jobs:
           SH_BIN: /bin/sh
           LOG_BASH: '0'
           NO_VIS: '0'
+          RP_BUMP: ${{ inputs.rp_bump }}
 
   freebsd:
     needs: dist
@@ -227,6 +228,7 @@ jobs:
           SH_BIN: /usr/bin/sh
           LOG_BASH: '0'
           NO_VIS: '0'
+          RP_BUMP: ${{ inputs.rp_bump }}
 
   hardenedbsd:
     needs: dist
@@ -291,6 +293,7 @@ jobs:
           SH_BIN: /bin/sh
           LOG_BASH: '0'
           NO_VIS: '0'
+          RP_BUMP: ${{ inputs.rp_bump }}
           JAVA_VERSION: '21'
 
   netbsd:
@@ -356,6 +359,7 @@ jobs:
           SH_BIN: /bin/sh
           LOG_BASH: '0'
           NO_VIS: '0'
+          RP_BUMP: ${{ inputs.rp_bump }}
 
   windows-arm64:
     needs: dist
@@ -385,6 +389,7 @@ jobs:
           SH_BIN: /usr/bin/sh
           LOG_BASH: '0'
           NO_VIS: '0'
+          RP_BUMP: ${{ inputs.rp_bump }}
 
   # aarch64 の BSD。vmactions は TCG で動かすので数時間かかる。6 時間の上限に
   # 収まらないかもしれない。どこまで行くかを見る箱。
