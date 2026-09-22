@@ -78,7 +78,10 @@ echo "=== gyp"
 echo "=== build"
 TARGETS=${TARGETS:-"server/server.gyp:mozc_server unix/emacs/emacs.gyp:mozc_emacs_helper"}
 # shellcheck disable=SC2086
-if "$PY" build_mozc.py build -c Release $TARGETS --no_ibus_build --no_gtk_build 2>&1 | tail -40; then
+# --no_ibus_build と --no_gtk_build は 2.29 の doc の話で、3.33 の
+# build_mozc.py には無い ("no such option")。build 側が取るのは -c と
+# --target_platform ほか数個だけ
+if "$PY" build_mozc.py build -c Release $TARGETS 2>&1 | tail -40; then
 	echo "=== 出来た物"
 	ls -l out_linux/Release out_bsd/Release 2>/dev/null | head -20
 	for f in out_linux/Release/mozc_server out_bsd/Release/mozc_server \
