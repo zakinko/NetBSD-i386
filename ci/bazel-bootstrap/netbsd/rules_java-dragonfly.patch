@@ -1,0 +1,44 @@
+On top of rules_java-9.9.0-local.patch: the same for DragonFly, whose dports
+openjdk installs include/dragonfly (a copy of include/freebsd).  CI only.
+
+--- a/toolchains/BUILD	2026-09-22 23:31:06
++++ b/toolchains/BUILD	2026-09-22 23:31:23
+@@ -134,12 +134,22 @@
+     srcs = ["include/netbsd/jni_md.h"],
+ )
+ 
++java_runtime_files(
++    name = "jni_md_header-dragonfly",
++    srcs = ["include/dragonfly/jni_md.h"],
++)
++
+ # Defined here rather than taken from @bazel_tools//src/conditions so that it
+ # resolves with every Bazel version: @platforms//os:netbsd has been in the
+ # platforms module since 0.0.11.
+ config_setting(
+     name = "netbsd",
+     constraint_values = ["@platforms//os:netbsd"],
++)
++
++config_setting(
++    name = "dragonfly",
++    constraint_values = ["@platforms//os:dragonfly"],
+ )
+ 
+ # The Java native interface. Depend on this package if you #include <jni.h>.
+@@ -154,6 +164,7 @@
+         "@bazel_tools//src/conditions:linux": [":jni_md_header-linux"],
+         "@bazel_tools//src/conditions:openbsd": [":jni_md_header-openbsd"],
+         ":netbsd": [":jni_md_header-netbsd"],
++        ":dragonfly": [":jni_md_header-dragonfly"],
+         "@bazel_tools//src/conditions:windows": [":jni_md_header-windows"],
+         "//conditions:default": [],
+     }),
+@@ -163,6 +174,7 @@
+         "@bazel_tools//src/conditions:linux": ["include/linux"],
+         "@bazel_tools//src/conditions:openbsd": ["include/openbsd"],
+         ":netbsd": ["include/netbsd"],
++        ":dragonfly": ["include/dragonfly"],
+         "@bazel_tools//src/conditions:windows": ["include/win32"],
+         "//conditions:default": [],
+     }),

@@ -79,12 +79,18 @@ NetBSD|DragonFly)
 	patch -p1 -f -i "$NB/build_unix_jni-netbsd.patch" </dev/null
 	patch -p1 -f -i "$NB/build_unix_jni-dragonfly.patch" </dev/null
 	patch -p1 -f -i "$CI_DIR/musl-stat-master.patch" </dev/null
+	# DragonFly は master にも #31069 にも入っていないので、NetBSD の分の上に
+	# 同じ形で足す (src/conditions から unix_jni_bsd.cc まで)
+	if [ "$OS" = DragonFly ]; then
+		patch -p1 -f -i "$NB/bazel-dragonfly.patch" </dev/null
+	fi
 	RJ=$(grep -o 'name = "rules_java", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
 	RG=$(grep -o 'name = "rules_go", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
 	[ -f "$CI_DIR/rules_java-$RJ-local.patch" ] || { echo "rules_java $RJ 向けの当て物が無い"; exit 1; }
 	mkdir -p toolchain_local
 	cp "$NB/platforms-pr142-pr143.patch" "$NB/zstd_jni-netbsd.patch" "$NB/rules_go-pr4711.patch" toolchain_local/
 	cp "$CI_DIR/rules_java-$RJ-local.patch" toolchain_local/rules_java-local.patch
+	cp "$NB/rules_java-dragonfly.patch" toolchain_local/
 	printf 'exports_files(glob(["*.patch"]))\n' > toolchain_local/BUILD
 	cat >> MODULE.bazel <<MOD
 
@@ -98,7 +104,10 @@ single_version_override(
     module_name = "rules_java",
     version = "$RJ",
     patch_strip = 1,
-    patches = ["//toolchain_local:rules_java-local.patch"],
+    patches = [
+        "//toolchain_local:rules_java-local.patch",
+        "//toolchain_local:rules_java-dragonfly.patch",
+    ],
 )
 single_version_override(
     module_name = "zstd-jni",
@@ -127,6 +136,10 @@ case "$OS" in
 MidnightBSD)
 	echo "=== MidnightBSD: build_unix_jni.sh に腕を足す"
 	patch -p1 -f -i "$CI_DIR/midnightbsd/build_unix_jni-midnightbsd.patch" </dev/null
+	# os.name が "MidnightBSD" なので OS.java が UNKNOWN に落ち、Linux の
+	# source と constraint が選ばれて unix_jni_linux.cc が sys/xattr.h を
+	# 探して落ちる (run 35736537908)。FreeBSD 派生なので FreeBSD と答えさせる
+	patch -p1 -f -i "$CI_DIR/midnightbsd/os-midnightbsd.patch" </dev/null
 	# rules_cc の cc_configure は os.name "midnightbsd" を BSD と知らず、gcc を
 	# 探して "Cannot find gcc or CC" で落ちる (run 35692632379)。MidnightBSD の
 	# C driver は cc (clang) で gcc は無い。CC で教える (rules_cc #862 の BSD の

@@ -1,15 +1,29 @@
 zstd-jni's BUILD.bazel (added by the BCR's add_build_file.patch) names a
-jni_md.h per OS and falls back to the linux one.  On NetBSD that header is
-wrong.  bazel #31069 adds jni_md_header-netbsd and the netbsd condition to
-@bazel_tools, so name them here too.  CI only.
+jni_md.h per OS and falls back to the linux one, which is wrong on NetBSD.
 
---- a/BUILD.bazel
-+++ b/BUILD.bazel
-@@ -8,6 +8,7 @@
+The condition is defined here rather than taken from @bazel_tools//src/conditions:
+during bootstrap that repository is the tools embedded in the bazel that is
+running, and it does not carry the netbsd condition bazel #31069 adds to the
+source tree (run 35736537908).  @platforms//os:netbsd has been in the platforms
+module since 0.0.11.  CI only.
+
+--- a/BUILD.bazel	2026-09-22 23:27:52
++++ b/BUILD.bazel	2026-09-22 23:27:52
+@@ -3,11 +3,17 @@
+ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+ load("@rules_java//java:java_library.bzl", "java_library")
+ 
++config_setting(
++    name = "netbsd",
++    constraint_values = ["@platforms//os:netbsd"],
++)
++
+ copy_file(
+     name = "copy_link_jni_md_header",
      src = select({
          "@bazel_tools//src/conditions:darwin": "@bazel_tools//tools/jdk:jni_md_header-darwin",
          "@bazel_tools//src/conditions:freebsd": "@bazel_tools//tools/jdk:jni_md_header-freebsd",
-+        "@bazel_tools//src/conditions:netbsd": "@bazel_tools//tools/jdk:jni_md_header-netbsd",
++        ":netbsd": "@rules_java//toolchains:jni_md_header-netbsd",
          "@bazel_tools//src/conditions:openbsd": "@bazel_tools//tools/jdk:jni_md_header-openbsd",
          "@bazel_tools//src/conditions:windows": "@bazel_tools//tools/jdk:jni_md_header-windows",
          "//conditions:default": "@bazel_tools//tools/jdk:jni_md_header-linux",

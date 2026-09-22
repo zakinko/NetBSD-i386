@@ -50,10 +50,10 @@ chimera)
 	# Chimera に patch という package は無い (run 35703229138)。base-devel が
 	# 持っている。python は python3 の名前でなく python
 	apk add --no-cache clang lld zip unzip curl python base-devel git bash linux-headers
-	# base-devel が patch を持たない版があった (run 35730047335: patch: not found)。
-	# 名前で入るなら入れ、無ければ在るかだけ確かめて先へ進ませない
-	apk add --no-cache patch 2>/dev/null || true
-	command -v patch >/dev/null || { echo "chimera に patch が無い"; apk search patch | head; exit 1; }
+	# patch(1) は chimerautils-extra に在る (cports の main/chimerautils の
+	# template.py が cmd:patch をそこへ入れている)。patch という package は無い
+	apk add --no-cache chimerautils-extra
+	command -v patch >/dev/null || { echo "chimera に patch が無い"; exit 1; }
 	if apk add --no-cache openjdk25 2>/dev/null; then echo "JAVA_HOME=$(ls -d /usr/lib/jvm/*25* | head -1)" >> "$GITHUB_ENV"
 	else apk add --no-cache openjdk21; echo "JAVA_HOME=$(ls -d /usr/lib/jvm/*21* | head -1)" >> "$GITHUB_ENV"; echo "JAVA_VERSION=21" >> "$GITHUB_ENV"; fi ;;
 gentoo)

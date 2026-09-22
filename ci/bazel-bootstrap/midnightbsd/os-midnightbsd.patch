@@ -1,0 +1,24 @@
+MidnightBSD names itself in os.name, so bazel falls through to OS.UNKNOWN and
+then picks the Linux sources and constraints: the build stops in
+unix_jni_linux.cc for want of sys/xattr.h (run 35736537908).  It is a FreeBSD
+derivative -- the kernel runs FreeBSD binaries, the compiler defines
+__FreeBSD__, and mports ships the FreeBSD openjdk -- so answer FreeBSD.
+CI only.
+
+--- a/src/main/java/com/google/devtools/build/lib/util/OS.java	2026-09-22 23:33:01
++++ b/src/main/java/com/google/devtools/build/lib/util/OS.java	2026-09-22 23:33:01
+@@ -72,6 +72,14 @@
+       return OS.UNKNOWN;
+     }
+ 
++    // MidnightBSD is a FreeBSD derivative: its kernel runs FreeBSD binaries,
++    // its compiler defines __FreeBSD__, and its openjdk is the FreeBSD build.
++    // Everything keyed on the OS wants the FreeBSD answer, and the name is the
++    // only thing that differs.
++    if (osName.startsWith("MidnightBSD")) {
++      return OS.FREEBSD;
++    }
++
+     for (OS os : OS.values()) {
+       // Windows have many names, all starting with "Windows".
+       if (osName.startsWith(os.detectionName)) {

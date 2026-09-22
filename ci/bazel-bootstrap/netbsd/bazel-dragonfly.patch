@@ -1,0 +1,345 @@
+Add DragonFly BSD as a host platform, on top of the NetBSD patch of
+bazel #31069.  DragonFly derives from FreeBSD 4 and keeps extattr(2) and
+sysctlbyname(3), so unix_jni_bsd.cc takes the FreeBSD arm; the rest mirrors
+what #31069 does for NetBSD.  CI only: this has not been sent upstream.
+
+diff -ur a/scripts/packages/BUILD b/scripts/packages/BUILD
+--- a/scripts/packages/BUILD	2026-09-22 23:28:32
++++ b/scripts/packages/BUILD	2026-09-22 23:29:55
+@@ -39,6 +39,7 @@
+         "//src/conditions:freebsd": [],
+         "//src/conditions:openbsd": [],
+         "//src/conditions:netbsd": [],
++        "//src/conditions:dragonfly": [],
+         "//src/conditions:darwin": [
+             ":generate-package-info",
+             ":with-jdk/install.sh",
+@@ -107,6 +108,7 @@
+         "//src/conditions:freebsd": "\"freebsd\"",
+         "//src/conditions:openbsd": "\"openbsd\"",
+         "//src/conditions:netbsd": "\"netbsd\"",
++        "//src/conditions:dragonfly": "\"dragonfly\"",
+         "//conditions:default": "\"linux\"",
+     }) + """
+         target_arch=""" + select({
+diff -ur a/src/BUILD b/src/BUILD
+--- a/src/BUILD	2026-09-22 23:28:32
++++ b/src/BUILD	2026-09-22 23:29:55
+@@ -25,6 +25,7 @@
+         "//src/conditions:freebsd": ["md5_darwin_freebsd.sh"],
+         "//src/conditions:openbsd": ["md5_openbsd.sh"],
+         "//src/conditions:netbsd": ["md5_netbsd.sh"],
++        "//src/conditions:dragonfly": ["md5_darwin_freebsd.sh"],
+         "//conditions:default": ["md5_default.sh"],
+     }),
+ )
+@@ -324,6 +325,7 @@
+         "//src/conditions:freebsd": "cat $(SRCS) | sed -e 's@#!/bin/bash@#!/usr/local/bin/bash@' > $@",
+         "//src/conditions:openbsd": "cat $(SRCS) | sed -e 's@#!/bin/bash@#!/usr/local/bin/bash@' > $@",
+         "//src/conditions:netbsd": "cat $(SRCS) | sed -e 's@#!/bin/bash@#!/usr/pkg/bin/bash@' > $@",
++        "//src/conditions:dragonfly": "cat $(SRCS) | sed -e 's@#!/bin/bash@#!/usr/local/bin/bash@' > $@",
+         "//conditions:default": "cp $(SRCS) $@",
+     }),
+ )
+diff -ur a/src/conditions/BUILD b/src/conditions/BUILD
+--- a/src/conditions/BUILD	2026-09-22 23:28:32
++++ b/src/conditions/BUILD	2026-09-22 23:29:55
+@@ -175,6 +175,12 @@
+ )
+ 
+ config_setting(
++    name = "dragonfly",
++    constraint_values = ["@platforms//os:dragonfly"],
++    visibility = ["//visibility:public"],
++)
++
++config_setting(
+     name = "windows",
+     constraint_values = ["@platforms//os:windows"],
+     visibility = ["//visibility:public"],
+diff -ur a/src/main/cpp/BUILD b/src/main/cpp/BUILD
+--- a/src/main/cpp/BUILD	2026-09-22 23:28:32
++++ b/src/main/cpp/BUILD	2026-09-22 23:30:35
+@@ -37,6 +37,10 @@
+             "blaze_util_bsd.cc",
+             "blaze_util_posix.cc",
+         ],
++        "//src/conditions:dragonfly": [
++            "blaze_util_bsd.cc",
++            "blaze_util_posix.cc",
++        ],
+         "//src/conditions:windows": [
+             "blaze_util_windows.cc",
+         ],
+@@ -60,6 +64,8 @@
+         ],
+         "//src/conditions:netbsd": [
+         ],
++        "//src/conditions:dragonfly": [
++        ],
+         "//src/conditions:windows": WIN_LINK_OPTS,
+         "//conditions:default": [
+             "-lrt",
+@@ -131,6 +137,8 @@
+         "//src/conditions:openbsd": [
+         ],
+         "//src/conditions:netbsd": [
++        ],
++        "//src/conditions:dragonfly": [
+         ],
+         "//src/conditions:windows": [
+         ],
+diff -ur a/src/main/cpp/blaze_util_bsd.cc b/src/main/cpp/blaze_util_bsd.cc
+--- a/src/main/cpp/blaze_util_bsd.cc	2026-09-22 23:28:32
++++ b/src/main/cpp/blaze_util_bsd.cc	2026-09-22 23:30:35
+@@ -19,6 +19,8 @@
+ #define STANDARD_JAVABASE "/usr/local/jdk-21"
+ #elif defined(__NetBSD__)
+ # define STANDARD_JAVABASE "/usr/pkg/java/openjdk21"
++#elif defined(__DragonFly__)
++# define STANDARD_JAVABASE "/usr/local/openjdk21"
+ #else
+ # error This BSD is not supported
+ #endif
+diff -ur a/src/main/cpp/option_processor.cc b/src/main/cpp/option_processor.cc
+--- a/src/main/cpp/option_processor.cc	2026-09-22 23:28:32
++++ b/src/main/cpp/option_processor.cc	2026-09-22 23:30:35
+@@ -506,6 +506,8 @@
+   platform_config = "freebsd";
+ #elif defined(__NetBSD__)
+   platform_config = "netbsd";
++#elif defined(__DragonFly__)
++  platform_config = "dragonfly";
+ #elif defined(__OpenBSD__)
+   platform_config = "openbsd";
+ #endif
+diff -ur a/src/main/cpp/util/md5.h b/src/main/cpp/util/md5.h
+--- a/src/main/cpp/util/md5.h	2026-09-22 23:28:32
++++ b/src/main/cpp/util/md5.h	2026-09-22 23:30:35
+@@ -26,7 +26,8 @@
+ 
+ #if defined(__linux__)
+ #include <endian.h>
+-#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
++#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || \
++    defined(__DragonFly__)
+ #include <sys/endian.h>
+ #elif defined(__APPLE__) || defined(_WIN32)
+ // Hopefully OSX and Windows will keep running solely on little endian CPUs, so:
+diff -ur a/src/main/java/com/google/devtools/build/lib/analysis/config/AutoCpuConverter.java b/src/main/java/com/google/devtools/build/lib/analysis/config/AutoCpuConverter.java
+--- a/src/main/java/com/google/devtools/build/lib/analysis/config/AutoCpuConverter.java	2026-09-22 23:28:32
++++ b/src/main/java/com/google/devtools/build/lib/analysis/config/AutoCpuConverter.java	2026-09-22 23:30:35
+@@ -41,6 +41,7 @@
+         case FREEBSD -> "freebsd";
+         case OPENBSD -> "openbsd";
+         case NETBSD -> "netbsd";
++        case DRAGONFLY -> "dragonfly";
+         case WINDOWS ->
+             switch (CPU.getCurrent()) {
+               case X86_64 -> "x64_windows";
+diff -ur a/src/main/java/com/google/devtools/build/lib/analysis/constraints/ConstraintConstants.java b/src/main/java/com/google/devtools/build/lib/analysis/constraints/ConstraintConstants.java
+--- a/src/main/java/com/google/devtools/build/lib/analysis/constraints/ConstraintConstants.java	2026-09-22 23:28:32
++++ b/src/main/java/com/google/devtools/build/lib/analysis/constraints/ConstraintConstants.java	2026-09-22 23:30:48
+@@ -69,6 +69,10 @@
+           OS.NETBSD,
+           ConstraintValueInfo.create(
+               OS_CONSTRAINT_SETTING,
++              Label.parseCanonicalUnchecked("@platforms//os:dragonfly")),
++          OS.DRAGONFLY,
++          ConstraintValueInfo.create(
++              OS_CONSTRAINT_SETTING,
+               Label.parseCanonicalUnchecked("@platforms//os:none")),
+           OS.UNKNOWN);
+ 
+diff -ur a/src/main/java/com/google/devtools/build/lib/bazel/rules/BazelRuleClassProvider.java b/src/main/java/com/google/devtools/build/lib/bazel/rules/BazelRuleClassProvider.java
+--- a/src/main/java/com/google/devtools/build/lib/bazel/rules/BazelRuleClassProvider.java	2026-09-22 23:28:32
++++ b/src/main/java/com/google/devtools/build/lib/bazel/rules/BazelRuleClassProvider.java	2026-09-22 23:30:35
+@@ -96,6 +96,7 @@
+           .put(OS.FREEBSD, PathFragment.create("/usr/local/bin/bash"))
+           .put(OS.OPENBSD, PathFragment.create("/usr/local/bin/bash"))
+           .put(OS.NETBSD, PathFragment.create("/usr/pkg/bin/bash"))
++          .put(OS.DRAGONFLY, PathFragment.create("/usr/local/bin/bash"))
+           .put(OS.LINUX, PathFragment.create("/bin/bash"))
+           .put(OS.DARWIN, PathFragment.create("/bin/bash"))
+           .put(OS.UNKNOWN, FALLBACK_SHELL)
+@@ -348,7 +349,7 @@
+     // up in /usr/local/bin, so we need to include that in the default PATH. On
+     // other Unix platforms we want to exclude /usr/local/bin which commonly
+     // holds user installed tools making things less hermetic.
+-    if (os == OS.FREEBSD || os == OS.OPENBSD || os == OS.NETBSD) {
++    if (os == OS.FREEBSD || os == OS.OPENBSD || os == OS.NETBSD || os == OS.DRAGONFLY) {
+       return "/bin:/usr/bin:/sbin:/usr/sbin:/usr/local/bin";
+     } else if (os != OS.WINDOWS) {
+       return "/bin:/usr/bin:/sbin:/usr/sbin";
+diff -ur a/src/main/java/com/google/devtools/build/lib/jni/JniLoader.java b/src/main/java/com/google/devtools/build/lib/jni/JniLoader.java
+--- a/src/main/java/com/google/devtools/build/lib/jni/JniLoader.java	2026-09-22 23:28:32
++++ b/src/main/java/com/google/devtools/build/lib/jni/JniLoader.java	2026-09-22 23:30:35
+@@ -38,7 +38,7 @@
+     Throwable jniLoadError;
+     try {
+       switch (OS.getCurrent()) {
+-        case LINUX, FREEBSD, OPENBSD, NETBSD, UNKNOWN -> {
++        case LINUX, FREEBSD, OPENBSD, NETBSD, DRAGONFLY, UNKNOWN -> {
+           loadLibrary("main/native/libunix_jni.so");
+         }
+         case DARWIN -> {
+diff -ur a/src/main/java/com/google/devtools/build/lib/runtime/ConfigExpander.java b/src/main/java/com/google/devtools/build/lib/runtime/ConfigExpander.java
+--- a/src/main/java/com/google/devtools/build/lib/runtime/ConfigExpander.java	2026-09-22 23:28:32
++++ b/src/main/java/com/google/devtools/build/lib/runtime/ConfigExpander.java	2026-09-22 23:30:35
+@@ -53,6 +53,8 @@
+         return "openbsd";
+       case NETBSD:
+         return "netbsd";
++      case DRAGONFLY:
++        return "dragonfly";
+       default:
+         return OS.getCurrent().getCanonicalName();
+     }
+diff -ur a/src/main/java/com/google/devtools/build/lib/util/OS.java b/src/main/java/com/google/devtools/build/lib/util/OS.java
+--- a/src/main/java/com/google/devtools/build/lib/util/OS.java	2026-09-22 23:28:32
++++ b/src/main/java/com/google/devtools/build/lib/util/OS.java	2026-09-22 23:30:35
+@@ -21,6 +21,7 @@
+   FREEBSD("freebsd", "FreeBSD", true),
+   OPENBSD("openbsd", "OpenBSD", true),
+   NETBSD("netbsd", "NetBSD", true),
++  DRAGONFLY("dragonfly", "DragonFly", true),
+   LINUX("linux", "Linux", true),
+   WINDOWS("windows", "Windows", false),
+   UNKNOWN("unknown", "", false);
+diff -ur a/src/main/native/BUILD b/src/main/native/BUILD
+--- a/src/main/native/BUILD	2026-09-22 23:28:32
++++ b/src/main/native/BUILD	2026-09-22 23:29:55
+@@ -9,6 +9,7 @@
+         "//src/conditions:freebsd": "@rules_java//toolchains:jni_md_header-freebsd",
+         "//src/conditions:openbsd": "@rules_java//toolchains:jni_md_header-openbsd",
+         "//src/conditions:netbsd": "@rules_java//toolchains:jni_md_header-netbsd",
++        "//src/conditions:dragonfly": "@rules_java//toolchains:jni_md_header-dragonfly",
+         "//src/conditions:windows": "@rules_java//toolchains:jni_md_header-windows",
+         "//conditions:default": "@rules_java//toolchains:jni_md_header-linux",
+     }),
+@@ -45,6 +46,7 @@
+         "//src/conditions:freebsd": ["unix_jni_bsd.cc"],
+         "//src/conditions:openbsd": ["unix_jni_bsd.cc"],
+         "//src/conditions:netbsd": ["unix_jni_bsd.cc"],
++        "//src/conditions:dragonfly": ["unix_jni_bsd.cc"],
+         "//conditions:default": ["unix_jni_linux.cc"],
+     }),
+ )
+diff -ur a/src/main/native/unix_jni_bsd.cc b/src/main/native/unix_jni_bsd.cc
+--- a/src/main/native/unix_jni_bsd.cc	2026-09-22 23:28:32
++++ b/src/main/native/unix_jni_bsd.cc	2026-09-22 23:30:35
+@@ -12,7 +12,7 @@
+ // See the License for the specific language governing permissions and
+ // limitations under the License.
+ 
+-#if defined(__FreeBSD__)
++#if defined(__FreeBSD__) || defined(__DragonFly__)
+ # define HAVE_EXTATTR
+ # define HAVE_SYSCTLBYNAME
+ #elif defined(__NetBSD__)
+diff -ur a/src/main/tools/BUILD b/src/main/tools/BUILD
+--- a/src/main/tools/BUILD	2026-09-22 23:28:32
++++ b/src/main/tools/BUILD	2026-09-22 23:30:35
+@@ -71,6 +71,7 @@
+         "//src/conditions:freebsd": ["dummy-sandbox.c"],
+         "//src/conditions:openbsd": ["dummy-sandbox.c"],
+         "//src/conditions:netbsd": ["dummy-sandbox.c"],
++        "//src/conditions:dragonfly": ["dummy-sandbox.c"],
+         "//src/conditions:windows": ["dummy-sandbox.c"],
+         "//conditions:default": [
+             "linux-sandbox.cc",
+@@ -86,6 +87,7 @@
+         "//src/conditions:freebsd": [],
+         "//src/conditions:openbsd": [],
+         "//src/conditions:netbsd": [],
++        "//src/conditions:dragonfly": [],
+         "//src/conditions:windows": [],
+         "//conditions:default": [
+             "-lm",
+@@ -97,6 +99,7 @@
+         "//src/conditions:freebsd": [],
+         "//src/conditions:openbsd": [],
+         "//src/conditions:netbsd": [],
++        "//src/conditions:dragonfly": [],
+         "//src/conditions:windows": [],
+         "//conditions:default": [
+             ":logging",
+diff -ur a/src/tools/singlejar/BUILD b/src/tools/singlejar/BUILD
+--- a/src/tools/singlejar/BUILD	2026-09-22 23:28:32
++++ b/src/tools/singlejar/BUILD	2026-09-22 23:30:35
+@@ -88,6 +88,7 @@
+     linkopts = select({
+         "//src/conditions:freebsd": ["-lm"],
+         "//src/conditions:netbsd": ["-lm"],
++        "//src/conditions:dragonfly": ["-lm"],
+         "//src/conditions:openbsd": ["-lm"],
+         "//conditions:default": [],
+     }),
+@@ -110,6 +111,7 @@
+     linkopts = select({
+         "//src/conditions:freebsd": ["-lm"],
+         "//src/conditions:netbsd": ["-lm"],
++        "//src/conditions:dragonfly": ["-lm"],
+         "//src/conditions:openbsd": ["-lm"],
+         "//conditions:default": [],
+     }),
+diff -ur a/src/tools/singlejar/diag.h b/src/tools/singlejar/diag.h
+--- a/src/tools/singlejar/diag.h	2026-09-22 23:28:32
++++ b/src/tools/singlejar/diag.h	2026-09-22 23:30:35
+@@ -20,7 +20,7 @@
+  * for portability.
+  */
+ #if defined(__APPLE__) || defined(__linux__) || defined(__FreeBSD__) || \
+-    defined(__OpenBSD__) || defined(__NetBSD__)
++    defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+ 
+ #include <err.h>
+ #define diag_err(...) err(__VA_ARGS__)
+diff -ur a/src/tools/singlejar/mapped_file_posix.inc b/src/tools/singlejar/mapped_file_posix.inc
+--- a/src/tools/singlejar/mapped_file_posix.inc	2026-09-22 23:28:32
++++ b/src/tools/singlejar/mapped_file_posix.inc	2026-09-22 23:30:35
+@@ -26,7 +26,8 @@
+ 
+ // The implementation is specific to 64-bit Linux / OS X / BSD.
+ #if !((defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || \
+-       defined(__OpenBSD__) || defined(__NetBSD__)) &&                     \
++       defined(__OpenBSD__) || defined(__NetBSD__) ||                     \
++       defined(__DragonFly__)) &&                                        \
+       __SIZEOF_POINTER__ == 8)
+ #error This code for 64 bit Unix.
+ #endif
+diff -ur a/src/tools/singlejar/zip_headers.h b/src/tools/singlejar/zip_headers.h
+--- a/src/tools/singlejar/zip_headers.h	2026-09-22 23:28:32
++++ b/src/tools/singlejar/zip_headers.h	2026-09-22 23:30:35
+@@ -28,7 +28,8 @@
+ 
+ #if defined(__linux__)
+ #include <endian.h>
+-#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
++#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || \
++    defined(__DragonFly__)
+ #include <sys/endian.h>
+ #elif defined(__APPLE__) || defined(_WIN32)
+ // Hopefully OSX and Windows will keep running solely on little endian CPUs, so:
+diff -ur a/third_party/BUILD b/third_party/BUILD
+--- a/third_party/BUILD	2026-09-22 23:28:32
++++ b/third_party/BUILD	2026-09-22 23:30:35
+@@ -548,6 +548,7 @@
+     "//src/conditions:linux_ppc": "*.so *.jnilib *.dll *.pyd",
+     "//src/conditions:freebsd": "*.so *.jnilib *.dll *.pyd",
+     "//src/conditions:netbsd": "*.so *.jnilib *.dll *.pyd",
++    "//src/conditions:dragonfly": "*.so *.jnilib *.dll *.pyd",
+     "//src/conditions:openbsd": "*.so *.jnilib *.dll *.pyd",
+     # Default is to play it safe -- better have a big binary than a slow binary
+     #   The empty string means nothing is to be removed from the library;
+diff -ur a/tools/jdk/BUILD.tools b/tools/jdk/BUILD.tools
+--- a/tools/jdk/BUILD.tools	2026-09-22 23:28:32
++++ b/tools/jdk/BUILD.tools	2026-09-22 23:30:35
+@@ -185,6 +185,7 @@
+     "jni_md_header-darwin",
+     "jni_md_header-freebsd",
+     "jni_md_header-linux",
++    "jni_md_header-dragonfly",
+     "jni_md_header-netbsd",
+     "jni_md_header-openbsd",
+     "jni_md_header-windows",
