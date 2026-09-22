@@ -1,15 +1,17 @@
-abseil does not recognise DragonFly, so sysinfo.cc falls through to the
-generic branch and casts a pthread_t to pid_t (run 35749586358).  DragonFly
-derives from FreeBSD and has the same pthread_np.h and sysctl, so take the
-FreeBSD arms.  This is the sysinfo.cc part of abseil-cpp#2160, which is open
-upstream; only this file is needed to get past the wall, so only this file is
-carried here.  CI only.
+abseil does not recognise DragonFly.  sysinfo.cc falls through to the generic
+branch and casts a pthread_t to pid_t, and cctz defines _XOPEN_SOURCE 500,
+which on DragonFly hides isblank, wcstof and the wide scanf family from
+libstdc++'s headers (runs 35749586358 and 35757966151).  DragonFly derives
+from FreeBSD: it has pthread_np.h and the same sysctl, and its headers behave
+the same way, so take the FreeBSD arms in both places.
 
-diff --git a/absl/base/internal/sysinfo.cc b/absl/base/internal/sysinfo.cc
-index 1f380bcc60b..a52a1516c8f 100644
---- a/absl/base/internal/sysinfo.cc
-+++ b/absl/base/internal/sysinfo.cc
-@@ -49,11 +49,11 @@
+These are the two files of abseil-cpp#2160 that the bootstrap actually needs;
+the rest of that PR is not carried here.  CI only.
+
+diff -ur abs/absl/base/internal/sysinfo.cc abs2/absl/base/internal/sysinfo.cc
+--- a/absl/base/internal/sysinfo.cc	2026-09-23 02:00:56
++++ b/absl/base/internal/sysinfo.cc	2026-09-23 02:49:56
+@@ -30,11 +30,11 @@
  #include <sys/syscall.h>
  #endif
  
@@ -23,7 +25,7 @@ index 1f380bcc60b..a52a1516c8f 100644
  #include <pthread_np.h>
  #endif
  
-@@ -449,7 +449,7 @@ pid_t GetTID() {
+@@ -444,7 +444,7 @@
    return static_cast<pid_t>(tid);
  }
  
@@ -32,3 +34,17 @@ index 1f380bcc60b..a52a1516c8f 100644
  
  pid_t GetTID() { return static_cast<pid_t>(pthread_getthreadid_np()); }
  
+Only in abs2/absl/base/internal: sysinfo.cc.orig
+diff -ur abs/absl/time/internal/cctz/src/time_zone_format.cc abs2/absl/time/internal/cctz/src/time_zone_format.cc
+--- a/absl/time/internal/cctz/src/time_zone_format.cc	2026-09-23 02:00:57
++++ b/absl/time/internal/cctz/src/time_zone_format.cc	2026-09-23 02:49:56
+@@ -19,7 +19,8 @@
+ #endif
+ 
+ #if defined(HAS_STRPTIME) && HAS_STRPTIME
+-#if !defined(_XOPEN_SOURCE) && !defined(__FreeBSD__) && !defined(__OpenBSD__)
++#if !defined(_XOPEN_SOURCE) && !defined(__FreeBSD__) && !defined(__OpenBSD__) && \
++    !defined(__DragonFly__)
+ #define _XOPEN_SOURCE 500  // Exposes definitions for SUSv2 (UNIX 98).
+ #endif
+ #endif

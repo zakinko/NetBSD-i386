@@ -42,6 +42,7 @@ NetBSD)
 		mkdir -p /usr/pkg/java/kit25
 		ftp -o /var/tmp/kit25.tar.xz "https://github.com/zakinko/jdk25u/releases/download/bootstrap-kit-25-20260921/bootstrap-jdk-1.25.0.5.0-netbsd-10-amd64-20260921.tar.xz"
 		tar -C /usr/pkg/java/kit25 --strip-components=1 -xf /var/tmp/kit25.tar.xz
+		rm -f /var/tmp/kit25.tar.xz
 		paxctl +m /usr/pkg/java/kit25/bin/* 2>/dev/null || true
 		find /usr/pkg/java/kit25/lib -name '*.so' -exec paxctl +m {} \; 2>/dev/null || true
 		# kit は BSD port の作りで jni_md.h が include/bsd/ に在る。pkgsrc の
@@ -71,6 +72,7 @@ DragonFly)
 		# (release の tarball 自体も xattr 無しで作り直した)
 		LC_ALL=C tar --no-xattrs -C /usr/local -xf /var/tmp/kit25.tar.xz || { echo "kit の展開に失敗"; ls -la /usr/local/bootstrap 2>&1 | head; exit 1; }
 		mv /usr/local/bootstrap /usr/local/kit25
+		rm -f /var/tmp/kit25.tar.xz
 		# dports の openjdk は include/freebsd を include/dragonfly に写して置く。
 		# kit は include/bsd/ なので、NetBSD の kit と同じく symlink で dports の
 		# 形に見せる (build_unix_jni の当て物は dports の形を指す)。
@@ -126,8 +128,23 @@ case "$(sysctl -n hw.machine 2>/dev/null)$(uname -m)" in
 		echo "aarch64 の VM: JAVA_TOOL_OPTIONS=$JAVA_TOOL_OPTIONS"
 	fi ;;
 esac
-# 作業場は広い所へ。VM の /var/tmp か /tmp
-for d in /var/tmp /tmp; do [ -w "$d" ] && { WORK=$d/master-sh; break; }; done
+# 作業場は広い所へ。書ける dir のうち一番空いている所を選ぶ。NetBSD の像は
+# / が小さく、link の途中で "No space left on device" になった
+# (run 35757966151)。選んだ理由が後から読めるように df を出す。
+echo "=== 空き"; df -k / /var/tmp /tmp /usr 2>/dev/null || df -k
+WORK=""
+best=0
+for d in /var/tmp /tmp /usr/tmp; do
+	[ -w "$d" ] || continue
+	free=$(df -k "$d" 2>/dev/null | awk 'NR==2 {print $4}')
+	case "$free" in ''|*[!0-9]*) continue ;; esac
+	if [ "$free" -gt "$best" ]; then best=$free; WORK=$d/master-sh; fi
+done
+[ -n "$WORK" ] || { echo "書ける作業場が無い"; exit 1; }
+echo "作業場: $WORK ($((best / 1024)) MB 空き)"
+# bazel の output base と TMPDIR も同じ所へ。既定は /tmp で、NetBSD の像では
+# そこが小さい。buildenv.sh は BAZEL_WRKDIR を見て両方をその下へ向ける
+BAZEL_WRKDIR=$WORK/bazel-wrk; export BAZEL_WRKDIR
 export WORK
 SH_BIN=/bin/sh LOG_BASH=${LOG_BASH:-1} NO_VIS=${NO_VIS:-0} \
 	sh "$GITHUB_WORKSPACE/ci/bazel-bootstrap/bootstrap-dist-sh.sh" "$DIST"
