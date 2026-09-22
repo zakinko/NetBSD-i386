@@ -338,6 +338,15 @@ if [ -x "$BZ" ] && "$BZ" version 2>/dev/null | grep -q '^Build label:'; then
 	echo "RESULT master-sh $OS $SH_BIN OK: 枝の dist を sh だけで bootstrap できた"
 else
 	echo "RESULT master-sh $OS $SH_BIN NG"
+	# compile.sh が binary を作ったのに version が答えないことがある
+	# (DragonFly、run 35793514425)。判定は stderr を捨てているので、ここで
+	# 素の出力を見せる。出来ていないのか、出来たが動かないのかは別の話
+	if [ -x "$BZ" ]; then
+		echo "--- $BZ は在る。version をそのまま走らせる"
+		"$BZ" version 2>&1 | head -20 || true
+	else
+		echo "--- $BZ が無い"
+	fi
 	grep -n 'error\|ERROR\|not found\|Syntax\|syntax\|Bad substitution\|Bad fd\|unexpected' compile.log | tail -20
 	tail -40 compile.log
 	# JVM が落ちたなら hs_err の頭 (どの frame、どの命令) を残す。VM は job と
