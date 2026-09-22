@@ -57,9 +57,13 @@ DragonFly)
 		# dports は openjdk21 止まりで、master は 22 以上が要る。zakinko/jdk25u の
 		# bootstrap kit (DragonFly 6.4 x86_64、cross build、174MB)。DragonFly に
 		# PaX は無いので印は要らない。include は BSD port の作りで include/bsd/。
-		mkdir -p /usr/local/kit25
 		curl -fsSL -o /var/tmp/kit25.tar.xz "https://github.com/zakinko/jdk25u/releases/download/bootstrap-kit-25-dragonfly-20260922/bootstrap-jdk-1.25.0.5.0-dragonfly-6.4-x86_64-20260922.tar.xz"
-		tar -C /usr/local/kit25 --strip-components=1 -xf /var/tmp/kit25.tar.xz
+		# DragonFly の bsdtar は --strip-components 付きで "Error exit delayed
+		# from previous errors" で落ちた (run 35692632379)。素に展開して mv する。
+		# locale の警告 (Failed to set default locale) は LC_ALL=C で黙らせる。
+		rm -rf /usr/local/kit25 /usr/local/bootstrap
+		LC_ALL=C tar -C /usr/local -xf /var/tmp/kit25.tar.xz || { echo "kit の展開に失敗"; ls -la /usr/local/bootstrap 2>&1 | head; exit 1; }
+		mv /usr/local/bootstrap /usr/local/kit25
 		# dports の openjdk は include/freebsd を include/dragonfly に写して置く。
 		# kit は include/bsd/ なので、NetBSD の kit と同じく symlink で dports の
 		# 形に見せる (build_unix_jni の当て物は dports の形を指す)。

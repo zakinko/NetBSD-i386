@@ -127,6 +127,11 @@ case "$OS" in
 MidnightBSD)
 	echo "=== MidnightBSD: build_unix_jni.sh に腕を足す"
 	patch -p1 -f -i "$CI_DIR/midnightbsd/build_unix_jni-midnightbsd.patch" </dev/null
+	# rules_cc の cc_configure は os.name "midnightbsd" を BSD と知らず、gcc を
+	# 探して "Cannot find gcc or CC" で落ちる (run 35692632379)。MidnightBSD の
+	# C driver は cc (clang) で gcc は無い。CC で教える (rules_cc #862 の BSD の
+	# 判定に midnightbsd は無い)。
+	EXTRA_BAZEL_ARGS="${EXTRA_BAZEL_ARGS:-} --repo_env=CC=cc"
 	# 次の壁は rules_go (run 35676218786)。JVM の os.name "midnightbsd" を
 	# そのまま GOOS にするが、Go に MidnightBSD の port は無く、mports の go は
 	# FreeBSD の build。rules_go に midnightbsd → freebsd の一行を差す。
@@ -163,7 +168,12 @@ case "$OS" in
 MINGW*|MSYS*|CYGWIN*)
 	# exec 構成の genrule (fastutil の zip) に client の PATH を届ける。
 	# 9.3.0 の Windows の job と同じ。
-	EXTRA_BAZEL_ARGS="$EXTRA_BAZEL_ARGS --host_action_env=PATH" ;;
+	EXTRA_BAZEL_ARGS="$EXTRA_BAZEL_ARGS --host_action_env=PATH"
+	# ARM64 の Windows では build_windows_jni.sh が amd64 の cl を呼んで、出来た
+	# DLL を ARM64 の JVM が拒む (run 35692632379)。machine の native tools を選ぶ
+	if [ "${PROCESSOR_ARCHITECTURE:-}" = ARM64 ]; then
+		patch -p1 -f -i "$CI_DIR/build_windows_jni-arm64.patch" </dev/null
+	fi ;;
 esac
 if [ "$OS" = OpenBSD ]; then
 	# C++ の object を C の driver で link するので runtime を明示する

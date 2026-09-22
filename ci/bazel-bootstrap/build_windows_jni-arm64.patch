@@ -1,0 +1,16 @@
+build_windows_jni.sh always asks vcvarsall for the amd64 tools, so on an
+ARM64 Windows the JNI DLL comes out as AMD64 and the ARM64 JVM refuses it
+("Can't load AMD 64-bit .dll on a ARM 64-bit platform", run 35692632379).
+Pick the native tools for the machine the build runs on.  CI only for now.
+
+--- a/scripts/bootstrap/build_windows_jni.sh	2026-09-22 17:07:51
++++ b/scripts/bootstrap/build_windows_jni.sh	2026-09-22 17:07:51
+@@ -116,7 +116,7 @@
+ pwd_drive="$(echo "$abs_pwd" | head -c2)"
+ cat > "${VSTEMP}/windows_jni.bat" <<EOF
+ @echo OFF
+-@call "${VSVARS}" amd64
++@if "%PROCESSOR_ARCHITECTURE%"=="ARM64" (call "${VSVARS}" arm64) else (call "${VSVARS}" amd64)
+ @$pwd_drive
+ @cd "$abs_pwd"
+ @set TMP=$(cygpath -a -w "${VSTEMP}")

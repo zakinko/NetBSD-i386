@@ -81,7 +81,9 @@ jobs:
 
   linux:
     needs: dist
-    if: ${{ !inputs.jdk21 }}
+    # only= に linux の箱が一つも無ければ job ごと飛ばす (matrix の中の gate は
+    # runner を取ってから判定するので、それだけだと枠を食う)
+    if: ${{ !inputs.jdk21 && (inputs.only == '' || contains(inputs.only, '-dash') || contains(inputs.only, '-bash') || contains(inputs.only, '-ash') || contains(inputs.only, '-musl') || contains(inputs.only, 'ubuntu-arm64')) }}
     strategy:
       fail-fast: false
       matrix:
