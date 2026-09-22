@@ -82,6 +82,35 @@ cd "$D" || exit 1
 bmake makepatchsum >"$W/mps.log" 2>&1 || { say "makepatchsum: 落ちた"; tail -10 "$W/mps.log"; }
 say "当て物: 入れ替えた"
 
+# util-linux の configure は AC_CHECK_TYPES([cpu_set_t]) で HAVE_CPU_SET_T を
+# 決め、それで lib/cpuset.c を組む。DragonFly は cpu_set_t を持つので検査は
+# 通るが、中身が glibc と違い __bits も __cpu_mask も無い。include/cpuset.h の
+# 代替 macro がそれを使うので組めない。検査が型の名前しか見ていないのが元。
+# mozc-server → devel/gyp → lang/python313 → devel/libuuid と繋がっていて、
+# ここを抜けないと DragonFly で mozc を測れない。
+if [ "$(uname -s)" = "DragonFly" ]; then
+  L="$W/pkgsrc/zakinko/libuuid"
+  cp -R "$W/pkgsrc/devel/libuuid" "$L"
+  sed -i.bak 's|\.\./\.\./devel/libuuid/|../../zakinko/libuuid/|g' "$L/Makefile" 2>/dev/null
+  cat >> "$L/Makefile.common" <<'EOF'
+
+# cpu_set_t は在るが glibc と中身が違う。型の名前だけを見る検査が通ってしまう。
+CONFIGURE_ENV+=		ac_cv_type_cpu_set_t=no
+EOF
+  say "libuuid: DragonFly 向けに cpu_set_t の検査を無効にした"
+  # 依存の解決が zakinko/libuuid を向くように、木の側を差し替える
+  rm -rf "$W/pkgsrc/devel/libuuid"
+  ln -s "$L" "$W/pkgsrc/devel/libuuid"
+fi
+
+# NetBSD だけ gyp を選ばないので devel/bazel → lang/openjdk11 を建てにいき、
+# CI ではそこで落ちる (cdefs_elf.h)。測りたいのは mozc なので、CI では四つの
+# BSD を同じ経路に揃える。NetBSD を bazel で建てる側は techne で見ている。
+if [ "$(uname -s)" = "NetBSD" ]; then
+  echo "PKG_OPTIONS.mozc=	gyp" >> "$PREFIX/etc/mk.conf"
+  say "NetBSD: CI では gyp に揃えた (bazel 経路は techne で測る)"
+fi
+
 echo '##### 4. option と platform の効き方 #####'
 for v in OPSYS MACHINE_ARCH PKG_SUGGESTED_OPTIONS PKG_OPTIONS PKG_FAIL_REASON USE_X11 PATCHDIR; do
   printf '  %-22s %s\n' "$v" "$(bmake show-var VARNAME=$v 2>/dev/null | cut -c1-90)"
@@ -127,8 +156,13 @@ bmake package >"$W/build.log" 2>&1
 rc=$?
 say "package: rc=$rc"
 if [ $rc -ne 0 ]; then
-  grep -iE 'error:|Error code|fatal' "$W/build.log" | head -20
-  tail -30 "$W/build.log"
+  # artifact は VM の workspace から runner へ戻らなかったので、job の log へ
+  # 直に吐く。原因は「stopped making in <pkg>」の何十行も上に在る。
+  echo "--- error を含む行とその前後 ---"
+  grep -n -B4 -A2 -iE 'error:|fatal error|undefined (reference|symbol)' "$W/build.log" \
+    | tail -120
+  echo "--- build.log の末尾 200 行 ---"
+  tail -200 "$W/build.log"
   exit 1
 fi
 ls -l "$W/pkgsrc/packages/All/"mozc-server-*.tgz 2>/dev/null
