@@ -153,6 +153,28 @@ if ! "$PY" build_mozc.py gyp --noqt > gyp.log 2>&1; then
 fi
 tail -5 gyp.log
 
+# gyp が実際に書いた cflags を一行残す。common.gypi の条件が当たったかどうかは
+# build が通るかでは分からない — -O2 が落ちていても、-pthread が落ちていても、
+# compile は通ってしまう。書かれた物を見る
+NINJA_OBJ=""
+for n in out_bsd/Release/obj/base/base_core.ninja out_linux/Release/obj/base/base_core.ninja; do
+	[ -f "$n" ] && { NINJA_OBJ=$n; break; }
+done
+# 名前を外していたら黙って何も出ない。それでは測れないので、探し直して言う
+[ -n "$NINJA_OBJ" ] || NINJA_OBJ=$(find out_bsd out_linux -name '*.ninja' -path '*obj*' 2>/dev/null | head -1)
+if [ -n "$NINJA_OBJ" ]; then
+	echo "=== gyp が書いた flag ($NINJA_OBJ)"
+	grep -m2 -E '^ *(cflags_cc|cflags) =' "$NINJA_OBJ" | cut -c1-400
+else
+	echo "=== gyp が書いた flag: obj の ninja が見つからない"
+fi
+for n in out_bsd/Release/build.ninja out_linux/Release/build.ninja; do
+	[ -f "$n" ] || continue
+	echo "=== link の flag"
+	grep -m1 -E '^ *ldflags =' "$n" | cut -c1-300
+	break
+done
+
 echo "=== build"
 TARGETS=${TARGETS:-"server/server.gyp:mozc_server unix/emacs/emacs.gyp:mozc_emacs_helper"}
 # shellcheck disable=SC2086
