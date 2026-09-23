@@ -1,0 +1,54 @@
+# util-linux の HAVE_CPU_SET_T は AC_CHECK_TYPES([cpu_set_t]) で決まり、それが
+# lib/cpuset.c を組むかどうかを決めている。CPU_ALLOC が宣言されていない OS では
+# その file が include/cpuset.h の代替 macro を使い、macro は
+# cpu_set_t.__bits と __cpu_mask という glibc の内部に触る。DragonFly は型を
+# 持つが欄を持たないので、検査が通って build が止まる。
+#
+# code が使う欄も訊く当て物を書いた。出す前に、直したい側 (DragonFly) で効き、
+# 直す必要のない側 (glibc) で結果が変わらないことを両方измерる。
+# ここは glibc 側。VM を使わないので runner の取り合いにならない。
+name: util-linux-cpuset
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: util-linux-cpuset-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  glibc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: glibc で判定が変わらないことを見る
+        run: |
+          set -x
+          cc --version | head -1
+          ldd --version | head -1
+          W=$(mktemp -d)
+          curl -fsSL -o "$W/ul.tar.xz" \
+            https://mirrors.edge.kernel.org/pub/linux/utils/util-linux/v2.40/util-linux-2.40.2.tar.xz
+          tar Jxf "$W/ul.tar.xz" -C "$W"
+          U=$(echo "$W"/util-linux-*)
+
+          echo '##### 素の configure #####'
+          ( cd "$U" && ./configure --prefix="$W/pfx" >"$W/before.log" 2>&1 )
+          grep -E 'checking for cpu_set_t|CPU_ALLOC is declared' "$W/before.log" || true
+          grep -c 'define HAVE_CPU_SET_T' "$U/config.h" | sed 's/^/  素の define: /'
+
+          echo '##### 当て物を入れて configure #####'
+          ( cd "$U" && patch -t -F0 -p0 --forward \
+              < "$GITHUB_WORKSPACE/ci/mozc-bsd/libuuid/patch-configure-cpuset.diff" )
+          ( cd "$U" && rm -f config.cache && ./configure --prefix="$W/pfx" >"$W/after.log" 2>&1 )
+          grep -E 'checking for cpu_set_t|CPU_ALLOC is declared|cpu_set_t\.__bits' "$W/after.log" || true
+          grep -c 'define HAVE_CPU_SET_T' "$U/config.h" | sed 's/^/  当てた後の define: /'
+
+          echo '##### 判定 #####'
+          if grep -q 'define HAVE_CPU_SET_T 1' "$U/config.h"; then
+            echo 'RESULT glibc: HAVE_CPU_SET_T は真のまま (期待どおり)'
+          else
+            echo 'RESULT glibc: ★ 偽になった。glibc を壊している'
+            exit 1
+          fi
