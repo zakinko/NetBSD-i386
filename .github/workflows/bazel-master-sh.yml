@@ -453,18 +453,26 @@ jobs:
           NO_VIS: '0'
           RP_BUMP: ${{ inputs.rp_bump }}
 
-  # aarch64 の BSD。vmactions は TCG で動かすので数時間かかる。6 時間の上限に
-  # 収まらないかもしれない。どこまで行くかを見る箱。
+  # aarch64 の BSD。像は在る (vmactions/freebsd-vm の conf に 15.1-aarch64、
+  # openbsd-vm に 7.9-aarch64)。落ちていたのは host の方で、x86_64 の runner の
+  # 上では guest が TCG になり、JVM が SIGSEGV で落ちるか時間切れになっていた。
+  # ubuntu-24.04-arm なら host が aarch64 なので guest は KVM で走る。この repo は
+  # public なので arm64 runner は無料枠、ubuntu-arm64 の箱で既に使っている。
   freebsd-arm64:
     needs: dist
     if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), ',freebsd-arm64,')) || (inputs.only == '' && (inputs.wide && inputs.bsd && !inputs.jdk21)) }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 355
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { name: master-sh-dist, path: master-sh-dist }
+      - name: host が aarch64 で KVM を持っているかを先に言う
+        run: |
+          echo "host: $(uname -m)  runner: ${{ runner.arch }}"
+          ls -l /dev/kvm 2>&1 || echo "/dev/kvm が無い。guest は TCG で走る"
+          grep -c . /proc/cpuinfo >/dev/null && nproc
       - uses: vmactions/freebsd-vm@v1
         with:
           arch: aarch64
@@ -480,13 +488,18 @@ jobs:
   openbsd-arm64:
     needs: dist
     if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), ',openbsd-arm64,')) || (inputs.only == '' && (inputs.wide && inputs.bsd && !inputs.jdk21)) }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 355
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { name: master-sh-dist, path: master-sh-dist }
+      - name: host が aarch64 で KVM を持っているかを先に言う
+        run: |
+          echo "host: $(uname -m)  runner: ${{ runner.arch }}"
+          ls -l /dev/kvm 2>&1 || echo "/dev/kvm が無い。guest は TCG で走る"
+          grep -c . /proc/cpuinfo >/dev/null && nproc
       - uses: vmactions/openbsd-vm@v1
         with:
           arch: aarch64
