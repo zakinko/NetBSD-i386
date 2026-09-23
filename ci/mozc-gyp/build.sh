@@ -169,9 +169,18 @@ if "$PY" build_mozc.py build -c Release $TARGETS > build.log 2>&1; then
 	done
 	if [ -n "$OUTDIR" ] && [ "$(id -u)" = 0 ]; then
 		echo "=== 煙試験 ($OUTDIR)"
-		sh "$CI_DIR/smoke.sh" "$PWD/$OUTDIR" || echo "煙試験は通らなかった (建った事実は上の RESULT のとおり)"
+		# || で受けて先へ進むと、落ちたことが job の rc に出ない。建った
+		# だけの箱を「通った」と読まないよう、結果を一行にして残し、
+		# 落ちたらそこで job ごと落とす。この CI が測りたいのは移植であって
+		# compile ではない
+		if sh "$CI_DIR/smoke.sh" "$PWD/$OUTDIR"; then
+			echo "RESULT mozc-gyp $OS SMOKE-OK"
+		else
+			echo "RESULT mozc-gyp $OS SMOKE-NG (建った事実は上の RESULT のとおり)"
+			exit 1
+		fi
 	else
-		echo "煙試験は飛ばす (root ではないか、binary の置き場が分からない)"
+		echo "RESULT mozc-gyp $OS SMOKE-SKIP (root ではないか、binary の置き場が分からない)"
 	fi
 else
 	echo "RESULT mozc-gyp $OS NG (build)"
