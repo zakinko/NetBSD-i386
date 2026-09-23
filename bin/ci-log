@@ -1,0 +1,29 @@
+#!/bin/sh
+# job の log を取る。空だったら黙って渡さない。
+#
+# gh は log に terminal の escape sequence が入っていると出力を拒み、
+# error を stderr に出して 0 行を返す。その file を grep すると「その行は
+# 無い」と読める — 一日に二度これで逆の結論を出しかけた。OpenBSD と
+# NetBSD が煙試験を通っていない、と書く寸前だった (実際は 62529 行と
+# 48095 行、どちらにも RESULT 行が在った)。
+#
+# 使い方: ci-log <run-id> <job-name> [repo]
+set -eu
+RUN=${1:?run id}
+JOB=${2:?job name}
+REPO=${3:-zakinko/NetBSD-i386}
+
+JID=$(gh run view "$RUN" --repo "$REPO" --json jobs \
+	-q ".jobs[]|select(.name==\"$JOB\")|.databaseId")
+[ -n "$JID" ] || { echo "job '$JOB' が run $RUN に無い" >&2
+	gh run view "$RUN" --repo "$REPO" --json jobs -q '.jobs[].name' >&2
+	exit 1; }
+
+OUT=$(mktemp)
+gh api --allow-escape-sequences "/repos/$REPO/actions/jobs/$JID/logs" > "$OUT" 2>/dev/null || true
+N=$(wc -l < "$OUT" | tr -d ' ')
+# 「取れなかった」と「その行が無い」を混ぜない。1 行以下は取得の失敗として扱う
+[ "$N" -gt 1 ] || { echo "log が取れていない (${N} 行)。job $JID" >&2; rm -f "$OUT"; exit 1; }
+echo "# $JOB: $N 行" >&2
+cat "$OUT"
+rm -f "$OUT"
