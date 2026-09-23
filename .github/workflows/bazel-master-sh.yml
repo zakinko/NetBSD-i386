@@ -50,6 +50,10 @@ on:
         description: 'rules_python を当て物ではなくこの版へ上げて建てる (例 2.3.3)。空なら export の当て物'
         type: string
         default: ''
+      no_musl_patch:
+        description: 'musl の箱で unix_jni.h の当て物を当てない。上流へ出す本文が引用している error を実際に出すため'
+        type: boolean
+        default: false
       only:
         description: 'この job だけ回す (job 名を , 区切り。例 midnightbsd,rocky-bash)。空なら他の入力どおり。CI が混むので、通った箱を撃ち直さないため'
         type: string
@@ -146,6 +150,7 @@ jobs:
           LOG_BASH: '1'
           NO_VIS: '0'
           RP_BUMP: ${{ inputs.rp_bump }}
+          NO_MUSL_PATCH: ${{ inputs.no_musl_patch && '1' || '0' }}
 
   # runner の container: が起こせない箱。Void と Chimera は runner の glibc 向け
   # node が musl で exec に落ち、leap は像に sh が無くて runner の sh -c で落ちる。
@@ -201,6 +206,7 @@ jobs:
           LOG_BASH: '0'
           NO_VIS: '0'
           RP_BUMP: ${{ inputs.rp_bump }}
+          NO_MUSL_PATCH: ${{ inputs.no_musl_patch && '1' || '0' }}
 
   freebsd:
     needs: dist
@@ -287,6 +293,7 @@ jobs:
           LOG_BASH: '0'
           NO_VIS: '0'
           RP_BUMP: ${{ inputs.rp_bump }}
+          NO_MUSL_PATCH: ${{ inputs.no_musl_patch && '1' || '0' }}
 
   hardenedbsd:
     needs: dist
@@ -352,6 +359,7 @@ jobs:
           LOG_BASH: '0'
           NO_VIS: '0'
           RP_BUMP: ${{ inputs.rp_bump }}
+          NO_MUSL_PATCH: ${{ inputs.no_musl_patch && '1' || '0' }}
           JAVA_VERSION: '21'
 
   netbsd:
@@ -420,6 +428,7 @@ jobs:
           LOG_BASH: '0'
           NO_VIS: '0'
           RP_BUMP: ${{ inputs.rp_bump }}
+          NO_MUSL_PATCH: ${{ inputs.no_musl_patch && '1' || '0' }}
 
   windows-arm64:
     needs: dist
@@ -452,6 +461,7 @@ jobs:
           LOG_BASH: '0'
           NO_VIS: '0'
           RP_BUMP: ${{ inputs.rp_bump }}
+          NO_MUSL_PATCH: ${{ inputs.no_musl_patch && '1' || '0' }}
 
   # aarch64 の BSD。像は在る (vmactions/freebsd-vm の conf に 15.1-aarch64、
   # openbsd-vm に 7.9-aarch64)。落ちていたのは host の方で、x86_64 の runner の

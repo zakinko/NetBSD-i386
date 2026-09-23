@@ -41,8 +41,16 @@ fi
 # musl の箱 (Alpine, Void musl, Chimera) は unix_jni.h の stat64 で翻訳できない。
 # 当て物 (= bazelbuild/bazel へ出す物と同じ) を、ld-musl の有無で自動で当てる。
 if [ "$OS" = Linux ] && ls /lib/ld-musl-* >/dev/null 2>&1; then
-	echo "=== musl: unix_jni.h の当て物を当てる"
-	patch -p1 -f -i "$CI_DIR/musl-stat-master.patch" </dev/null
+	if [ "${NO_MUSL_PATCH:-0}" = 1 ]; then
+		# 当て物を外して、上流へ出す本文が引用している error を実際に出す。
+		# 引用の出所が「昔どこかで見た」では根拠にならない。当て物が入った
+		# 木でしか測っていないと、当て物が効いているのか、そもそも問題が
+		# 起きないのかも区別できない
+		echo "=== musl: NO_MUSL_PATCH=1 なので当て物を当てない (error を出すため)"
+	else
+		echo "=== musl: unix_jni.h の当て物を当てる"
+		patch -p1 -f -i "$CI_DIR/musl-stat-master.patch" </dev/null
+	fi
 fi
 
 # BSD では rules_python が配る CPython が無く、MODULE.bazel の pip.parse が
