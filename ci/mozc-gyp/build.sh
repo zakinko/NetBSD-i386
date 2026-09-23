@@ -51,7 +51,11 @@ DragonFly)
 	CXX_BIN=$(ls /usr/local/bin/g++[0-9][0-9] 2>/dev/null | sort -V | tail -1)
 	CC_BIN=$(ls /usr/local/bin/gcc[0-9][0-9] 2>/dev/null | sort -V | tail -1)
 	[ -n "$CXX_BIN" ] || { echo "dports の g++ が見つからない"; ls /usr/local/bin/g[c+][c+]* 2>/dev/null | head; exit 1; }
-	CC=$CC_BIN; CXX=$CXX_BIN; export CC CXX
+	# gyp の ninja generator は target 用に CC/CXX、host 用に CC_host/CXX_host を
+	# 見る (chromium/gyp の pylib/gyp/generator/ninja.py:2022)。host 側が空なら
+	# target の物に落ちるが、明示しておく
+	CC=$CC_BIN; CXX=$CXX_BIN; CC_host=$CC_BIN; CXX_host=$CXX_BIN
+	export CC CXX CC_host CXX_host
 	echo "DragonFly の compiler: $CXX ($("$CXX" --version | head -1))" ;;
 NetBSD)
 	/usr/sbin/pkg_add -U pkgin || true
