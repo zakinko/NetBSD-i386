@@ -32,6 +32,15 @@ NetBSD)
 	# (ci/bazel-bsd/run.sh と同じ)。go は rules_go の SDK が NetBSD に無いので host の物。
 	ftp -o /var/tmp/xbase.tar.xz "https://cdn.NetBSD.org/pub/NetBSD/NetBSD-$(uname -r)/$(uname -m)/binary/sets/xbase.tar.xz" \
 		&& tar -C / -xf /var/tmp/xbase.tar.xz || echo "xbase が取れなかった"
+	# 取れたかどうかを、rc ではなく入った物で言う。ここで落ちても止めないのは
+	# kit を使うときに X が要るとは限らないからだが、後で openjdk が library を
+	# 見つけられずに落ちたとき、原因がここだったのかを log で分けられるようにする
+	if [ -e /usr/X11R7/lib/libX11.so ]; then
+		echo "X sets: 在り (/usr/X11R7/lib/libX11.so)"
+	else
+		echo "X sets: 無し。pkgsrc の openjdk は X の library に link されているので、"
+		echo "        JDK_KIT=0 のときはこの後 shared library が無いと言われる"
+	fi
 	/usr/sbin/pkg_add -U pkgin
 	pkgin -y install bash zip unzip python313 go126 git-base patch gtar
 	ln -sf /usr/pkg/bin/python3.13 /usr/pkg/bin/python3
