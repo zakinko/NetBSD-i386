@@ -104,6 +104,16 @@ main (int argc, char **argv)
   if (!strcmp (mode, "lastpage"))
     /* 改行に続かない ^L を一つ。^L を探すループが越える。 */
     buf[10] = 0x0c;
+  else if (!strcmp (mode, "cookie"))
+    {
+      /* 本物の最終ページ。直しても cookie が見つかることを見る。 */
+      static const char tail[] =
+        "\n\014\nLocal Variables:\ncoding: iso-8859-1\nEnd:\n";
+      Bytecount tl = (Bytecount) (sizeof (tail) - 1);
+      for (i = 0; i < nread; i++) buf[i] = 'x';
+      for (i = 0; i < nread; i += 60) buf[i] = '\n';
+      memcpy (buf + nread - tl, tail, tl);
+    }
   else
     /* ^L 無し、改行を撒く。行を辿るループが越える。 */
     for (i = 40; i < nread; i += 40) buf[i] = '\n';
@@ -111,8 +121,15 @@ main (int argc, char **argv)
   printf ("%s: buffer=[%p,%p) その先は PROT_NONE\n", mode,
           (void *) buf, (void *) (buf + nread));
   fflush (stdout);
-  look_for_coding_cookie_last_page (buf, nread, 1);
-  printf ("%s: 越えずに戻った\n", mode);
+  {
+    Lisp_Object r = look_for_coding_cookie_last_page (buf, nread, 1);
+    printf ("%s: 越えずに戻った (cookie=%s)\n", mode, NILP (r) ? "見つからず" : "見つかった");
+    if (!strcmp (mode, "cookie") && NILP (r))
+      {
+        printf ("!! cookie が見つからない。機能が壊れている\n");
+        return 3;
+      }
+  }
   return 0;
 }
 POST
@@ -132,9 +149,20 @@ for mode in lastpage lines; do
   unset rc
 done
 
+echo "== 本物の cookie が見つかるか(直しても機能が生きているか) =="
+"$WORK/harness" cookie; crc=$?
+if [ "$crc" = 0 ]; then
+  echo "  cookie: OK (見つかった)"
+elif [ "$crc" = 3 ]; then
+  echo "  cookie: !! 見つからない"; exit 1
+else
+  echo "  cookie: rc=$crc (越えた。素の木では起こり得る)"
+fi
+
 if [ -n "$PATCHFILE" ]; then
   [ "$rc_all" = 0 ] || { echo "!! patch を当てたのに越えている"; exit 1; }
-  echo "=> patch 後: どちらも越えない"
+  [ "$crc" = 0 ] || { echo "!! patch 後に cookie が見つからない"; exit 1; }
+  echo "=> patch 後: どちらも越えず、cookie は見つかる"
 else
   [ "$rc_all" = 1 ] || { echo "!! 素の木なのに越えなかった。想定と違う"; exit 1; }
   echo "=> 素の木: 越える (想定どおり)"
