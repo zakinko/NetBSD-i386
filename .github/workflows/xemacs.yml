@@ -21,7 +21,7 @@ on:
       target:
         description: 'どれを回すか'
         type: choice
-        options: [both, overread, windows]
+        options: [both, overread, windows, alloca]
         default: both
 
 concurrency:
@@ -54,6 +54,30 @@ jobs:
           git clone --quiet --depth 1 https://github.com/zakinko/XEmacs xemacs2
           ci/xemacs/overread.sh "$PWD/xemacs2" \
               "$PWD/ci/xemacs/file-coding-lastpage-overread.patch"
+
+  alloca:
+    if: ${{ inputs.target == 'both' || inputs.target == 'alloca' }}
+    name: alloca の五箇所 (Linux で二つ目の箱)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 依存
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libncurses-dev texinfo
+
+      - name: XEmacs 21.4 を取る
+        run: |
+          git clone --quiet https://github.com/zakinko/XEmacs-21.4 x214base
+          cp -a x214base x214patched
+
+      - name: 素の木で五つとも落ちるか
+        run: ci/xemacs/alloca.sh "$PWD/x214base" base
+
+      - name: 当て物を入れると落ちないか
+        run: ci/xemacs/alloca.sh "$PWD/x214patched" patched
 
   windows:
     if: ${{ inputs.target == 'both' || inputs.target == 'windows' }}
