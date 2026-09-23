@@ -119,6 +119,7 @@ FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|NetBSD|OpenBSD|DragonFly)
 esac
 
 PY=$(command -v python3 || command -v python)
+[ -n "$PY" ] || { echo "python3 が無い"; exit 1; }
 # gyp の pylib は six を import する。package 名が箱ごとに違ううえ、無い箱も
 # あるので、届かなければその場で確かめてから進む
 if ! "$PY" -c 'import six' 2>/dev/null; then
@@ -127,7 +128,6 @@ if ! "$PY" -c 'import six' 2>/dev/null; then
 		|| "$PY" -m pip install --user six 2>/dev/null \
 		|| { echo "six を入れられない"; exit 1; }
 fi
-[ -n "$PY" ] || { echo "python3 が無い"; exit 1; }
 "$PY" --version
 
 [ -n "${CXX:-}" ] && echo "CC=$CC CXX=$CXX で建てる"
