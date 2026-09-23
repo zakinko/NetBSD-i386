@@ -74,6 +74,10 @@ echo '##### 3. package 一式を置く #####'
 # 木の inputmethod/mozc-server を写して patches だけ差し替えるのでは足りない。
 # gyp option は PR1 (pkg/60654) が足す options.mk と Makefile.common の変更で
 # 入るもので、木にはまだ無い。NetBSD で建てて確かめた package 一式を持ってくる。
+# 木の七本はどれも options.mk を読まない (PR1 が足すもので木に無い)。写しに
+# 読ませるだけでなく、Makefile.common より前に置かなければ効かない。OSDEST は
+# .if !empty(PKG_OPTIONS:Mgyp) の中で決まるので、PKG_OPTIONS が後から決まると
+# 間に合わず、四つの BSD で OSDEST が空になって do-install が out_/Release を探す。
 D="$W/pkgsrc/zakinko/mozc-server"
 mkdir -p "$D"
 cp "$WS/ci/mozc-bsd/pkg/"* "$D/" || { say "package: 落ちた"; exit 1; }

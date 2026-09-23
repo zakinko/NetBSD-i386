@@ -49,4 +49,5 @@ UIM_MODULES=	mozc
 
 .include "../../inputmethod/uim/buildlink3.mk"
 .include "../../zakinko/uim-mozc-bsd/Makefile.common"
+.include "../../zakinko/mozc-server-bsd/options.mk"
 .include "../../mk/bsd.pkg.mk"

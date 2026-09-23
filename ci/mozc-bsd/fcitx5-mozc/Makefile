@@ -53,4 +53,5 @@ do-install:
 .include "../../zakinko/fcitx5-mozc-bsd/Makefile.common"
 .include "../../graphics/hicolor-icon-theme/buildlink3.mk"
 .include "../../devel/gettext-tools/msgfmt-desktop.mk"
+.include "../../zakinko/mozc-server-bsd/options.mk"
 .include "../../mk/bsd.pkg.mk"
