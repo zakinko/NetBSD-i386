@@ -65,14 +65,36 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+      # 枝の先端が同じなら dist は同じ物になる。run のたびに 20〜30 分かけて
+      # 作り直すと、落ちた箱を一つ撃ち直すだけでも runner を一つ余計に長く
+      # 掴む。SHA を鍵にして取っておく
+      - name: 枝の先端を引く
+        id: head
+        run: |
+          sha=$(git ls-remote https://github.com/zakinko/bazel.git \
+                "refs/heads/${{ inputs.branch }}" | cut -f1)
+          [ -n "$sha" ] || { echo "枝 ${{ inputs.branch }} が見つからない"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "${{ inputs.branch }} = $sha"
+      - uses: actions/cache@v4
+        id: dist-cache
+        with:
+          path: bazel-distfile.zip
+          key: dist-${{ steps.head.outputs.sha }}-${{ hashFiles('ci/bazel-bootstrap/make-master-dist.sh') }}
       - uses: actions/setup-java@v4
+        if: steps.dist-cache.outputs.cache-hit != 'true'
         with: { distribution: temurin, java-version: '25' }
       - name: make the dist archive from the branch
+        if: steps.dist-cache.outputs.cache-hit != 'true'
         run: |
           set -x
           sh ci/bazel-bootstrap/make-master-dist.sh "$GITHUB_WORKSPACE/bazel-distfile.zip"
         env:
           BRANCH: ${{ inputs.branch }}
+      - name: cache から出したものを確かめる
+        run: |
+          ls -l bazel-distfile.zip
+          unzip -l bazel-distfile.zip | tail -3
       - uses: actions/upload-artifact@v4
         with:
           name: master-sh-dist
