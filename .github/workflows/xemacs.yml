@@ -129,14 +129,15 @@ jobs:
           Get-Item xemacs/src/temacs.exe, $exe | Format-Table Name, Length
 
       - name: 素の build でモジュールが見えるか (基準)
-        shell: pwsh
+        shell: cmd
         run: |
-          # elisp は repo に置いてある。生成すると PowerShell の here-string の
-          # 行頭規則で壊れ、実行されないまま $LASTEXITCODE が空になる。
+          rem pwsh の & で起動すると LASTEXITCODE が空のまま帰ってきた。
+          rem nmake は build 中に同じ exe を問題なく走らせているので、
+          rem そちらと同じ cmd から呼ぶ。
           cd xemacs
-          & ./src/xemacs.exe -batch -vanilla -load "$env:GITHUB_WORKSPACE/ci/xemacs/win-modules-probe.el"
-          $rc = $LASTEXITCODE
-          if ($rc -ne 0) { throw "xemacs.exe が rc=$rc で終わった" }
+          dir src\xemacs.exe
+          src\xemacs.exe -batch -vanilla -load "%GITHUB_WORKSPACE%\ci\xemacs\win-modules-probe.el"
+          if errorlevel 1 (echo PROBE FAILED & exit /b 1)
 
       - name: HAVE_SHLIB を足して建て直す (上書きではなく追記)
         shell: pwsh
@@ -155,11 +156,12 @@ jobs:
           nmake -f xemacs.mak
 
       - name: HAVE_SHLIB 版でモジュールが見えるか
-        shell: pwsh
+        shell: cmd
         continue-on-error: true
         run: |
           cd xemacs
-          if (Test-Path src/xemacs.exe) {
-            & ./src/xemacs.exe -batch -vanilla -load "$env:GITHUB_WORKSPACE/ci/xemacs/win-modules-probe.el"
-          } else { Write-Host "xemacs.exe が無い (この実験では建たなかった)" }
-
+          if exist src\xemacs.exe (
+            src\xemacs.exe -batch -vanilla -load "%GITHUB_WORKSPACE%\ci\xemacs\win-modules-probe.el"
+          ) else (
+            echo xemacs.exe が無い ^(この実験では建たなかった^)
+          )
