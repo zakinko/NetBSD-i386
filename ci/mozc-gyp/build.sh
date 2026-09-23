@@ -103,7 +103,9 @@ FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|NetBSD|OpenBSD|DragonFly)
 	# GetServerDirectory() は Windows / macOS / Linux / WASM しか名乗らず、
 	# 当たらないと戻り値が無くて compile が落ちる (source の註がそう言って
 	# いる)。BSD は Linux と同じ所へ入れる
-	patch -p1 -f -i "$CI_DIR/bsd-system-util.patch" </dev/null ;;
+	patch -p1 -f -i "$CI_DIR/bsd-system-util.patch" </dev/null
+	# cpu_stats.cc も三箇所で Windows / macOS / Linux しか名乗らない
+	patch -p1 -f -i "$CI_DIR/bsd-cpu-stats.patch" </dev/null ;;
 esac
 
 PY=$(command -v python3 || command -v python)
