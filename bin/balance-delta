@@ -14,6 +14,12 @@ any tree, untouched.  So count the same way on both sides and report only
 where the two differ -- whatever the counter gets wrong, it gets wrong
 identically, and the difference is still meaningful.
 
+One case has to be handled rather than tolerated, because a port writes it
+constantly: wrapping an existing line in #ifdef/#else, where each arm
+carries its own brace.  Counting the text sees one brace too many while
+the compiler, taking one arm, sees the right number.  So only the first
+arm of every conditional is counted -- again on both sides.
+
 Usage:
     balance-delta <base-ref> [path ...]
 
@@ -37,15 +43,26 @@ def counts(src):
     s = re.sub(r'"(\\.|[^"\\])*"', '""', s)
     s = re.sub(r"'(\\.|[^'\\])*'", "''", s)
 
-    braces = s.count("{") - s.count("}")
-
+    braces = 0
     depth = 0
+    taking = []          # one flag per open conditional: still in the first arm
     for line in s.split("\n"):
         t = line.strip()
         if re.match(r"#\s*(if|ifdef|ifndef)\b", t):
             depth += 1
-        elif re.match(r"#\s*endif\b", t):
+            taking.append(True)
+            continue
+        if re.match(r"#\s*(else|elif)\b", t):
+            if taking:
+                taking[-1] = False
+            continue
+        if re.match(r"#\s*endif\b", t):
             depth -= 1
+            if taking:
+                taking.pop()
+            continue
+        if all(taking):
+            braces += line.count("{") - line.count("}")
     return braces, depth
 
 
