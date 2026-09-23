@@ -44,6 +44,9 @@ set -eu
 # しか出さず、rc は 0 のままだった。cvs add を書き漏らす形の事故になる。
 LC_ALL=C; export LC_ALL
 
+# 一時 file の置き場。TMPDIR が在ればそちらを使う。
+TMP=${TMPDIR:-/tmp}
+
 : "${PKGSRCDIR:=/usr/pkgsrc}"
 : "${PKGLINT:=/usr/pkg/bin/pkglint}"
 
@@ -161,6 +164,27 @@ check_diff() {
 	printf '=== %s\n' "$d"
 	[ -f "$d" ] || { bad "そんな差分は無い"; return; }
 
+	# send-pr の本文は diff を tab で字下げして貼る。下の検査はどれも行頭の
+	# ^--- や ^@@ を見るので、字下げされたままだと **一つも当たらないまま
+	# OK を出す**。.pr を七本通して全部 OK が出たとき、実際には何も見て
+	# いなかった。行頭の ^--- が無く ^<tab>--- が在るなら、剥がした写しを見る。
+	if ! grep -q '^--- ' "$d" && grep -q '^	--- ' "$d"; then
+		u=$TMP/pr-ready-unindent.$$
+		sed 's/^	//' "$d" > "$u"
+		a=$(wc -l < "$d"); b=$(wc -l < "$u")
+		if [ "$a" != "$b" ]; then
+			bad "字下げを剥がしたら行数が変わった ($a -> $b)"
+			rm -f "$u"
+			return
+		fi
+		note "   (本文の字下げを剥がして見る)"
+		# 本文 (diff より前) を控える。新しい file の名前がそこに
+		# 書かれているかを、下の 8 番で突き合わせる。
+		sed -n "1,$(( $(grep -n '^	--- ' "$d" | head -1 | cut -d: -f1) - 1 ))p" \
+			"$d" > $TMP/pr-ready-body.$$
+		d=$u
+	fi
+
 	# 6. 上流の Id 行を書き換えていないか。file を丸ごと消すときは Id 行も
 	#    消えるので、それは数えない。同じ file の中で消えて足されたものだけ。
 	awk '
@@ -209,19 +233,33 @@ check_diff() {
 	#    最初の hunk が @@ -0,0 で始まるものだけが新しい file である。前は
 	#    ^--- の行を全部並べていたので、当て物の対象が例外なく「新しい」と
 	#    出ていた。誰も読まない黄色を出す検査は、無いのと同じである。
+	# 名前は +++ 側から取る。新しい file の --- は /dev/null なので、
+	# そちらを印字すると全部 /dev/null になって何の役にも立たない。
 	awk '
 		/^--- /{ f=$2; sub(/\.orig$/,"",f); first=1; next }
-		/^\+\+\+ /{ next }
+		/^\+\+\+ /{ if ($2 != "/dev/null") f=$2; next }
 		/^@@ /{
 			if (first && $2 ~ /^-0,0$/) print f
 			first=0
 		}
-	' "$d" > /tmp/pr-ready-add.$$ || true
-	if [ -s /tmp/pr-ready-add.$$ ]; then
+	' "$d" > $TMP/pr-ready-add.$$ || true
+	if [ -s $TMP/pr-ready-add.$$ ]; then
 		note "新しい file (本文に cvs add と書いたか):"
-		sed 's/^/     /' /tmp/pr-ready-add.$$
+		sed 's/^/     /' $TMP/pr-ready-add.$$
+		# .pr を見ているなら、書いたかどうかを人に訊かずに数える。
+		# 当て物だけが入って cvs add が漏れると、committer の木で
+		# build が壊れる。名前が本文に無いものと、cvs add の語が
+		# 一度も出てこないものを落とす。
+		if [ -f $TMP/pr-ready-body.$$ ]; then
+			while read -r _f; do
+				grep -qF "$(basename "$_f")" $TMP/pr-ready-body.$$ \
+					|| bad "本文に $_f の名前が無い"
+			done < $TMP/pr-ready-add.$$
+			grep -qi 'cvs add' $TMP/pr-ready-body.$$ \
+				|| bad "新しい file が在るのに本文に cvs add が無い"
+		fi
 	fi
-	rm -f /tmp/pr-ready-add.$$
+	rm -f $TMP/pr-ready-add.$$ $TMP/pr-ready-body.$$
 
 	# 9. diff に混ざった binary。macOS の tar が運ぶ AppleDouble (._patch-*) が
 	#    patches/ に落ちていると、diff -urN は中身を出さずに
