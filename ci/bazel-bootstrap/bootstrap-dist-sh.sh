@@ -344,6 +344,18 @@ else
 	if [ -x "$BZ" ]; then
 		echo "--- $BZ は在る。version をそのまま走らせる"
 		"$BZ" version 2>&1 | head -20 || true
+		# host_platform が無いと言われたとき (DragonFly、run 35806669764)、
+		# 埋め込まれた bazel_tools の tools/BUILD が BUILD.tools の方だったか
+		# 素の tools/BUILD の方だったかで答が決まる。create_embedded_tools.py
+		# は同じ dir に両方在れば後者を捨てるので、捨て損なっていれば
+		# host_platform を宣言していない BUILD が入っている。
+		echo "--- 埋め込まれた bazel_tools の tools/BUILD"
+		find "${BAZEL_WRKDIR:-/var/tmp}" -path '*external/bazel_tools/tools/BUILD' 2>/dev/null | while read -r b; do
+			echo "$b: host_platform $(grep -c host_platform "$b") 行 / 全 $(wc -l < "$b") 行"
+			head -12 "$b"
+		done
+		echo "--- 木の tools/BUILD.tools は在るか"
+		ls -l tools/BUILD.tools tools/BUILD 2>&1 | head
 	else
 		echo "--- $BZ が無い"
 	fi
