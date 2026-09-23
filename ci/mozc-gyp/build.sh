@@ -41,7 +41,18 @@ FreeBSD|GhostBSD|HardenedBSD)
 MidnightBSD)
 	mport install -y python3 py311-six ninja git gmake pkgconf || mport install python3 ninja git gmake pkgconf ;;
 DragonFly)
-	pkg install -y python3 py311-six ninja git gmake pkgconf ;;
+	pkg install -y python3 py311-six ninja git gmake pkgconf
+	# base の gcc は 8 で concept を持たない (mozc 3.33 は C++20 が要る)。
+	# dports の gcc を使う。libstdc++ もその版の物が付いてくるので、
+	# clang + 古い libstdc++ の組み合わせを避けられる
+	for v in 14 13 12; do
+		pkg install -y "gcc$v" && break
+	done
+	CXX_BIN=$(ls /usr/local/bin/g++[0-9][0-9] 2>/dev/null | sort -V | tail -1)
+	CC_BIN=$(ls /usr/local/bin/gcc[0-9][0-9] 2>/dev/null | sort -V | tail -1)
+	[ -n "$CXX_BIN" ] || { echo "dports の g++ が見つからない"; ls /usr/local/bin/g[c+][c+]* 2>/dev/null | head; exit 1; }
+	CC=$CC_BIN; CXX=$CXX_BIN; export CC CXX
+	echo "DragonFly の compiler: $CXX ($("$CXX" --version | head -1))" ;;
 NetBSD)
 	/usr/sbin/pkg_add -U pkgin || true
 	pkgin -y install python313 py313-six ninja-build git-base gmake pkg-config
@@ -91,6 +102,8 @@ if ! "$PY" -c 'import six' 2>/dev/null; then
 fi
 [ -n "$PY" ] || { echo "python3 が無い"; exit 1; }
 "$PY" --version
+
+[ -n "${CXX:-}" ] && echo "CC=$CC CXX=$CXX で建てる"
 
 echo "=== gyp"
 # pipe に繋ぐと gyp の失敗が tail の成功に化ける (FreeBSD で実際にそうなり、
