@@ -21,6 +21,10 @@ gh api "/repos/$REPO/actions/runs/$RUN" \
 # gentoo-bash は 4、leap-bash は 2、どちらも中身は走っていなかった)
 gh api "/repos/$REPO/actions/runs/$RUN/jobs?per_page=100" --paginate \
 	-q '.jobs[] | .name + "\t" + .status + "/" + (.conclusion // "-") + "\t" +
+	    ((if .started_at then
+	        (((.completed_at // (now | todate)) | fromdate) - (.started_at | fromdate))
+	        | (./60 | floor | tostring) + "分"
+	      else "-" end)) + "\t" +
 	    ([.steps[]? | select(.conclusion != "skipped" and .conclusion != null) | .name]
 	     | map(select(
 	         (startswith("Set up job") or startswith("Post ") or
@@ -29,7 +33,7 @@ gh api "/repos/$REPO/actions/runs/$RUN/jobs?per_page=100" --paginate \
           startswith("Initialize containers") or startswith("Stop containers") or
           startswith("Make room on the runner")) | not))
 	     | join(", "))' \
-| while IFS="$(printf '\t')" read -r name res ran; do
+| while IFS="$(printf '\t')" read -r name res dur ran; do
 	case "$res" in
 	*/skipped) verdict="job ごと飛ばした" ;;
 	in_progress/-) verdict="走っている${ran:+: $ran}" ;;
@@ -42,5 +46,5 @@ gh api "/repos/$REPO/actions/runs/$RUN/jobs?per_page=100" --paginate \
 			verdict="走った: $ran"
 		fi ;;
 	esac
-	printf '%-28s %-22s %s\n' "$name" "$res" "$verdict"
+	printf '%-28s %-16s %6s  %s\n' "$name" "$res" "$dur" "$verdict"
 done
