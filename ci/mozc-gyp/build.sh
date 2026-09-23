@@ -87,6 +87,8 @@ git submodule update --init --recursive --depth 1
 cd src
 echo "=== third_party の中身"; ls third_party 2>/dev/null | head
 
+command -v patch >/dev/null || { echo "patch(1) が無い"; exit 1; }
+
 # BSD では build_mozc.py が target_platform を決められない
 # ("Unknown target_platform: None")。五つの BSD を教える
 case "$OS" in
@@ -112,7 +114,6 @@ FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|NetBSD|OpenBSD|DragonFly)
 	patch -p1 -f -i "$CI_DIR/bsd-ipc-path.patch" </dev/null ;;
 esac
 
-command -v patch >/dev/null || { echo "patch(1) が無い"; exit 1; }
 PY=$(command -v python3 || command -v python)
 # gyp の pylib は six を import する。package 名が箱ごとに違ううえ、無い箱も
 # あるので、届かなければその場で確かめてから進む
