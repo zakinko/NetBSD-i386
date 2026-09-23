@@ -30,6 +30,7 @@ elif command -v curl >/dev/null 2>&1; then GET="curl -fsSL -o"
 elif command -v ftp >/dev/null 2>&1; then GET="ftp -o"
 else echo "RESULT 取得の道具が無い"; exit 1; fi
 
+T2="$W/t2"
 echo "### 作業場 $W  prefix $PREFIX  段 $STAGE  取得 $GET"
 uname -a
 df -h "$W" 2>/dev/null | tail -1
@@ -169,6 +170,28 @@ printf '  PATH で先に見つかるのは: %s\n' "$(command -v pkg-config 2>/de
 # 中で落ちるので、環境が条件。pkgsrc は cwrapper 経由で呼び PKG_CONFIG_LIBDIR
 # を張る。libxml2 の configure が実際に落ちる所なので、そこだけ再現する。
 # mozc 全体の 4 時間を待たずに 20 分で分かる。
+# util-linux の configure が cpu_set_t の型名しか見ていない件の根拠。
+# 別の run を起こさず、ここで一緒に測る (account 全体で runner が詰まっている)。
+echo '##### 4c2. util-linux が見ている cpu_set_t ==='
+cat > "$T2.c" <<'EOF'
+#include <sched.h>
+#include <stdio.h>
+int main(void){
+#ifdef __linux__
+#endif
+  return 0;
+}
+EOF
+for t in 'cpu_set_t s; (void)s;|型が在る' \
+         '(void)CPU_ALLOC(1);|CPU_ALLOC が宣言されている' \
+         'cpu_set_t s; (void)s.__bits;|cpu_set_t に __bits' \
+         '__cpu_mask m = 0; (void)m;|__cpu_mask が在る'; do
+  body=${t%%|*}; name=${t##*|}
+  printf '#include <sched.h>\nint main(void){ %s return 0; }\n' "$body" > "$T2.c"
+  printf '  %-34s ' "$name"
+  ${CC:-cc} -o "$T2" "$T2.c" >/dev/null 2>&1 && echo '通る' || echo '通らない'
+done
+
 echo '##### 4d. libxml2 の configure を再現する #####'
 ( cd "$W/pkgsrc/textproc/libxml2" && bmake configure ) >"$W/libxml2.log" 2>&1
 rc=$?
