@@ -1,0 +1,116 @@
+#!/bin/sh
+#
+# 送る .pr と、CI が実際に建てた物が同じかを見る。
+#
+#	pr-vs-built --diff <.pr> <tree 当て物>	触る file の集合を比べる
+#	pr-vs-built --fork <.pr> <fork dir> <上流の pkgdir>
+#						上流の package に .pr を当てて
+#						fork と中身ごと比べる
+#
+# pr-ready は「その diff が静的に足りているか」を見る。こちらは別の問い
+# ——「測ったものと送るものは同じ物か」——を見る。二つは同じではない。
+#
+# 実際に外していた。zlib の .pr は doc/pkg-vulnerabilities を触るのに、
+# CI が当てる tree 当て物は三 file しか持っておらず、その行は一度も
+# 踏まれないまま送られる所だった。build が踏まない file は、測った顔を
+# して測られていない。
+#
+# fork を建てている package (croc、xwpe) では file の集合だけでは足りない。
+# 集合が合っていても中身が違えば、建てた物と送る物は別である。上流の
+# package を取ってきて .pr を当て、fork と diff -r で比べるところまでやる。
+set -eu
+LC_ALL=C; export LC_ALL
+T=${TMPDIR:-/tmp}
+rc=0
+bad() { echo "  !! $*"; rc=1; }
+
+# .pr の本文は diff を tab で字下げして貼る。剥がしてから読む。
+pr_diff() {
+	n=$(grep -n '^	--- ' "$1" | head -1 | cut -d: -f1) || true
+	[ -n "${n:-}" ] || { echo "  !! .pr に字下げされた diff が無い" >&2; return 1; }
+	sed -n "${n},\$p" "$1" | sed 's/^	//'
+}
+files_of() { awk '/^\+\+\+ /{print $2}' | sort -u; }
+
+usage() { sed -n '3,12p' "$0"; exit 2; }
+[ $# -ge 3 ] || usage
+mode=$1; pr=$2; shift 2
+[ -f "$pr" ] || { echo "そんな .pr は無い: $pr" >&2; exit 2; }
+
+case "$mode" in
+--diff)
+	d=$1
+	[ -f "$d" ] || { echo "そんな当て物は無い: $d" >&2; exit 2; }
+	pr_diff "$pr" | files_of > "$T/pvb.pr.$$"
+	files_of < "$d" > "$T/pvb.ci.$$"
+	a=$(comm -23 "$T/pvb.pr.$$" "$T/pvb.ci.$$")
+	b=$(comm -13 "$T/pvb.pr.$$" "$T/pvb.ci.$$")
+	[ -n "$a" ] && { bad "送るが CI が当てない:"; echo "$a" | sed 's/^/       /'; }
+	[ -n "$b" ] && { bad "CI が当てるが送らない:"; echo "$b" | sed 's/^/       /'; }
+	[ $rc -eq 0 ] && echo "  ok 同じ $(wc -l < "$T/pvb.pr.$$" | tr -d ' ') file"
+	rm -f "$T/pvb.pr.$$" "$T/pvb.ci.$$"
+	;;
+--fork)
+	fork=$1; pkgdir=$2
+	[ -d "$fork" ] || { echo "そんな fork は無い: $fork" >&2; exit 2; }
+	w=$T/pvb.$$; rm -rf "$w"; mkdir -p "$w/$pkgdir"
+	echo "  上流の $pkgdir を取る"
+	for f in $(gh api "repos/NetBSD/pkgsrc/contents/$pkgdir" \
+	    --jq '.[]|select(.type=="file")|.name' < /dev/null 2>/dev/null); do
+		gh api "repos/NetBSD/pkgsrc/contents/$pkgdir/$f" --jq '.content' \
+		    < /dev/null 2>/dev/null | base64 -d > "$w/$pkgdir/$f"
+	done
+	for sub in patches files; do
+		gh api "repos/NetBSD/pkgsrc/contents/$pkgdir/$sub" --jq '.[].name' \
+		    < /dev/null > "$T/pvb.sub.$$" 2>/dev/null || continue
+		mkdir -p "$w/$pkgdir/$sub"
+		while read -r f; do
+			gh api "repos/NetBSD/pkgsrc/contents/$pkgdir/$sub/$f" --jq '.content' \
+			    < /dev/null 2>/dev/null | base64 -d > "$w/$pkgdir/$sub/$f"
+		done < "$T/pvb.sub.$$"
+		rm -f "$T/pvb.sub.$$"
+	done
+	n=$(find "$w" -type f | wc -l | tr -d ' ')
+	[ "$n" -gt 0 ] || { bad "上流から一つも取れなかった"; exit 1; }
+	echo "  取った: $n file"
+
+	pr_diff "$pr" > "$T/pvb.diff.$$"
+	( cd "$w" && patch -C -f -p0 -i "$T/pvb.diff.$$" < /dev/null > /dev/null 2>&1 ) \
+		|| { bad "空当てが通らない"; rm -rf "$w"; exit 1; }
+	( cd "$w" && patch -f -p0 -i "$T/pvb.diff.$$" < /dev/null > /dev/null 2>&1 ) \
+		|| { bad "本当てが落ちた"; rm -rf "$w"; exit 1; }
+	find "$w" -name '*.orig' -delete
+
+	# 本文の cvs rm を実行する。patch は file を消せないので、ここが
+	# 抜けると「fork には無いのに木には残る」形で差が出る。
+	for f in $(sed -n 's/.*cvs rm:[[:space:]]*//p' "$pr" | tr -d ','); do :; done
+	sed -n '/cvs rm:/,/^$/p' "$pr" | tr ' \t,' '\n\n\n' \
+	    | grep -E '^(patches|files)/' | while read -r f; do
+		rm -f "$w/$pkgdir/$f"
+	done
+	# 本文が「patches/a b c」と並べる書き方も拾う
+	sed -n '/cvs rm:/,/^$/p' "$pr" | tr ' \t,' '\n\n\n' \
+	    | grep -E '^patch-' | while read -r f; do
+		rm -f "$w/$pkgdir/patches/$f"
+	done
+	rmdir "$w/$pkgdir/files" 2>/dev/null || true
+
+	echo "  === fork との差 (\$NetBSD\$ の Id 行だけなら同じ物) ==="
+	if diff -r --exclude=CVS "$w/$pkgdir" "$fork" > "$T/pvb.out.$$" 2>&1; then
+		echo "  ok 完全に同一"
+	else
+		# Id 行だけの差かどうかを数える
+		o=$(grep -c '^[<>]' "$T/pvb.out.$$" || true)
+		i=$(grep -c '^[<>].*\$NetBSD' "$T/pvb.out.$$" || true)
+		if [ "$o" = "$i" ] && [ "$o" != 0 ]; then
+			echo "  ok 差は \$NetBSD\$ の Id 行 $((o / 2)) 本だけ"
+		else
+			bad "Id 行以外の差がある ($o 行のうち Id 行は $i 行)"
+			sed 's/^/     /' "$T/pvb.out.$$" | head -40
+		fi
+	fi
+	rm -rf "$w" "$T/pvb.diff.$$" "$T/pvb.out.$$"
+	;;
+*) usage ;;
+esac
+exit $rc
