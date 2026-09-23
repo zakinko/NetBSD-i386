@@ -1,18 +1,25 @@
-Give the BSDs a server directory and a user profile directory.
+Give the BSDs a server directory, a user profile directory, a desktop name
+and a physical memory size.
 
-Three functions in system_util.cc name Windows, macOS, Linux and WASM and
-stop otherwise: GetServerDirectory() and GetDocumentDirectory() say so in a
-comment ("the compiler raises an error because of no return value") and the
-user profile directory ends in "#error Undefined target platform."
+Five places in system_util.cc name Windows, macOS, Linux and WASM and stop
+otherwise.  Two of them say so in a comment ("the compiler raises an error
+because of no return value"), and the user profile directory ends in
+"#error Undefined target platform."
+
+GetDesktopNameAsString() and GetTotalPhysicalMemory() are the quieter pair:
+falling off the end of a function returning non-void is a warning, not an
+error, so on the BSDs they compiled and returned whatever happened to be in
+the register.  The DISPLAY variable and sysconf(_SC_PHYS_PAGES) are what the
+BSDs use too, so they take the Linux arms.
 
 The BSDs install the server where Linux does and follow the same XDG layout
-for the profile, so they take the same arms.
+for the profile, so they take those arms as well.
 
 This is the 3.33.6089 shape of part of the first commit on zakinko/mozc
 bsd-support, where master needs if constexpr instead.  CI only.
 
---- a/base/system_util.cc	2026-09-23 15:01:26
-+++ b/base/system_util.cc	2026-09-23 15:01:26
+--- a/base/system_util.cc
++++ b/base/system_util.cc
 @@ -279,7 +279,8 @@
    return FileUtil::JoinPath(dir, "Mozc");
  #endif  //  GOOGLE_JAPANESE_INPUT_BUILD
@@ -49,3 +56,35 @@ bsd-support, where master needs if constexpr instead.  CI only.
  
  #ifndef MOZC_DOCUMENT_DIR
  #define MOZC_DOCUMENT_DIR "/usr/lib/mozc/documents"
+@@ -690,9 +693,10 @@
+ #endif  // _WIN32
+ 
+ std::string SystemUtil::GetDesktopNameAsString() {
+-#if defined(__linux__) || defined(__wasm__)
++#if defined(__linux__) || defined(__wasm__) || defined(__FreeBSD__) || \
++    defined(__NetBSD__) || defined(__OpenBSD__) || defined(__DragonFly__)
+   return Environ::GetEnv("DISPLAY");
+-#endif  // __linux__ || __wasm__
++#endif  // __linux__ || __wasm__ || the BSDs
+ 
+ #if defined(__APPLE__)
+   return "";
+@@ -830,7 +834,8 @@
+   return total_memory;
+ #endif  // __APPLE__
+ 
+-#if defined(__linux__) || defined(__wasm__)
++#if defined(__linux__) || defined(__wasm__) || defined(__FreeBSD__) || \
++    defined(__NetBSD__) || defined(__OpenBSD__) || defined(__DragonFly__)
+ #if defined(_SC_PAGESIZE) && defined(_SC_PHYS_PAGES)
+   const int32_t page_size = sysconf(_SC_PAGESIZE);
+   const int32_t number_of_phyisical_pages = sysconf(_SC_PHYS_PAGES);
+@@ -843,7 +848,7 @@
+ #else   // defined(_SC_PAGESIZE) && defined(_SC_PHYS_PAGES)
+   return 0;
+ #endif  // defined(_SC_PAGESIZE) && defined(_SC_PHYS_PAGES)
+-#endif  // __linux__ || __wasm__
++#endif  // __linux__ || __wasm__ || the BSDs
+ 
+   // If none of the above platforms is specified, the compiler raises an error
+   // because of no return value.

@@ -106,6 +106,10 @@ FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|NetBSD|OpenBSD|DragonFly)
 	# 当たらないと戻り値が無くて compile が落ちる (source の註がそう言って
 	# いる)。BSD は Linux と同じ所へ入れる
 	patch -p1 -f -i "$CI_DIR/bsd-system-util.patch" </dev/null
+	# password_manager.cc は DefaultPasswordManager を Linux/WASM 用と
+	# Windows/macOS 用の二腕でしか typedef せず、BSD はどちらにも入らない
+	# ので名前が無いまま singleton を作ろうとして止まる
+	patch -p1 -f -i "$CI_DIR/bsd-password-manager.patch" </dev/null
 	# cpu_stats.cc も三箇所で Windows / macOS / Linux しか名乗らない
 	patch -p1 -f -i "$CI_DIR/bsd-cpu-stats.patch" </dev/null
 	# IsValidServer() は /proc/<pid>/exe を読む。FreeBSD は procfs を mount
