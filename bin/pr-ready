@@ -151,6 +151,25 @@ check_one() {
 		fi
 	fi
 
+	# 4b. emacs の共存。--program-transform-name は pkgsrc の Makefile から
+	#     bmake と autoconf を通って sed に届くまでに展開が三段あり、
+	#     s/$$$$/ と書くと sed には s/$$/ が渡る。BRE の $ は行末の位置な
+	#     ので何にも当たらず、rc=0 のまま版の付かない bin/emacs が出来る。
+	#     目では二つの綴りが見分けられないので機械に数えさせる。
+	case ${pkg##*/} in
+	emacs*|xemacs*)
+		for f in "$pkg/Makefile" "$pkg/Makefile.common"; do
+			[ -f "$f" ] || continue
+			l=$(grep -h 'program-transform-name' "$f" 2>/dev/null | head -1)
+			[ -n "$l" ] || continue
+			case "$l" in
+			*'s/$$$$/'*)
+				bad "transform が空振りする: ${f##*/} の $(echo "$l" | sed 's/.*=[ 	]*//')"
+				note "   s/\$\$\$\$/ ではなく s/\$\$/ と書く" ;;
+			esac
+		done ;;
+	esac
+
 	# 5. pkglint
 	if [ -x "$PKGLINT" ]; then
 		n=$("$PKGLINT" -Wall "$pkg" 2>&1 \
