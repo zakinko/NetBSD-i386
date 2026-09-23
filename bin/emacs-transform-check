@@ -1,0 +1,73 @@
+#!/bin/sh
+# emacs の package の --program-transform-name が効く形かを見る。
+#
+# pkgsrc の Makefile に書く値は s/$$/-VER/ が正しく、s/$$$$/-VER/ は
+# 何もしない。値は三段の展開を通る。
+#
+#	pkgsrc Makefile    s/$$/-VER/     bmake が $$ → $
+#	configure が受取   s/$/-VER/      autoconf が make 用に $ を $$ へ
+#	生成 Makefile      s/$$/-VER/     make が $$ → $
+#	sed が受取         s/$/-VER/      末尾に -VER を付ける
+#
+# $$$$ を書くと生成 Makefile が s/$$$$/ になり、make を通って s/$$/ に
+# なる。sed の BRE では行末の literal $ を探すことになって一行も当たらず、
+# configure も build も rc=0 のまま bin/emacs が版なしで入る。二重の
+# ほうが丁寧に見えるので「直され」やすい。実際に一度それで emacs23 を
+# 壊した。
+#
+# ここが見るのは source 側の形だけ。終点まで見るなら
+#	make configure && grep TRANSFORM $(make show-var VARNAME=WRKSRC)/Makefile
+#
+# 使い方: emacs-transform-check [<package の親 dir> ...]
+#	既定は /usr/pkgsrc/editors。session の category を見るなら
+#	  emacs-transform-check /usr/pkgsrc/netbsd-i386-xx
+
+dirs=${*:-/usr/pkgsrc/editors}
+bad=0
+seen=0
+
+# 良い値を通し、悪い値を弾けるか先に確かめる
+ok() { case "$1" in *'s/$$$$/'*) return 1;; *'s/$$/'*) return 0;; *) return 1;; esac; }
+ok "--program-transform-name='s/\$\$/-1.0/'"     && a=yes || a=no
+ok "--program-transform-name='s/\$\$\$\$/-1.0/'" && b=yes || b=no
+if [ "$a" != yes ] || [ "$b" != no ]; then
+	echo "!! 検査自体が壊れている (良い値=$a 悪い値=$b)" >&2
+	exit 2
+fi
+
+for d in $dirs; do
+	[ -d "$d" ] || continue
+	for p in "$d"/*; do
+		[ -d "$p" ] || continue
+		# emacs の package だけを見る。editors/nvi のように
+		# まったく別の用途で --program-transform-name を使う
+		# package が在り、それを NG と呼ぶと検査が信用されなくなる。
+		case $(basename "$p") in
+		emacs*|xemacs*)	;;
+		*)		continue ;;
+		esac
+		for f in "$p/Makefile" "$p/Makefile.common"; do
+			[ -f "$f" ] || continue
+			l=$(grep -h 'program-transform-name' "$f" 2>/dev/null | head -1)
+			[ -n "$l" ] || continue
+			v=$(echo "$l" | sed 's/.*=[ 	]*//')
+			seen=$((seen + 1))
+			if ok "$l"; then
+				printf '%-28s ok   %s\n' "$(basename "$p")" "$v"
+			else
+				printf '%-28s NG   %s   <- %s\n' \
+				    "$(basename "$p")" "$v" "$f"
+				bad=$((bad + 1))
+			fi
+		done
+	done
+done
+
+echo "見た $seen 件、NG $bad 件"
+if [ "$seen" = 0 ]; then
+	echo "!! transform を書いている package が一本も無い。" >&2
+	echo "   dir を間違えていないか (既定は /usr/pkgsrc/editors、" >&2
+	echo "   session の写しなら /usr/pkgsrc/<category> を渡す)" >&2
+	exit 2
+fi
+[ "$bad" = 0 ] || exit 1
