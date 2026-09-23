@@ -1,0 +1,98 @@
+#!/bin/sh
+# self-hosted runner を使う workflow が、fork から起動できる形になっていないか。
+#
+# self-hosted runner の危険は「誰かが fork から PR を出す → その workflow が
+# 自分の箱で任意の code を走らせる」という一点にある。この repo の workflow は
+# いま全部 workflow_dispatch と push と schedule で、どれも write 権限が要るので
+# その経路が無い。だから QNAP の runner を public repo に繋いでいる。
+#
+# 前提が崩れるのは、誰かが pull_request の起動条件を足したときで、そのとき
+# 何も鳴らなければ黙って穴が開く。コメントでは止まらないのでここで止める。
+#
+# 規則: 一つの workflow file の中で
+#   fork から起動できる event (pull_request, pull_request_target) と
+#   self-hosted runner
+# が同居してはいけない。
+#
+# 使い方: bin/self-hosted-guard [workflow の dir]   (既定 .github/workflows)
+set -eu
+
+# この検査自体が壊れていないことを先に見る。既知の不良品を通して、
+# 落ちなければ検査が死んでいる。
+selftest() {
+	d=$(mktemp -d)
+	mkdir -p "$d/good" "$d/bad" "$d/bad2"
+	cat > "$d/good/a.yml" <<'EOF'
+on:
+  pull_request:
+jobs:
+  x:
+    runs-on: ubuntu-latest
+EOF
+	cat > "$d/good/b.yml" <<'EOF'
+on:
+  workflow_dispatch:
+jobs:
+  x:
+    runs-on: self-hosted
+EOF
+	cat > "$d/bad/a.yml" <<'EOF'
+on:
+  pull_request:
+jobs:
+  x:
+    runs-on: [self-hosted, linux]
+EOF
+	cat > "$d/bad2/a.yml" <<'EOF'
+on:
+  pull_request_target:
+    branches: [main]
+jobs:
+  x:
+    runs-on: self-hosted
+EOF
+	rc=0; scan "$d/good" >/dev/null 2>&1 || rc=$?
+	[ "$rc" = 0 ] || { echo "自己試験が落ちた: 健全な例を弾いている"; exit 1; }
+	for b in bad bad2; do
+		rc=0; scan "$d/$b" >/dev/null 2>&1 || rc=$?
+		[ "$rc" != 0 ] || { echo "自己試験が落ちた: $b を通してしまう"; exit 1; }
+	done
+	rm -rf "$d"
+	echo "自己試験 OK (健全 1 組を通し、不良 2 種を弾いた)"
+}
+
+scan() {
+	dir=$1
+	bad=0
+	for f in "$dir"/*.yml "$dir"/*.yaml; do
+		[ -f "$f" ] || continue
+		# on: の節だけを見る。job の中の if: に書かれた
+		# github.event_name == 'pull_request' と取り違えないよう、
+		# 行頭からの字下げが 2 以下の物だけを起動条件とみなす。
+		ev=$(sed -n '/^on:/,/^[a-zA-Z]/p' "$f" \
+		     | grep -E '^ {0,2}(pull_request|pull_request_target):' || true)
+		[ -n "$ev" ] || continue
+		sh=$(grep -nE '^[[:space:]]*runs-on:.*self-hosted' "$f" || true)
+		[ -n "$sh" ] || continue
+		echo "NG $f"
+		echo "   fork から起動できる: $(echo "$ev" | tr -d ' ' | tr '\n' ' ')"
+		echo "   self-hosted で走る:  $sh"
+		bad=1
+	done
+	return $bad
+}
+
+selftest
+D=${1:-.github/workflows}
+[ -d "$D" ] || { echo "workflow の dir が無い: $D"; exit 1; }
+n=$(ls "$D"/*.yml "$D"/*.yaml 2>/dev/null | wc -l | tr -d ' ')
+[ "$n" -gt 0 ] || { echo "$D に workflow が一つも無い。検査が空振りしている"; exit 1; }
+echo "$D の $n 本を見る"
+if scan "$D"; then
+	echo "OK: fork から起動できる workflow と self-hosted runner の同居は無い"
+else
+	echo
+	echo "self-hosted runner は fork からの PR に踏ませてはいけない。"
+	echo "その job を GitHub の runner へ戻すか、起動条件から pull_request を外す。"
+	exit 1
+fi

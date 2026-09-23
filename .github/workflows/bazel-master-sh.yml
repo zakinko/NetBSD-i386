@@ -65,8 +65,19 @@ concurrency:
 
 jobs:
   dist:
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # QNAP の中の使い捨て VM。GitHub の runner は account 全体で取り合いに
+    # なり、cache に当たれば 20 秒で終わるこの job が行列の後ろで一時間以上
+    # 待つことがあった。self-hosted は同時実行枠を使わないので待たない。
+    #
+    # cache が外れた回は dist archive を作り直す。Celeron J3455 では 30 分では
+    # 済まないので timeout を伸ばしてある。
+    #
+    # self-hosted を public repo に繋いでいるのは、この repo の workflow が
+    # 全部 workflow_dispatch / push / schedule で、どれも write 権限が要り、
+    # fork からの PR では起動できないから。前提が崩れたら
+    # bin/self-hosted-guard が落とす。
+    runs-on: [self-hosted, qnap]
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
       # 枝の先端が同じなら dist は同じ物になる。run のたびに 20〜30 分かけて
