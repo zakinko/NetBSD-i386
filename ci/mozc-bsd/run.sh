@@ -93,15 +93,20 @@ if [ "$(uname -s)" = "DragonFly" ]; then
   L="$W/pkgsrc/zakinko/libuuid"
   cp -R "$W/pkgsrc/devel/libuuid" "$L"
   sed -i.bak 's|\.\./\.\./devel/libuuid/|../../zakinko/libuuid/|g' "$L/Makefile" 2>/dev/null
-  cat >> "$L/Makefile.common" <<'EOF'
-
-# cpu_set_t は在るが glibc と中身が違う。型の名前だけを見る検査が通ってしまう。
-CONFIGURE_ENV+=		ac_cv_type_cpu_set_t=no
-EOF
-  say "libuuid: DragonFly 向けに cpu_set_t の検査を無効にした"
-  # 依存の解決が zakinko/libuuid を向くように、木の側を差し替える
+  # ac_cv_type_cpu_set_t=no で迂回する形から、上流へ出せる形に変えた。
+  # 検査が型の名前しか見ていないのが元なので、code が使う欄も訊く当て物を
+  # 生成済み configure に当てる。これが効くかを DragonFly で測る。
+  cp "$WS/ci/mozc-bsd/libuuid/patch-configure-cpuset.diff" \
+     "$L/patches/patch-configure-cpuset" 2>/dev/null
+  ( cd "$L" && bmake makepatchsum ) >/dev/null 2>&1
+  say "libuuid: cpu_set_t の欄を訊く当て物を入れた"
   rm -rf "$W/pkgsrc/devel/libuuid"
   ln -s "$L" "$W/pkgsrc/devel/libuuid"
+  # 効いたかを直に見る
+  ( cd "$L" && bmake configure ) >"$W/libuuid.log" 2>&1
+  rc=$?
+  say "libuuid configure: rc=$rc"
+  grep -h 'cpu_set_t' "$W/libuuid.log" | head -4 | sed 's/^/    /'
 fi
 
 # NetBSD だけ gyp を選ばないので devel/bazel → lang/openjdk11 を建てにいき、
