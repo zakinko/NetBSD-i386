@@ -136,6 +136,19 @@ if "$PY" build_mozc.py build -c Release $TARGETS > build.log 2>&1; then
 		fi
 	done
 	[ "$n" -ge 2 ] || { echo "RESULT mozc-gyp $OS NG: binary が $n 個しか出ていない"; exit 1; }
+	# 建っただけでは IPC の腕を踏まない。helper の protocol を直に叩いて
+	# 「にほんご」を変換させ、候補に 日本語 が出るところまで見る。
+	# root では base/run_level.cc が拒むので、smoke.sh が一般 user を作る
+	OUTDIR=""
+	for d in out_bsd/Release out_linux/Release; do
+		[ -x "$d/mozc_server" ] && { OUTDIR=$d; break; }
+	done
+	if [ -n "$OUTDIR" ] && [ "$(id -u)" = 0 ]; then
+		echo "=== 煙試験 ($OUTDIR)"
+		sh "$CI_DIR/smoke.sh" "$PWD/$OUTDIR" || echo "煙試験は通らなかった (建った事実は上の RESULT のとおり)"
+	else
+		echo "煙試験は飛ばす (root ではないか、binary の置き場が分からない)"
+	fi
 else
 	echo "RESULT mozc-gyp $OS NG (build)"
 	# ninja の FAILED の塊だけを出す。tail だけだと warning に埋もれて、
