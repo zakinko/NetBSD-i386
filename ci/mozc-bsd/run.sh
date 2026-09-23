@@ -211,9 +211,28 @@ if [ $rc -ne 0 ]; then
   grep -n 'PKG_CONFIG' "$W/libxml2.log" | head -5
   W2=$(ls -d "$W/pkgsrc/textproc/libxml2/work/.tools/bin" 2>/dev/null)
   if [ -n "$W2" ]; then
-    echo "--- cwrapper を直に撃つ ---"
-    "$W2/pkg-config" --version; printf '    rc=%d\n' "$?"
+    echo "--- cwrapper を直に撃つ (素の環境) ---"
     "$W2/pkg-config" --atleast-pkgconfig-version 0.9.0; printf '    rc=%d\n' "$?"
+    # 直に撃つと落ちない。configure の中でだけ落ちるので、configure が張る
+    # 環境を一つずつ足して、どれが効くかを見る。
+    echo "--- configure が張る環境を足して撃つ ---"
+    B="$W/pkgsrc/textproc/libxml2/work"
+    for v in "PKG_CONFIG_LIBDIR=$B/.buildlink/lib/pkgconfig:$B/.buildlink/share/pkgconfig" \
+             "PKG_CONFIG_PATH=" \
+             "PKG_CONFIG_LOG=$B/../.pkg-config.log"; do
+      printf '    %-46s ' "$(echo "$v" | cut -c1-44)"
+      env "$v" "$W2/pkg-config" --atleast-pkgconfig-version 0.9.0 >/dev/null 2>&1
+      r=$?
+      [ $r -gt 128 ] && printf 'signal %d (core)\n' "$((r-128))" || printf 'rc=%d\n' "$r"
+    done
+    echo "--- 三つまとめて ---"
+    env "PKG_CONFIG_LIBDIR=$B/.buildlink/lib/pkgconfig:$B/.buildlink/share/pkgconfig" \
+        "PKG_CONFIG_PATH=" "PKG_CONFIG_LOG=$B/../.pkg-config.log" \
+        "$W2/pkg-config" --atleast-pkgconfig-version 0.9.0 >/dev/null 2>&1
+    r=$?
+    [ $r -gt 128 ] && printf '    signal %d (core)\n' "$((r-128))" || printf '    rc=%d\n' "$r"
+    echo "--- core は出来ているか ---"
+    ls -l "$B"/../*.core "$B"/*.core 2>/dev/null | head -3
   fi
 fi
 
