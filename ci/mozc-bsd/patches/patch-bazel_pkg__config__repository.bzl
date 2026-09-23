@@ -1,5 +1,11 @@
 $NetBSD: patch-bazel_pkg__config__repository.bzl,v 1.1 2024/02/10 01:17:27 ryoon Exp $
 
+Ask pkg-config for the whole link line, not only the -l flags.
+
+--libs-only-l drops -L, so the libraries pkgsrc installs under its own
+prefix are named but never found: the link fails on a system where the
+dependency does not also sit in /usr/lib.
+
 --- bazel/pkg_config_repository.bzl.orig	2023-12-14 08:51:15.941327119 +0000
 +++ bazel/pkg_config_repository.bzl
 @@ -103,7 +103,7 @@ def _pkg_config_repository_impl(repo_ctx

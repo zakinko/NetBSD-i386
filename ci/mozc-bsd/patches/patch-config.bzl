@@ -1,5 +1,12 @@
 $NetBSD: patch-config.bzl,v 1.2 2024/02/10 01:17:27 ryoon Exp $
 
+Put the installed paths under the package's prefix.
+
+These are compiled into the binaries -- where mozc_server looks for its
+documents, where ibus-mozc is registered, where the Emacs helper is
+installed -- so they have to be the prefix this package installs into
+rather than /usr.
+
 --- config.bzl.orig	2023-12-14 11:23:07.849816899 +0000
 +++ config.bzl
 @@ -35,16 +35,16 @@
