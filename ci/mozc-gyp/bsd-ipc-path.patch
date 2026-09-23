@@ -1,0 +1,101 @@
+Ask the kernel for the server's path where /proc is not there.
+
+IsValidServer() reads /proc/<pid>/exe, which a stock FreeBSD or NetBSD does
+not have: FreeBSD does not mount procfs at all and NetBSD ships it as noauto.
+The block is skipped there, so server_path_ stays empty and the comparison at
+the end refuses the connection.
+
+Ask sysctl instead.  The MIB differs: FreeBSD and DragonFly take
+{KERN_PROC, KERN_PROC_PATHNAME, pid} while NetBSD takes
+{KERN_PROC_ARGS, pid, KERN_PROC_PATHNAME}, and the constant is not the same
+number on all of them, so it goes through the symbol.  A zero-length answer
+is refused because the FreeBSD-shaped MIB succeeds with no bytes on NetBSD.
+
+OpenBSD deliberately offers no way to learn another process path, so its arm
+returns before the comparison and caches nothing.
+
+This is the 3.33.6089 shape of the third commit on zakinko/mozc bsd-support.
+CI only.
+
+--- a/ipc/ipc_path_manager.cc	2026-09-23 14:22:26
++++ b/ipc/ipc_path_manager.cc	2026-09-23 14:22:47
+@@ -67,6 +67,12 @@
+ 
+ #include "base/mac/mac_util.h"
+ #endif  // __APPLE__
++
++#if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
++#include <sys/sysctl.h>
++
++#include <climits>
++#endif  // __FreeBSD__ || __NetBSD__ || __DragonFly__
+ 
+ #ifdef _WIN32
+ // clang-format off
+@@ -390,7 +396,66 @@
+   }
+   server_pid_ = pid;
+ #endif  // __APPLE__
++
++#if defined(__FreeBSD__) || defined(__DragonFly__)
++  // FreeBSD does not mount procfs by default, so ask the kernel instead.
++  // KERN_PROC_PATHNAME is not the same number on the two (12 and 9), so this
++  // has to go through the symbol.
++  {
++    int name[] = {CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME,
++                  static_cast<int>(pid)};
++    char path[PATH_MAX];
++    size_t path_len = sizeof(path);
++    if (sysctl(name, std::size(name), path, &path_len, nullptr, 0) < 0) {
++      LOG(ERROR) << "sysctl KERN_PROC_PATHNAME failed";
++      return false;
++    }
++    if (path_len == 0) {
++      // A wrong MIB order can succeed and hand back nothing; NetBSD does
++      // exactly that when given FreeBSD's order.  Do not read that as a path.
++      LOG(ERROR) << "sysctl KERN_PROC_PATHNAME returned no path";
++      return false;
++    }
++    // path_len counts the terminating NUL.
++    server_path_.assign(path, path_len - 1);
++    server_pid_ = pid;
++  }
++#endif  // __FreeBSD__ || __DragonFly__
+ 
++#ifdef __NetBSD__
++  // NetBSD ships procfs as noauto, so /proc/<pid>/exe is absent on a stock
++  // install.  The MIB is not the one FreeBSD uses: pid comes third and
++  // KERN_PROC_PATHNAME last.
++  {
++    int name[] = {CTL_KERN, KERN_PROC_ARGS, static_cast<int>(pid),
++                  KERN_PROC_PATHNAME};
++    char path[PATH_MAX];
++    size_t path_len = sizeof(path);
++    if (sysctl(name, std::size(name), path, &path_len, nullptr, 0) < 0) {
++      LOG(ERROR) << "sysctl KERN_PROC_PATHNAME failed";
++      return false;
++    }
++    if (path_len == 0) {
++      LOG(ERROR) << "sysctl KERN_PROC_PATHNAME returned no path";
++      return false;
++    }
++    server_path_.assign(path, path_len - 1);
++    server_pid_ = pid;
++  }
++#endif  // __NetBSD__
++
++#ifdef __OpenBSD__
++  // OpenBSD has no KERN_PROC_PATHNAME and does not let a process learn another
++  // process's executable path by any other means, so the comparison cannot be
++  // made here.  Returning rather than falling through is the point:
++  // server_path_ was cleared above, and the comparison at the end of this
++  // function would measure a real path against an empty string.  The uid check
++  // in IsPeerValid() is what carries the weight on OpenBSD.  Nothing is cached
++  // on the way out, deliberately: setting server_pid_ would send the next call
++  // into the pid == server_pid_ short circuit with an empty server_path_.
++  return true;
++#endif  // __OpenBSD__
++
+ #ifdef __linux__
+   // load from /proc/<pid>/exe
+   std::string proc = absl::StrFormat("/proc/%u/exe", pid);

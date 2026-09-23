@@ -105,7 +105,11 @@ FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|NetBSD|OpenBSD|DragonFly)
 	# いる)。BSD は Linux と同じ所へ入れる
 	patch -p1 -f -i "$CI_DIR/bsd-system-util.patch" </dev/null
 	# cpu_stats.cc も三箇所で Windows / macOS / Linux しか名乗らない
-	patch -p1 -f -i "$CI_DIR/bsd-cpu-stats.patch" </dev/null ;;
+	patch -p1 -f -i "$CI_DIR/bsd-cpu-stats.patch" </dev/null
+	# IsValidServer() は /proc/<pid>/exe を読む。FreeBSD は procfs を mount
+	# せず、NetBSD は noauto なので、そこは飛ばされて server path が空のまま
+	# 照合に落ちる (compile は通るので、煙試験まで行って初めて出る)
+	patch -p1 -f -i "$CI_DIR/bsd-ipc-path.patch" </dev/null ;;
 esac
 
 PY=$(command -v python3 || command -v python)
