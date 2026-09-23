@@ -130,7 +130,19 @@ if ! "$PY" -c 'import six' 2>/dev/null; then
 fi
 "$PY" --version
 
-[ -n "${CXX:-}" ] && echo "CC=$CC CXX=$CXX で建てる"
+# どの compiler で建てたかを一行残す。DragonFly だけは CXX を明示して
+# いるので出ていたが、他の箱は出ていなかった。C++20 が通らない形で落ちた
+# とき、base の compiler が古いのか flag が渡っていないのかを、log だけで
+# 分けられるようにしておく
+if [ -n "${CXX:-}" ]; then
+	echo "CC=$CC CXX=$CXX で建てる"
+	"$CXX" --version 2>&1 | head -1
+else
+	echo "CC/CXX は指定していない。木の既定に任せる"
+	for c in c++ clang++ g++; do
+		command -v "$c" >/dev/null && { echo "$c: $("$c" --version 2>&1 | head -1)"; }
+	done
+fi
 
 echo "=== gyp"
 # pipe に繋ぐと gyp の失敗が tail の成功に化ける (FreeBSD で実際にそうなり、
