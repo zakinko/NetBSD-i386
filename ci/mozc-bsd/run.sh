@@ -139,6 +139,26 @@ EOF
   break
 done
 
+echo '##### 4c. pkg-config が動くか #####'
+# OpenBSD で pkgconf-3.0.7 が Segmentation fault (core dumped) を出し、
+# libxml2 の configure が「pkg-config not found」で止まる。
+#   mozc-server → ninja-build → re2c → cmake → curl → nghttp2 → libxml2
+# 4 時間待たずに見えるよう、probe の段で撃っておく。
+for P in pkg-config pkgconf; do
+  B=$(command -v $P 2>/dev/null) || continue
+  printf '  %-12s %s\n' "$P" "$B"
+  "$B" --version >"$W/pc.out" 2>&1
+  rc=$?
+  if [ $rc -gt 128 ]; then
+    printf '    ★ signal %d で落ちた (core)\n' "$((rc - 128))"
+  else
+    printf '    --version rc=%d  %s\n' "$rc" "$(head -1 "$W/pc.out")"
+  fi
+  # configure が実際に使う形も撃つ
+  "$B" --atleast-pkgconfig-version 0.9.0 >/dev/null 2>&1
+  printf '    --atleast-pkgconfig-version 0.9.0 rc=%d\n' "$?"
+done
+
 echo '##### 5. 依存が解けるか #####'
 bmake show-depends-dirs >"$W/depends.log" 2>&1
 say "depends: rc=$? ($(grep -c . "$W/depends.log") 行)"
