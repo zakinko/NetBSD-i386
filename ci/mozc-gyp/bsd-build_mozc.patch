@@ -3,9 +3,15 @@ Teach the GYP build about the BSDs.
 build_mozc.py knows Linux, Mac and Windows, so on a BSD AddTargetPlatformOption
 leaves default_target unset and the script dies with "Unknown target_platform:
 None" (run 35794480006).  mozc_version.py then rejects the name as well, since
-the revision digit table has no entry for it (run 35794790288).  Name the five
-BSDs, send them down the Linux path, put their output in out_bsd, and give them
-Linux's revision digit.
+the revision digit table has no entry for it (run 35794790288).  And
+common.gypi names a compiler only for Mac and Linux, so on a BSD -std=c++20 is
+never passed and the first file that uses a concept stops the build with
+"unknown type name \x27requires\x27" (run 35798811151).
+
+Name the five BSDs, send them down the Linux path, put their output in
+out_bsd, give them Linux's revision digit, and name their base compiler:
+clang with libc++ on FreeBSD, OpenBSD and MidnightBSD, gcc with libstdc++ on
+NetBSD and DragonFly.
 
 This follows what pkgsrc carries for mozc 2.26 (inputmethod/mozc-server226),
 written against 3.33.6089.  CI only for now.
@@ -115,3 +121,27 @@ diff -ur a/build_tools/util.py b/build_tools/util.py
  def CaseAwareAbsPath(path: str) -> str:
    """Wraps os.path.abspath() with case normalization.
  
+diff -ur a/gyp/common.gypi b/gyp/common.gypi
+--- a/gyp/common.gypi	2026-09-23 10:12:58
++++ b/gyp/common.gypi	2026-09-23 10:12:58
+@@ -103,6 +103,20 @@
+         'compiler_target': 'gcc',
+         'compiler_host': 'gcc',
+       }],
++      # The BSDs.  Without this the compiler is unknown here and -std=c++20
++      # is never added, so the first file that uses a concept stops the build
++      # with "unknown type name 'requires'".
++      ['target_platform=="FreeBSD" or target_platform=="OpenBSD" or '
++       'target_platform=="MidnightBSD"', {
++        # clang with libc++ in base.
++        'compiler_target': 'clang',
++        'compiler_host': 'clang',
++      }],
++      ['target_platform=="NetBSD" or target_platform=="DragonFly"', {
++        # gcc with libstdc++ in base.
++        'compiler_target': 'gcc',
++        'compiler_host': 'gcc',
++      }],
+     ],
+   },
+   'target_defaults': {
