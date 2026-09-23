@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""Report source files whose brace or #if nesting changed against a base.
+
+A scripted edit to C or C++ -- inserting an arm into an #if ladder, moving
+a block, replacing a function -- fails silently when it loses a brace or an
+#endif.  The compiler does complain, eventually, but about something else,
+somewhere else, and the BSD port here edits several hundred files at a time
+in trees that take forty minutes to build in CI.
+
+Counting braces absolutely does not work: a naive count is confused by
+braces inside macros and by #if inside a string, and hotspot has plenty of
+both.  arguments.cpp reads as +2 braces and libjli's args.c as -1 #if in
+any tree, untouched.  So count the same way on both sides and report only
+where the two differ -- whatever the counter gets wrong, it gets wrong
+identically, and the difference is still meaningful.
+
+Usage:
+    balance-delta <base-ref> [path ...]
+
+With no paths it takes every C, C++, header, assembler and Objective-C
+file that differs from <base-ref>.  Exits non-zero if any file's balance
+moved.
+"""
+
+import os
+import re
+import subprocess
+import sys
+
+SUFFIXES = (".c", ".cpp", ".cc", ".h", ".hpp", ".inline.hpp", ".S", ".s", ".m")
+
+
+def counts(src):
+    """Brace depth and #if depth of one file, counted crudely but alike."""
+    s = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    s = re.sub(r"//[^\n]*", "", s)
+    s = re.sub(r'"(\\.|[^"\\])*"', '""', s)
+    s = re.sub(r"'(\\.|[^'\\])*'", "''", s)
+
+    braces = s.count("{") - s.count("}")
+
+    depth = 0
+    for line in s.split("\n"):
+        t = line.strip()
+        if re.match(r"#\s*(if|ifdef|ifndef)\b", t):
+            depth += 1
+        elif re.match(r"#\s*endif\b", t):
+            depth -= 1
+    return braces, depth
+
+
+def changed_files(base):
+    out = subprocess.run(["git", "diff", "--name-only", f"{base}..HEAD"],
+                         capture_output=True, text=True)
+    if out.returncode != 0:
+        sys.exit(f"balance-delta: git diff against {base} failed")
+    return [f for f in out.stdout.split() if f.endswith(SUFFIXES)]
+
+
+def main():
+    if len(sys.argv) < 2:
+        sys.exit(__doc__.strip().split("Usage:")[1].strip())
+
+    base = sys.argv[1]
+    paths = sys.argv[2:] or changed_files(base)
+
+    moved = 0
+    seen = 0
+    for path in paths:
+        if not os.path.exists(path):
+            continue                      # deleted here
+        now = counts(open(path, errors="replace").read())
+        was = subprocess.run(["git", "show", f"{base}:{path}"],
+                             capture_output=True)
+        seen += 1
+        if was.returncode != 0:
+            # New file: there is nothing to compare with, so it has to
+            # stand on its own.
+            if now != (0, 0):
+                print(f"NEW  {path}: braces={now[0]} ifdepth={now[1]}")
+                moved += 1
+            continue
+        before = counts(was.stdout.decode("utf-8", "replace"))
+        if before != now:
+            print(f"DIFF {path}: base=(braces={before[0]} ifdepth={before[1]})"
+                  f" now=(braces={now[0]} ifdepth={now[1]})")
+            moved += 1
+
+    print(f"{seen} files compared against {base}, {moved} moved")
+    return 1 if moved else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
