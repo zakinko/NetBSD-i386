@@ -43,6 +43,25 @@ for draft in "$@"; do
 		echo "  -- $repo run $id"
 		out=$("$HERE/ci-verdict" "$id" "$repo" 2>&1) || {
 			echo "     run が引けない"; rc=1; continue; }
+		# その run が測った sha と、いまの枝の先端を並べる。当て物や整形を
+		# 直すたびに、それ以前の run は「送る木」を測っていないものになる。
+		# 一日に二度これを踏んだ (mozc の註と並び、clang-format の整形)
+		meta=$(gh api "/repos/$repo/actions/runs/$id" \
+			-q '"\(.head_sha)\t\(.head_branch)"' 2>/dev/null) || meta=""
+		if [ -n "$meta" ]; then
+			rsha=$(printf '%s' "$meta" | cut -f1)
+			rbr=$(printf '%s' "$meta" | cut -f2)
+			tip=$(gh api "/repos/$repo/commits/$rbr" -q .sha 2>/dev/null) || tip=""
+			if [ -z "$tip" ]; then
+				echo "     測った枝 $rbr の先端が引けない"
+			elif [ "$tip" = "$rsha" ]; then
+				echo "     測った sha は $rbr の先端 (${rsha%"${rsha#????????}"})"
+			else
+				echo "     !! この run は $rbr の先端を測っていない"
+				echo "        run $(echo "$rsha" | cut -c1-8) / 先端 $(echo "$tip" | cut -c1-8)"
+				rc=1
+			fi
+		fi
 		ran=$(echo "$out" | grep -c "走った:" || true)
 		empty=$(echo "$out" | grep -c "中身が走っていない" || true)
 		echo "     中身の走った job $ran 個、飛ばされたまま緑の job $empty 個"
