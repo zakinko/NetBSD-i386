@@ -53,6 +53,11 @@ IN=$H/smoke-in; OUT=$H/smoke-out; ERR=$H/smoke-err
 } > "$IN"
 chown "$U" "$IN"
 rm -f "$OUT" "$ERR"
+# profile は $HOME/.config/mozc (XDG_CONFIG_HOME が無ければ)。親の dir が
+# 無いと server が起動できず、返るのは server が無いときと同じ
+# (error . session-error) なので、原因を取り違えないよう先に作っておく。
+# bazel 側の煙試験で一度これに引っかかっている
+su -l "$U" -c "mkdir -p \$HOME/.config" || true
 su -l "$U" -c "/usr/local/bin/mozc_emacs_helper < $IN > $OUT 2> $ERR" || true
 echo "=== helper の応答 ($(wc -l < "$OUT" | tr -d ' ') 行)"
 cut -c1-300 "$OUT"
