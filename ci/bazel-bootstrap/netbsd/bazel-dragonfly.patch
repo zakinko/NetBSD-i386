@@ -1,9 +1,22 @@
 Add DragonFly BSD as a host platform, on top of the NetBSD patch of
-bazel #31069.  DragonFly derives from FreeBSD 4 and keeps extattr(2) and
-sysctlbyname(3), so unix_jni_bsd.cc takes the FreeBSD arm; it has no
-libprocstat, so GetSelfPath asks the kernel with KERN_PROC_PATHNAME.  The
-rest mirrors what #31069 does for NetBSD.  CI only: this has not been sent
-upstream.
+bazel #31069.  DragonFly derives from FreeBSD 4 and keeps sysctlbyname(3)
+and the four extattr syscalls of that vintage, so unix_jni_bsd.cc gets an
+arm of its own next to FreeBSD's; it has no libprocstat, so GetSelfPath
+asks the kernel with KERN_PROC_PATHNAME.  The rest mirrors what #31069
+does for NetBSD.  CI only: this has not been sent upstream.
+
+The extattr part was wrong the first time round and is worth writing down.
+Taking the FreeBSD arm whole builds fine -- sys/extattr.h declares
+extattr_get_link -- and then the freshly built bazel dies at startup with
+
+    JNI initialization failed: libunix_jni.so: Undefined symbol
+    "extattr_get_link"
+
+because sys/kern/syscalls.master stops at extattrctl, extattr_set_file,
+extattr_get_file and extattr_delete_file.  The header promises more than
+libc carries.  So the _link form gets its own HAVE_EXTATTR_LINK, defined
+for FreeBSD only, and DragonFly falls back to the same "no attribute"
+answer OpenBSD gives.
 
 diff -ur a/scripts/packages/BUILD b/scripts/packages/BUILD
 --- a/scripts/packages/BUILD	2026-09-22 23:28:32
@@ -249,16 +262,34 @@ diff -ur a/src/main/native/BUILD b/src/main/native/BUILD
  )
 diff -ur a/src/main/native/unix_jni_bsd.cc b/src/main/native/unix_jni_bsd.cc
 --- a/src/main/native/unix_jni_bsd.cc	2026-09-22 23:28:32
-+++ b/src/main/native/unix_jni_bsd.cc	2026-09-22 23:30:35
-@@ -12,7 +12,7 @@
- // See the License for the specific language governing permissions and
- // limitations under the License.
++++ b/src/main/native/unix_jni_bsd.cc	2026-09-23 19:33:18
+@@ -14,7 +14,17 @@
  
--#if defined(__FreeBSD__)
-+#if defined(__FreeBSD__) || defined(__DragonFly__)
+ #if defined(__FreeBSD__)
  # define HAVE_EXTATTR
++# define HAVE_EXTATTR_LINK
  # define HAVE_SYSCTLBYNAME
++#elif defined(__DragonFly__)
++// DragonFly keeps the four extattr syscalls it inherited from FreeBSD 4 --
++// extattrctl and the _file forms -- and sysctlbyname(3).  sys/extattr.h
++// declares the _link, _fd and _list forms as well, but sys/kern/
++// syscalls.master has no entry for them and libc exports no symbol, so
++// calling extattr_get_link leaves libunix_jni.so with an undefined symbol
++// and the server dies at JNI load time.
++# define HAVE_EXTATTR
++# define HAVE_SYSCTLBYNAME
  #elif defined(__NetBSD__)
+ // NetBSD has both extattr(2), including the _link variants, and
+ // sysctlbyname(3); neither is enabled here yet, as the extattr path has
+@@ -89,7 +99,7 @@
+ 
+ ssize_t portable_lgetxattr(const char *path, const char *name, void *value,
+                            size_t size, bool *attr_not_found) {
+-#if defined(HAVE_EXTATTR)
++#if defined(HAVE_EXTATTR_LINK)
+   ssize_t result =
+       extattr_get_link(path, EXTATTR_NAMESPACE_SYSTEM, name, value, size);
+   *attr_not_found =
 diff -ur a/src/main/tools/BUILD b/src/main/tools/BUILD
 --- a/src/main/tools/BUILD	2026-09-22 23:28:32
 +++ b/src/main/tools/BUILD	2026-09-22 23:30:35
