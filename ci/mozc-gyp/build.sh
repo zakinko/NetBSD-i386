@@ -112,6 +112,20 @@ FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|NetBSD|OpenBSD|DragonFly)
 	patch -p1 -f -i "$CI_DIR/bsd-password-manager.patch" </dev/null
 	# cpu_stats.cc も三箇所で Windows / macOS / Linux しか名乗らない
 	patch -p1 -f -i "$CI_DIR/bsd-cpu-stats.patch" </dev/null
+	# 同梱の abseil は DragonFly を知らず、GetTID() が fallback の
+	# pthread_self() を pid_t へ cast しようとして落ちる。DragonFly の
+	# pthread_t は不完全型への pointer なので整数にできない
+	# (run 35848701423)。bazel の CI が当てているのと同じ物を当てる。
+	# 上流は abseil/abseil-cpp#2160 で、merge されたら両方同時に剥がす
+	if [ "$OS" = DragonFly ]; then
+		# submodule の pin が tag そのものとは限らないので、当てる先を
+		# log に出す。-F0 なので、ずれていれば当たらずにここで止まる
+		echo "abseil の pin: $(git -C third_party/abseil-cpp describe --tags --always 2>/dev/null || echo '(引けない)')"
+		( cd third_party/abseil-cpp && patch -p1 -f -F0 \
+			-i "$CI_DIR/../bazel-bootstrap/netbsd/abseil-dragonfly.patch" </dev/null )
+		grep -q '__DragonFly__' third_party/abseil-cpp/absl/base/internal/sysinfo.cc \
+			|| { echo "abseil の当て物が効いていない"; exit 1; }
+	fi
 	# IsValidServer() は /proc/<pid>/exe を読む。FreeBSD は procfs を mount
 	# せず、NetBSD は noauto なので、そこは飛ばされて server path が空のまま
 	# 照合に落ちる (compile は通るので、煙試験まで行って初めて出る)
