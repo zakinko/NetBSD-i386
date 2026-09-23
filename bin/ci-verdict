@@ -1,0 +1,44 @@
+#!/bin/sh
+# run の「色」ではなく、何が実際に走ったかを言う。
+#
+# only= で job を絞ると、絞られた job は step が全部 skipped のまま緑で
+# 終わる。job 一覧だけ見ると「通った」に見える — 一度これで rules_python
+# 1.9.2 が通ったと読みかけた。continue-on-error: true の job も同じで、
+# 中が NG でも run 全体は success になる。
+#
+# 使い方: ci-verdict <run-id> [repo]
+set -eu
+RUN=${1:?run id}
+REPO=${2:-zakinko/NetBSD-i386}
+
+gh api "/repos/$REPO/actions/runs/$RUN" \
+	-q '"run \(.id) \(.name): \(.status)/\(.conclusion // "-")  \(.html_url)"'
+
+# step の数ではなく、走った step の名前で見る。Set up job / Post ... /
+# Complete job / checkout / download-artifact は workflow が何もしなくても
+# 走るので、これしか走っていなければ中身は動いていない。数で切ると
+# 「走った 4」が本物か実装の都合かを区別できない (run 35741255342 の
+# gentoo-bash は 4、leap-bash は 2、どちらも中身は走っていなかった)
+gh api "/repos/$REPO/actions/runs/$RUN/jobs?per_page=100" --paginate \
+	-q '.jobs[] | .name + "\t" + .status + "/" + (.conclusion // "-") + "\t" +
+	    ([.steps[]? | select(.conclusion != "skipped" and .conclusion != null) | .name]
+	     | map(select(
+	         (startswith("Set up job") or startswith("Post ") or
+	          startswith("Complete job") or contains("checkout") or
+	          contains("download-artifact") or startswith("Set up runner") or
+          startswith("Initialize containers") or startswith("Stop containers") or
+          startswith("Make room on the runner")) | not))
+	     | join(", "))' \
+| while IFS="$(printf '\t')" read -r name res ran; do
+	case "$res" in
+	*/skipped) verdict="job ごと飛ばした" ;;
+	*/-)       verdict="まだ走っていない" ;;
+	*)
+		if [ -z "$ran" ]; then
+			verdict="!! 中身が走っていない (実装の step しか走っていない)"
+		else
+			verdict="走った: $ran"
+		fi ;;
+	esac
+	printf '%-28s %-22s %s\n' "$name" "$res" "$verdict"
+done
