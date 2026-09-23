@@ -250,9 +250,27 @@ MINGW*|MSYS*|CYGWIN*)
 	# 9.3.0 の Windows の job と同じ。
 	EXTRA_BAZEL_ARGS="$EXTRA_BAZEL_ARGS --host_action_env=PATH"
 	# ARM64 の Windows では build_windows_jni.sh が amd64 の cl を呼んで、出来た
-	# DLL を ARM64 の JVM が拒む (run 35692632379)。machine の native tools を選ぶ
-	if [ "${PROCESSOR_ARCHITECTURE:-}" = ARM64 ]; then
+	# DLL を ARM64 の JVM が拒む (run 35692632379)。machine の native tools を選ぶ。
+	#
+	# 見る変数を一つに絞ると、外れたときに黙って飛ばされる。実際 run
+	# 35730047335 では当て物が当たらず、当て物を入れる前と同じ
+	# "Can't load AMD 64-bit .dll on a ARM 64-bit platform" が出ていた。
+	# 何を見て何と読めたのかを log に出し、当てたかどうかも言う
+	echo "=== Windows の arch 判定"
+	echo "  PROCESSOR_ARCHITECTURE=${PROCESSOR_ARCHITECTURE:-(無し)}"
+	echo "  PROCESSOR_ARCHITEW6432=${PROCESSOR_ARCHITEW6432:-(無し)}"
+	echo "  uname -m: $(uname -m)  uname -s: $(uname -s)"
+	WIN_ARM=0
+	case "${PROCESSOR_ARCHITECTURE:-}${PROCESSOR_ARCHITEW6432:-}$(uname -m)$(uname -s)" in
+	*ARM64*|*aarch64*|*arm64*) WIN_ARM=1 ;;
+	esac
+	if [ "$WIN_ARM" = 1 ]; then
+		echo "  → ARM64 と判定。build_windows_jni.sh に当て物を当てる"
 		patch -p1 -f -i "$CI_DIR/build_windows_jni-arm64.patch" </dev/null
+		grep -q 'PROCESSOR_ARCHITECTURE' scripts/bootstrap/build_windows_jni.sh \
+			|| { echo "当て物が効いていない"; exit 1; }
+	else
+		echo "  → ARM64 ではないと判定。当て物は当てない"
 	fi ;;
 esac
 # Chimera は clang だけで gcc を持たない。rules_cc の cc_configure は gcc を
