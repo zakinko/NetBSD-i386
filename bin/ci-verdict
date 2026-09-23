@@ -32,7 +32,9 @@ gh api "/repos/$REPO/actions/runs/$RUN/jobs?per_page=100" --paginate \
 | while IFS="$(printf '\t')" read -r name res ran; do
 	case "$res" in
 	*/skipped) verdict="job ごと飛ばした" ;;
-	*/-)       verdict="まだ走っていない" ;;
+	in_progress/-) verdict="走っている${ran:+: $ran}" ;;
+	queued/-)      verdict="待ち" ;;
+	*/-)           verdict="まだ終わっていない" ;;
 	*)
 		if [ -z "$ran" ]; then
 			verdict="!! 中身が走っていない (実装の step しか走っていない)"
