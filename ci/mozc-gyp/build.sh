@@ -99,7 +99,11 @@ FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|NetBSD|OpenBSD|DragonFly)
 	# ipc/unix_ipc.cc は struct ucred と SO_PEERCRED (Linux の綴り) を使う。
 	# BSD には無いので compile で落ちる。長さを sizeof(sun_family) で作って
 	# いる所も、sun_len を持つ BSD では一文字足りない
-	patch -p1 -f -i "$CI_DIR/bsd-unix-ipc.patch" </dev/null ;;
+	patch -p1 -f -i "$CI_DIR/bsd-unix-ipc.patch" </dev/null
+	# GetServerDirectory() は Windows / macOS / Linux / WASM しか名乗らず、
+	# 当たらないと戻り値が無くて compile が落ちる (source の註がそう言って
+	# いる)。BSD は Linux と同じ所へ入れる
+	patch -p1 -f -i "$CI_DIR/bsd-system-util.patch" </dev/null ;;
 esac
 
 PY=$(command -v python3 || command -v python)
