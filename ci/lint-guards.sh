@@ -24,7 +24,7 @@ if [ "${LINT_GUARDS_SELFTEST:-1}" = 1 ] && [ -d "$SELF" ]; then
 		LINT_GUARDS_SELFTEST=0 sh "$0" "$SELF/$t.sh" >/dev/null 2>&1 \
 			&& { echo "自己試験: $t.sh を見逃した。検査が壊れている"; exit 2; }
 	done
-	for t in good1 fp1 fp2 fp3; do
+	for t in good1 fp1 fp2 fp3 fp4; do
 		LINT_GUARDS_SELFTEST=0 sh "$0" "$SELF/$t.sh" >/dev/null 2>&1 \
 			|| { echo "自己試験: $t.sh を誤って赤にした。検査が壊れている"; exit 2; }
 	done
@@ -91,14 +91,18 @@ for f in "$@"; do
 			# 守りの直前の代入より後ろだけを見る。同じ名前を別の物に
 			# 使い回している script が在り、前半の V と後半の V は別物
 			from = 1
+			# 代入は行頭とは限らない。`[ -n "$V" ] || V=...` のような
+			# fallback は、同じ行で見てから代入している。行頭だけを
+			# 代入と見ると、この形を「守る前に使った」と誤って言う
 			for (i = 1; i < vguard[v]; i++)
-				if (line[i] ~ ("^[ \t]*" v "=")) from = i + 1
+				if (line[i] ~ ("(^|[^A-Za-z0-9_])" v "=[^=]")) from = i + 1
 			for (i = from; i < vguard[v]; i++) {
 				# heredoc の中と外は別の scope
 				if (scope[i] != scope[vguard[v]]) continue
 				# ${V:-...} は「無ければ既定」で、守られていない使用ではない
 				if (line[i] ~ ("[$]{" v "[:-]")) continue
-				if (line[i] ~ ("[$]{?" v "[^A-Za-z0-9_]") && line[i] !~ ("^[ \t]*" v "=")) {
+				if (line[i] ~ ("[$]{?" v "[^A-Za-z0-9_]") &&
+				    line[i] !~ ("(^|[^A-Za-z0-9_])" v "=[^=]")) {
 					printf "%s:%d: $%s の守りが %d 行目に在るが、ここで既に使っている\n", file, i, v, vguard[v]
 					bad = 1
 					break

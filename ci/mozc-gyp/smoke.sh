@@ -46,11 +46,15 @@ id "$U"
 
 # n i h o n g o を一打ずつ、最後に space で変換。(EVENT_ID SendKey SESSION_ID KEY)
 # の KEY は ASCII code か key symbol。入出力は user の home に置く。
-# home は user 自身に言わせる。`eval echo "~$U"` は shell が ~user の展開を
-# 持っているかに依り、持たなければ "~mozcsmoke" という名前の path になって、
-# 入出力が全部そこへ行ってしまう。落ちずに間違う形なので使わない
-H=$(su -l "$U" -c 'printf %s "$HOME"')
+# home は passwd の記述を直に読む。`eval echo "~$U"` は shell が ~user の
+# 展開を持っているかに依り、持たなければ "~mozcsmoke" という名前の path に
+# なる。`su -l ... -c 'printf %s "$HOME"'` は login shell を起こすので、
+# DragonFly では /etc/motd の一言が先に出て値の前に混ざった (run 35856798333)。
+# どちらも落ちずに間違う形なので、飾りの付かない所から取る
+H=$(getent passwd "$U" 2>/dev/null | cut -d: -f6)
+[ -n "$H" ] || H=$(awk -F: -v u="$U" '$1 == u { print $6 }' /etc/passwd)
 [ -n "$H" ] && [ -d "$H" ] || { echo "RESULT mozc-smoke $OS NG: $U の home が引けない ($H)"; exit 1; }
+echo "$U の home: $H"
 IN=$H/smoke-in; OUT=$H/smoke-out; ERR=$H/smoke-err
 {
 	echo '(1 CreateSession)'
