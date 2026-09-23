@@ -88,7 +88,10 @@ echo "=== third_party の中身"; ls third_party 2>/dev/null | head
 case "$OS" in
 FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|NetBSD|OpenBSD|DragonFly)
 	echo "=== BSD の当て物"
-	patch -p1 -f -i "$CI_DIR/bsd-build_mozc.patch" </dev/null ;;
+	patch -p1 -f -i "$CI_DIR/bsd-build_mozc.patch" </dev/null
+	# port.h は最初に当たる壁 ("Unsupported target platform.")。build の
+	# 側が通ってから出るので、先に入れておく
+	patch -p1 -f -i "$CI_DIR/bsd-port-h.patch" </dev/null ;;
 esac
 
 PY=$(command -v python3 || command -v python)

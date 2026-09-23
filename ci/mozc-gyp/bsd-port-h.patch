@@ -1,0 +1,60 @@
+Name the BSDs in port.h.
+
+Without this every BSD stops at "Unsupported target platform." on the first
+file that includes it.  GhostBSD, HardenedBSD and MidnightBSD define
+__FreeBSD__ and run FreeBSD binaries, so they land on the FreeBSD arm.
+
+This is the 3.33.6089 shape of what zakinko/mozc carries for master; the enum
+was renamed between 3.33 and 3.34, so the two cannot share a patch.  CI only.
+
+--- a/base/port.h	2026-09-23 10:23:26
++++ b/base/port.h	2026-09-23 10:23:26
+@@ -45,6 +45,10 @@
+   kIPhone,    // Darwin-based firmware, devices, or simulator
+   kWASM,      // WASM
+   kChromeOS,  // ChromeOS
++  kFreeBSD,   // FreeBSD (and its derivatives)
++  kNetBSD,    // NetBSD
++  kOpenBSD,   // OpenBSD
++  kDragonFly,  // DragonFly BSD
+ };
+ 
+ // kTargetPlatform is the current build target platform.
+@@ -68,7 +72,17 @@
+ #endif                   // !TARGET_OS_IPHONE
+ #elif defined(__wasm__)  // __APPLE__
+ inline constexpr PlatformType kTargetPlatform = PlatformType::kWASM;
+-#else                    // __wasm__
++#elif defined(__FreeBSD__)  // __wasm__
++// GhostBSD, HardenedBSD and MidnightBSD all define __FreeBSD__ and run
++// FreeBSD binaries, so they land here too.
++inline constexpr PlatformType kTargetPlatform = PlatformType::kFreeBSD;
++#elif defined(__NetBSD__)   // __FreeBSD__
++inline constexpr PlatformType kTargetPlatform = PlatformType::kNetBSD;
++#elif defined(__OpenBSD__)  // __NetBSD__
++inline constexpr PlatformType kTargetPlatform = PlatformType::kOpenBSD;
++#elif defined(__DragonFly__)  // __OpenBSD__
++inline constexpr PlatformType kTargetPlatform = PlatformType::kDragonFly;
++#else                    // __DragonFly__
+ #error "Unsupported target platform."
+ #endif  // !__wasm__
+ }  // namespace port_internal
+@@ -109,6 +123,18 @@
+ //              absl::Milliseconds(100) : absl::Milliseconds(10);
+ //
+ 
++// The build target is one of the BSDs.
++constexpr bool TargetIsBSD() {
++  return port_internal::kTargetPlatform ==
++             port_internal::PlatformType::kFreeBSD ||
++         port_internal::kTargetPlatform ==
++             port_internal::PlatformType::kNetBSD ||
++         port_internal::kTargetPlatform ==
++             port_internal::PlatformType::kOpenBSD ||
++         port_internal::kTargetPlatform ==
++             port_internal::PlatformType::kDragonFly;
++}
++
+ // The build target is Windows.
+ constexpr bool TargetIsWindows() {
+   return port_internal::kTargetPlatform ==
