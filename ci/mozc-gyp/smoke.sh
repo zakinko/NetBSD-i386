@@ -22,6 +22,11 @@ OS=$(uname -s)
 # helper は /usr/lib/mozc/mozc_server を起動する (base/system_util.cc の
 # kMozcServerDir の既定)。そこへ置く。
 mkdir -p /usr/lib/mozc
+# helper の置き場も作る。Linux と FreeBSD と OpenBSD には元から在るが、
+# NetBSD は package が /usr/pkg に入るので /usr/local が無い。cp が
+# "No such file or directory" で落ちて、煙試験が移植の欠陥に見えた
+# (run 35847538625 の netbsd)
+mkdir -p /usr/local/bin
 for f in "$BIN/server/mozc_server" "$BIN/mozc_server"; do
 	[ -x "$f" ] && { cp "$f" /usr/lib/mozc/mozc_server; break; }
 done
