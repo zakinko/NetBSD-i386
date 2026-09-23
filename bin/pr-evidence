@@ -61,11 +61,27 @@ for draft in "$@"; do
 	# release されるまで」と書いた下書きが在り、merge されていたのは三つの
 	# うち一つだけだった。文面から真偽は判定できないので、状態を出して
 	# 書き手に見せる
-	prs=$(grep -oE '[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+' "$draft" | sort -u)
+	# owner を省いた書き方 (rules_go#4711) も拾う。省略形を pattern から
+	# 外していたせいで、存在しない番号を含む記録が検査を素通りした
+	prs=$(grep -oE '([A-Za-z0-9_.-]+/)?[A-Za-z0-9_.-]+#[0-9]+' "$draft" | sort -u)
 	if [ -n "$prs" ]; then
 		echo "  -- 本文が挙げている上流 PR"
 		for pr in $prs; do
-			r=${pr%#*}; n=${pr#*#}
+			n=${pr##*#}; name=${pr%#*}
+			case "$name" in
+			*/*) r=$name ;;
+			rules_go)          r=bazel-contrib/rules_go ;;
+			abseil|abseil-cpp) r=abseil/abseil-cpp ;;
+			grpc)              r=grpc/grpc ;;
+			platforms)         r=bazelbuild/platforms ;;
+			rules_cc)          r=bazelbuild/rules_cc ;;
+			rules_java)        r=bazelbuild/rules_java ;;
+			rules_python)      r=bazel-contrib/rules_python ;;
+			protobuf)          r=protocolbuffers/protobuf ;;
+			bazel)             r=bazelbuild/bazel ;;
+			mozc)              r=google/mozc ;;
+			*) printf '     %-34s %s\n' "$pr" "(repo が分からない)"; continue ;;
+			esac
 			st=$(gh api "/repos/$r/pulls/$n" \
 				-q '"\(.state) merged=\(.merged)"' 2>/dev/null) \
 				|| st="(引けない)"
