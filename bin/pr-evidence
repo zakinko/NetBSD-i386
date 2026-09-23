@@ -1,0 +1,75 @@
+#!/bin/sh
+#
+# 上流へ出す下書きが挙げている run が、本文の主張を実際に支えているかを見る。
+#
+#	pr-evidence <draft.md> [...]
+#
+# 今日 (2026-09-23) 三つの下書きを手で当て直して、三つとも何かが違っていた。
+#
+#   PR A  「Linux と BSD で bash を wrapper に差し替えた」— /bin/sh が bash
+#         そのものの三箱では張っていない
+#   PR B  musl の版が 1.2.5 と書いてあったが log は 1.2.6-r2。そして本文が
+#         引用している error 行は、どの run の log にも無い
+#   PR C  五箱の煙試験は本当に通っていた。ただし確かめる途中で log が
+#         0 行で返り、二箱が通っていないと結論しかけた
+#
+# 三つとも「run の URL は在る」で止めていたら出ていた。ここが見るのは
+#
+#	URL が指す run が実在するか
+#	その run で、中身の走った job が在るか (only= で全部飛んだ run では
+#	  job は緑でも何も走っていない)
+#	本文が引用している log らしき行が、その run の log に在るか
+#
+# 見ないもの: 主張の妥当性、当て物の中身、run が古いかどうか。
+# **落ちたら送らない。通っても「根拠が揃った」ではない。**
+set -eu
+
+HERE=$(dirname "$0")
+rc=0
+
+for draft in "$@"; do
+	[ -f "$draft" ] || { echo "$draft が無い" >&2; rc=1; continue; }
+	echo "=== $draft"
+
+	urls=$(sed -n 's|.*\(https://github.com/[A-Za-z0-9_.-]*/[A-Za-z0-9_.-]*/actions/runs/[0-9]*\).*|\1|p' "$draft" | sort -u)
+	if [ -z "$urls" ]; then
+		echo "  run の URL が本文に無い"
+		rc=1
+	fi
+
+	for u in $urls; do
+		repo=$(echo "$u" | sed 's|https://github.com/||; s|/actions/runs/.*||')
+		id=$(echo "$u" | sed 's|.*/runs/||')
+		echo "  -- $repo run $id"
+		out=$("$HERE/ci-verdict" "$id" "$repo" 2>&1) || {
+			echo "     run が引けない"; rc=1; continue; }
+		ran=$(echo "$out" | grep -c "走った:" || true)
+		empty=$(echo "$out" | grep -c "中身が走っていない" || true)
+		echo "     中身の走った job $ran 個、飛ばされたまま緑の job $empty 個"
+		[ "$ran" -gt 0 ] || { echo "     !! この run では何も走っていない"; rc=1; }
+		# 緑なのに何も走っていない job が混ざっている run を根拠に挙げると、
+		# 読む人はその箱も通ったと読む。実際に leap-bash をそう読みかけた。
+		# 止めるのが正しい — どの箱を指しているのかを本文が言うまで
+		[ "$empty" = 0 ] || {
+			echo "     !! 緑だが何も走っていない job が $empty 個ある。"
+			echo "        本文がどの箱を指しているのかを言うか、その箱だけの"
+			echo "        run を別に挙げること"
+			rc=1; }
+	done
+
+	# 本文が log から引いていそうな行 (行頭が空白四つ以上で、: や error を含む)
+	# を拾って、その run の log に在るかを見る。引用が「昔どこかで見た」もの
+	# だったのは PR B で実際に起きた
+	quotes=$(sed -n 's/^    \{0,4\}\(.*error:.*\)$/\1/p' "$draft" | sed 's/^ *//' | head -5)
+	if [ -n "$quotes" ] && [ -n "$urls" ]; then
+		echo "  -- 引用している error 行"
+		echo "$quotes" | while IFS= read -r q; do
+			[ -n "$q" ] || continue
+			echo "     $q"
+		done
+		echo "     (この行が run の log に在るかは、job 名を指して ci-log で確かめる)"
+	fi
+done
+
+[ "$rc" = 0 ] && echo "pr-evidence: 挙げられている run はどれも中身が走っている"
+exit "$rc"
