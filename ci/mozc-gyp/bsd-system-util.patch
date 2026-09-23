@@ -1,17 +1,29 @@
-Give the BSDs a server directory.
+Give the BSDs a server directory and a user profile directory.
 
-GetServerDirectory() names Windows, macOS, Linux and WASM, and says so in a
-comment: "If none of the above platforms is specified, the compiler raises an
-error because of no return value."  A BSD build stops there.  The BSDs install
-the server where Linux does, so they take the same arm; GetDocumentDirectory()
-likewise.
+Three functions in system_util.cc name Windows, macOS, Linux and WASM and
+stop otherwise: GetServerDirectory() and GetDocumentDirectory() say so in a
+comment ("the compiler raises an error because of no return value") and the
+user profile directory ends in "#error Undefined target platform."
+
+The BSDs install the server where Linux does and follow the same XDG layout
+for the profile, so they take the same arms.
 
 This is the 3.33.6089 shape of part of the first commit on zakinko/mozc
 bsd-support, where master needs if constexpr instead.  CI only.
 
---- a/base/system_util.cc	2026-09-23 14:18:59
-+++ b/base/system_util.cc	2026-09-23 14:18:59
-@@ -454,12 +454,13 @@
+--- a/base/system_util.cc	2026-09-23 15:01:26
++++ b/base/system_util.cc	2026-09-23 15:01:26
+@@ -279,7 +279,8 @@
+   return FileUtil::JoinPath(dir, "Mozc");
+ #endif  //  GOOGLE_JAPANESE_INPUT_BUILD
+ 
+-#elif defined(__linux__)
++#elif defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || \
++    defined(__OpenBSD__) || defined(__DragonFly__)
+   // 1. If "$HOME/.mozc" already exists,
+   //    use "$HOME/.mozc" for backward compatibility.
+   // 2. If $XDG_CONFIG_HOME is defined
+@@ -454,12 +455,13 @@
    return MacUtil::GetServerDirectory();
  #endif  // __APPLE__
  
@@ -27,7 +39,7 @@ bsd-support, where master needs if constexpr instead.  CI only.
  
    // If none of the above platforms is specified, the compiler raises an error
    // because of no return value.
-@@ -493,7 +494,8 @@
+@@ -493,7 +495,8 @@
  }
  
  std::string SystemUtil::GetDocumentDirectory() {
