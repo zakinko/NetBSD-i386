@@ -1,6 +1,12 @@
 # release-9.3.0 へ出す当て物 (scripts/bootstrap の -proc:full 二箇所) が、
 # Linux と macOS でも dist archive を bootstrap できることを見る。
 #
+# 2026-09-22: その当て物は #31195 として release-9.3.0 に入った
+# (a6c5a82885)。rc2 までの dist には入っていないので、当てる道はそのまま
+# 残す。9.3.0 の本番か rc3 が出たら、dist_ver をそれにして MODE=control で
+# 走らせ、当てずに建つことを確かめる — そこで初めてこの workflow の役目が
+# 「当て物が効くか」から「直しが降りているか」に変わる。
+#
 # NetBSD では ci/bazel-bsd/ で測っているが、上流の PR には Linux と macOS の
 # 結果も要る。dist archive は自己完結なので、ここでは VM も pkgsrc も要らず、
 # GitHub の runner の上で直に建てられる。
