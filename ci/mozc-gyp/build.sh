@@ -95,7 +95,11 @@ FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|NetBSD|OpenBSD|DragonFly)
 	patch -p1 -f -i "$CI_DIR/bsd-build_mozc.patch" </dev/null
 	# port.h は最初に当たる壁 ("Unsupported target platform.")。build の
 	# 側が通ってから出るので、先に入れておく
-	patch -p1 -f -i "$CI_DIR/bsd-port-h.patch" </dev/null ;;
+	patch -p1 -f -i "$CI_DIR/bsd-port-h.patch" </dev/null
+	# ipc/unix_ipc.cc は struct ucred と SO_PEERCRED (Linux の綴り) を使う。
+	# BSD には無いので compile で落ちる。長さを sizeof(sun_family) で作って
+	# いる所も、sun_len を持つ BSD では一文字足りない
+	patch -p1 -f -i "$CI_DIR/bsd-unix-ipc.patch" </dev/null ;;
 esac
 
 PY=$(command -v python3 || command -v python)
