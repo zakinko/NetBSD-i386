@@ -165,6 +165,26 @@ for B in "$PREFIX/bin/pkg-config" "$PREFIX/bin/pkgconf" /usr/bin/pkg-config; do
 done
 printf '  PATH で先に見つかるのは: %s\n' "$(command -v pkg-config 2>/dev/null)"
 
+# 直接呼ぶ限り pkgconf は落ちない (--version も --atleast も rc=0)。build の
+# 中で落ちるので、環境が条件。pkgsrc は cwrapper 経由で呼び PKG_CONFIG_LIBDIR
+# を張る。libxml2 の configure が実際に落ちる所なので、そこだけ再現する。
+# mozc 全体の 4 時間を待たずに 20 分で分かる。
+echo '##### 4d. libxml2 の configure を再現する #####'
+( cd "$W/pkgsrc/textproc/libxml2" && bmake configure ) >"$W/libxml2.log" 2>&1
+rc=$?
+say "libxml2 configure: rc=$rc"
+if [ $rc -ne 0 ]; then
+  grep -n -B6 -A2 -iE 'segmentation|core dumped|pkg-config not found|error:' "$W/libxml2.log" | tail -40
+  echo "--- configure が使った pkg-config ---"
+  grep -n 'PKG_CONFIG' "$W/libxml2.log" | head -5
+  W2=$(ls -d "$W/pkgsrc/textproc/libxml2/work/.tools/bin" 2>/dev/null)
+  if [ -n "$W2" ]; then
+    echo "--- cwrapper を直に撃つ ---"
+    "$W2/pkg-config" --version; printf '    rc=%d\n' "$?"
+    "$W2/pkg-config" --atleast-pkgconfig-version 0.9.0; printf '    rc=%d\n' "$?"
+  fi
+fi
+
 echo '##### 5. 依存が解けるか #####'
 bmake show-depends-dirs >"$W/depends.log" 2>&1
 say "depends: rc=$? ($(grep -c . "$W/depends.log") 行)"
