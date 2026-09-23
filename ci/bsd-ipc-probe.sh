@@ -131,6 +131,18 @@ try2 'ABSL_HAVE_SCHED_GETCPU'     'sched.h'     '(void)sched_getcpu();'
 try2 'ABSL_HAVE_SCHED_YIELD'      'sched.h'     '(void)sched_yield();'
 try2 'ABSL_HAVE_SEMAPHORE_H'      'semaphore.h' 'sem_t s; (void)s;'
 
+# util-linux の configure は AC_CHECK_TYPES([cpu_set_t]) だけで HAVE_CPU_SET_T を
+# 決め、それで lib/cpuset.c を組む。include/cpuset.h の代替 macro
+# (CPU_ALLOC が無い OS で使われる) は cpu_set_t.__bits と __cpu_mask を使うので、
+# 型が在っても中身が glibc と違う libc では組めない。
+# 「型が在るか」と「code が使う欄が在るか」を分けて測る。
+echo
+echo '=== util-linux が見ている cpu_set_t ==='
+try2 'cpu_set_t 型が在る'        'sched.h' 'cpu_set_t s; (void)s;'
+try2 'CPU_ALLOC が宣言されている' 'sched.h' '(void)CPU_ALLOC(1);'
+try2 'cpu_set_t に __bits'       'sched.h' 'cpu_set_t s; (void)s.__bits;'
+try2 '__cpu_mask が在る'         'sched.h' '__cpu_mask m = 0; (void)m;'
+
 # abseil の cctz は time_zone_format.cc の中で自分に _XOPEN_SOURCE を立てる
 # (HAS_STRPTIME のため)。DragonFly ではそれで __ISO_C_VISIBLE が 2011 から
 # 1990 に落ち、libstdc++ の <cwchar> が要る C99 の wide 関数が消える。
