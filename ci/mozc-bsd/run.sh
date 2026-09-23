@@ -144,9 +144,14 @@ echo '##### 4c. pkg-config が動くか #####'
 # libxml2 の configure が「pkg-config not found」で止まる。
 #   mozc-server → ninja-build → re2c → cmake → curl → nghttp2 → libxml2
 # 4 時間待たずに見えるよう、probe の段で撃っておく。
-for P in pkg-config pkgconf; do
-  B=$(command -v $P 2>/dev/null) || continue
-  printf '  %-12s %s\n' "$P" "$B"
+# 落ちるのは pkgsrc が入れる pkgconf であって、base の物ではない。bootstrap の
+# 直後には base の物しか PATH に無いので、先に devel/pkgconf を入れてから撃つ。
+# 一度これで base の /usr/bin/pkg-config (2.4.3、正常) を測って取り違えた。
+( cd "$W/pkgsrc/devel/pkgconf" && bmake install ) >"$W/pkgconf.log" 2>&1 \
+  && say "devel/pkgconf: 入った" || { say "devel/pkgconf: 落ちた"; tail -20 "$W/pkgconf.log"; }
+for B in "$PREFIX/bin/pkg-config" "$PREFIX/bin/pkgconf" /usr/bin/pkg-config; do
+  [ -x "$B" ] || continue
+  printf '  %s\n' "$B"
   "$B" --version >"$W/pc.out" 2>&1
   rc=$?
   if [ $rc -gt 128 ]; then
@@ -158,6 +163,7 @@ for P in pkg-config pkgconf; do
   "$B" --atleast-pkgconfig-version 0.9.0 >/dev/null 2>&1
   printf '    --atleast-pkgconfig-version 0.9.0 rc=%d\n' "$?"
 done
+printf '  PATH で先に見つかるのは: %s\n' "$(command -v pkg-config 2>/dev/null)"
 
 echo '##### 5. 依存が解けるか #####'
 bmake show-depends-dirs >"$W/depends.log" 2>&1
