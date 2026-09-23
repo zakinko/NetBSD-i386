@@ -130,7 +130,9 @@ jobs:
   # docker run で素の image を起こし、中で linux-in-docker.sh に回させる。
   linux-docker:
     needs: dist
-    if: ${{ !inputs.jdk21 && (inputs.wide || inputs.only != '') }}
+    # only= のときは、そこに docker の箱が名指しされているときだけ起こす。
+    # only != '' だけで通すと、BSD 一つを撃つたびにこの三つも runner を取る
+    if: ${{ !inputs.jdk21 && (inputs.only == '' && inputs.wide || contains(inputs.only, 'leap-bash') || contains(inputs.only, 'rocky-bash') || contains(inputs.only, 'void-musl') || contains(inputs.only, 'chimera-musl')) }}
     strategy:
       fail-fast: false
       matrix:
