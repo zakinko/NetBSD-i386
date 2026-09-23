@@ -1,24 +1,44 @@
 Teach the GYP build about the BSDs.
 
-build_mozc.py knows Linux, Mac and Windows, so on a BSD AddTargetPlatformOption
-leaves default_target unset and the script dies with "Unknown target_platform:
-None" (run 35794480006).  mozc_version.py then rejects the name as well, since
-the revision digit table has no entry for it (run 35794790288).  And
-common.gypi names a compiler only for Mac and Linux, so on a BSD -std=c++20 is
-never passed and the first file that uses a concept stops the build with
-"unknown type name \x27requires\x27" (run 35798811151).
+Five places stop a BSD build of 3.33.6089:
+
+  build_mozc.py      AddTargetPlatformOption leaves default_target unset,
+                     so the script dies with "Unknown target_platform: None"
+  mozc_version.py    the revision digit table has no entry for the name
+  common.gypi        a compiler is named only for Mac and Linux, so
+                     -std=c++20 is never passed and the first file that
+                     uses a concept stops with "unknown type name 'requires'"
+  common.gypi        gyp's OS comes from sys.platform, so the OS=="linux"
+                     block is skipped and -pthread never reaches the link:
+                     abseil's mutex then wants pthread_getschedparam
+  recursive.cc       nftw is not on the BSDs; fts is, and Linux and macOS
+                     already take that branch
 
 Name the five BSDs, send them down the Linux path, put their output in
-out_bsd, give them Linux's revision digit, and name their base compiler:
-clang with libc++ on FreeBSD, OpenBSD and MidnightBSD, gcc with libstdc++ on
-NetBSD and DragonFly.
+out_bsd, give them Linux's revision digit and link flags, name their base
+compiler (clang with libc++ on FreeBSD, OpenBSD and MidnightBSD, gcc with
+libstdc++ on NetBSD and DragonFly), and let them use fts.
 
-This follows what pkgsrc carries for mozc 2.26 (inputmethod/mozc-server226),
-written against 3.33.6089.  CI only for now.
+This follows what pkgsrc carries for mozc 2.26 (inputmethod/mozc-server226)
+and what zakinko/mozc carries for master; the enum and the file layout moved
+between 3.33 and 3.34, so the two cannot share a patch.  CI only.
 
+diff -ur a/base/file/recursive.cc b/base/file/recursive.cc
+--- a/base/file/recursive.cc	2026-09-23 14:05:40
++++ b/base/file/recursive.cc	2026-09-23 14:06:03
+@@ -105,7 +105,8 @@
+ }
+ }  // namespace
+ 
+-#if (defined(__linux__) && !defined(__ANDROID__)) || \
++#if (defined(__linux__) && !defined(__ANDROID__)) || defined(__FreeBSD__) || \
++    defined(__NetBSD__) || defined(__OpenBSD__) || defined(__DragonFly__) || \
+     (defined(TARGET_OS_OSX) && TARGET_OS_OSX)
+ 
+ absl::Status DeleteRecursively(const zstring_view path) {
 diff -ur a/build_mozc.py b/build_mozc.py
---- a/build_mozc.py	2026-09-23 07:53:28
-+++ b/build_mozc.py	2026-09-23 07:53:40
+--- a/build_mozc.py	2026-09-23 14:05:40
++++ b/build_mozc.py	2026-09-23 14:05:49
 @@ -54,6 +54,8 @@
  from build_tools.util import ColoredLoggingFilter
  from build_tools.util import ColoredText
@@ -79,8 +99,8 @@ diff -ur a/build_mozc.py b/build_mozc.py
          OSS_SRC_DIR + '/server/server.gyp:mozc_server',
          OSS_SRC_DIR + '/gui/gui.gyp:mozc_tool',
 diff -ur a/build_tools/mozc_version.py b/build_tools/mozc_version.py
---- a/build_tools/mozc_version.py	2026-09-23 08:04:14
-+++ b/build_tools/mozc_version.py	2026-09-23 08:04:15
+--- a/build_tools/mozc_version.py	2026-09-23 14:05:40
++++ b/build_tools/mozc_version.py	2026-09-23 14:05:49
 @@ -62,6 +62,12 @@
      'Windows': '0',
      'Mac': '1',
@@ -95,8 +115,8 @@ diff -ur a/build_tools/mozc_version.py b/build_tools/mozc_version.py
      'ChromeOS': '4',
      'iOS': '6',
 diff -ur a/build_tools/util.py b/build_tools/util.py
---- a/build_tools/util.py	2026-09-23 07:53:28
-+++ b/build_tools/util.py	2026-09-23 07:53:28
+--- a/build_tools/util.py	2026-09-23 14:05:40
++++ b/build_tools/util.py	2026-09-23 14:05:49
 @@ -54,6 +54,23 @@
    return os.name == 'posix' and os.uname()[0] == 'Linux'
  
@@ -122,8 +142,8 @@ diff -ur a/build_tools/util.py b/build_tools/util.py
    """Wraps os.path.abspath() with case normalization.
  
 diff -ur a/gyp/common.gypi b/gyp/common.gypi
---- a/gyp/common.gypi	2026-09-23 10:12:58
-+++ b/gyp/common.gypi	2026-09-23 10:12:58
+--- a/gyp/common.gypi	2026-09-23 14:05:40
++++ b/gyp/common.gypi	2026-09-23 14:06:03
 @@ -103,6 +103,20 @@
          'compiler_target': 'gcc',
          'compiler_host': 'gcc',
@@ -145,3 +165,26 @@ diff -ur a/gyp/common.gypi b/gyp/common.gypi
      ],
    },
    'target_defaults': {
+@@ -220,6 +234,22 @@
+           # We use deprecated <hash_map> and <hash_set> instead of upcoming
+           # <unordered_map> and <unordered_set>.
+           '-Wno-deprecated',
++        ],
++      }],
++      # gyp の OS は sys.platform から来るので BSD では "linux" にならず、
++      # この block が丸ごと外れる。-pthread が渡らず、abseil の mutex が
++      # pthread_getschedparam を見つけられずに link で落ちる。
++      ['target_platform=="FreeBSD" or target_platform=="NetBSD" or '
++       'target_platform=="OpenBSD" or target_platform=="DragonFly" or '
++       'target_platform=="MidnightBSD"', {
++        'ldflags': [
++          '<@(linux_ldflags)',
++        ],
++        'cflags': [
++          '<@(linux_cflags)',
++          '<@(warning_cflags)',
++          '-fPIC',
++          '-fno-exceptions',
+         ],
+       }],
+       ['OS=="mac"', {
