@@ -178,6 +178,31 @@ check_diff() {
 			return
 		fi
 		note "   (本文の字下げを剥がして見る)"
+		# .pr だと分かった所で header も見る。送ってからでは直せない。
+		#   Cc が From と違うと、出した物の控えが手元に残らない
+		#   (PR 60589/60590/60591 がそうなった)
+		#   Subject と >Synopsis: が食い違うと、gnats の一覧と件名が別物になる
+		#   本文に非 ASCII が混ざると mail で化ける
+		_h() { sed -n "s/^$1[[:space:]]*//p" "$d" | head -1; }
+		_from=$(_h 'From:')
+		[ "$(_h 'To:')" = "gnats-bugs@NetBSD.org" ] || bad "To: が gnats-bugs@NetBSD.org でない"
+		[ -n "$_from" ] || bad "From: が無い"
+		[ "$(_h 'Cc:')" = "$_from" ] || bad "Cc: が From: と違う (控えが残らない)"
+		[ "$(_h 'Reply-To:')" = "$_from" ] || bad "Reply-To: が From: と違う"
+		_subj=$(_h 'Subject:')
+		_syn=$(sed -n 's/^>Synopsis:[[:space:]]*//p' "$d" | head -1)
+		[ "$_subj" = "$_syn" ] || {
+			bad "Subject と >Synopsis: が違う"
+			echo "       Subject:  $_subj"
+			echo "       Synopsis: $_syn"
+		}
+		[ "$(sed -n 's/^>Category:[[:space:]]*//p' "$d" | head -1)" = pkg ] \
+			|| bad ">Category: が pkg でない"
+		for _s in Description How-To-Repeat Fix; do
+			grep -q "^>$_s:" "$d" || bad ">$_s: の節が無い"
+		done
+		_n=$(LC_ALL=C grep -c '[^ -~	]' "$d" || true)
+		[ "${_n:-0}" = 0 ] || bad "本文に非 ASCII の行が ${_n} 行ある (mail で化ける)"
 		# 本文 (diff より前) を控える。新しい file の名前がそこに
 		# 書かれているかを、下の 8 番で突き合わせる。
 		sed -n "1,$(( $(grep -n '^	--- ' "$d" | head -1 | cut -d: -f1) - 1 ))p" \
