@@ -6,6 +6,8 @@
 #	pr-vs-built --fork <.pr> <fork dir> <上流の pkgdir>
 #						上流の package に .pr を当てて
 #						fork と中身ごと比べる
+#	pr-vs-built --applies <.pr>		今日の pkgsrc trunk にまだ
+#						当たるかを fuzz 無しで見る
 #
 # pr-ready は「その diff が静的に足りているか」を見る。こちらは別の問い
 # ——「測ったものと送るものは同じ物か」——を見る。二つは同じではない。
@@ -32,8 +34,8 @@ pr_diff() {
 }
 files_of() { awk '/^\+\+\+ /{print $2}' | sort -u; }
 
-usage() { sed -n '3,12p' "$0"; exit 2; }
-[ $# -ge 3 ] || usage
+usage() { sed -n '3,14p' "$0"; exit 2; }
+[ $# -ge 2 ] || usage
 mode=$1; pr=$2; shift 2
 [ -f "$pr" ] || { echo "そんな .pr は無い: $pr" >&2; exit 2; }
 
@@ -110,6 +112,28 @@ case "$mode" in
 		fi
 	fi
 	rm -rf "$w" "$T/pvb.diff.$$" "$T/pvb.out.$$"
+	;;
+--applies)
+	# 触る file だけを raw から引いて、その場で空当てする。
+	#
+	# -F0 が要る。patch -C は既定で fuzz を許すので、木が動いて文脈行が
+	# 変わっていても黙って通る。文脈を一行だけ壊した .pr を通したら
+	# 「当たる」と出た。-C だけでは「まだ当たる」を測れない。
+	w=$T/pvb.ap.$$; rm -rf "$w"; mkdir -p "$w"
+	pr_diff "$pr" > "$T/pvb.apd.$$"
+	got=0
+	for t in $(files_of < "$T/pvb.apd.$$"); do
+		case "$t" in /dev/null) continue;; esac
+		mkdir -p "$w/$(dirname "$t")"
+		curl -sfL "https://raw.githubusercontent.com/NetBSD/pkgsrc/trunk/$t" \
+			-o "$w/$t" && got=$((got+1))
+	done
+	out=$( cd "$w" && patch -C -f -F0 -p0 -i "$T/pvb.apd.$$" < /dev/null 2>&1 ) || {
+		bad "今日の pkgsrc trunk に当たらない"
+		echo "$out" | sed 's/^/     /' | head -8
+	}
+	[ $rc -eq 0 ] && echo "  ok 当たる (上流から $got file を引いた、fuzz 無し)"
+	rm -rf "$w" "$T/pvb.apd.$$"
 	;;
 *) usage ;;
 esac
