@@ -5,10 +5,11 @@ file that includes it.  GhostBSD, HardenedBSD and MidnightBSD define
 __FreeBSD__ and run FreeBSD binaries, so they land on the FreeBSD arm.
 
 This is the 3.33.6089 shape of what zakinko/mozc carries for master; the enum
-was renamed between 3.33 and 3.34, so the two cannot share a patch.  CI only.
+and the helper names moved between 3.33 and 3.34, so the two cannot share a
+patch.  CI only.
 
---- a/base/port.h	2026-09-23 10:23:26
-+++ b/base/port.h	2026-09-23 10:23:26
+--- a/base/port.h	2026-09-23 14:55:22
++++ b/base/port.h	2026-09-23 14:56:07
 @@ -45,6 +45,10 @@
    kIPhone,    // Darwin-based firmware, devices, or simulator
    kWASM,      // WASM
@@ -39,22 +40,3 @@ was renamed between 3.33 and 3.34, so the two cannot share a patch.  CI only.
  #error "Unsupported target platform."
  #endif  // !__wasm__
  }  // namespace port_internal
-@@ -109,6 +123,18 @@
- //              absl::Milliseconds(100) : absl::Milliseconds(10);
- //
- 
-+// The build target is one of the BSDs.
-+constexpr bool TargetIsBSD() {
-+  return port_internal::kTargetPlatform ==
-+             port_internal::PlatformType::kFreeBSD ||
-+         port_internal::kTargetPlatform ==
-+             port_internal::PlatformType::kNetBSD ||
-+         port_internal::kTargetPlatform ==
-+             port_internal::PlatformType::kOpenBSD ||
-+         port_internal::kTargetPlatform ==
-+             port_internal::PlatformType::kDragonFly;
-+}
-+
- // The build target is Windows.
- constexpr bool TargetIsWindows() {
-   return port_internal::kTargetPlatform ==
