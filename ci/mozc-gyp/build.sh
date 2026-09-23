@@ -122,6 +122,13 @@ if "$PY" build_mozc.py build -c Release $TARGETS > build.log 2>&1; then
 	[ "$n" -ge 2 ] || { echo "RESULT mozc-gyp $OS NG: binary が $n 個しか出ていない"; exit 1; }
 else
 	echo "RESULT mozc-gyp $OS NG (build)"
-	tail -40 build.log
+	# ninja の FAILED の塊だけを出す。tail だけだと warning に埋もれて、
+	# 何が落ちたのか log に残らない (run 35798811151 の FreeBSD と NetBSD)
+	echo "--- FAILED の行と、その後ろ"
+	grep -n -A25 '^FAILED:' build.log | head -80
+	echo "--- error: の行"
+	grep -n 'error:' build.log | head -20
+	echo "--- 末尾"
+	tail -20 build.log
 	exit 1
 fi
