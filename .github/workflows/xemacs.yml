@@ -25,7 +25,8 @@ on:
         default: both
 
 concurrency:
-  group: xemacs-${{ github.ref }}
+  # target を入れないと、別の job を回したつもりが前の run を打ち消す。
+  group: xemacs-${{ github.ref }}-${{ inputs.target }}
   cancel-in-progress: true
 
 permissions:
