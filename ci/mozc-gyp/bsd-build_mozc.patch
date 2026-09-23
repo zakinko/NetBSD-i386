@@ -1,6 +1,6 @@
 Teach the GYP build about the BSDs.
 
-Five places stop a BSD build of 3.33.6089:
+Six places stop or spoil a BSD build of 3.33.6089:
 
   build_mozc.py      AddTargetPlatformOption leaves default_target unset,
                      so the script dies with "Unknown target_platform: None"
@@ -11,6 +11,10 @@ Five places stop a BSD build of 3.33.6089:
   common.gypi        gyp's OS comes from sys.platform, so the OS=="linux"
                      block is skipped and -pthread never reaches the link:
                      abseil's mutex then wants pthread_getschedparam
+  common.gypi        the same OS=="linux" test guards the per-configuration
+                     flags, so a Release build on a BSD got neither -O2 nor
+                     the Debug build -O0 -g.  That one is silent: nothing
+                     fails, the binary is just unoptimised
   recursive.cc       nftw is not on the BSDs; fts is, and Linux and macOS
                      already take that branch
 
@@ -23,9 +27,8 @@ This follows what pkgsrc carries for mozc 2.26 (inputmethod/mozc-server226)
 and what zakinko/mozc carries for master; the enum and the file layout moved
 between 3.33 and 3.34, so the two cannot share a patch.  CI only.
 
-diff -ur a/base/file/recursive.cc b/base/file/recursive.cc
---- a/base/file/recursive.cc	2026-09-23 14:05:40
-+++ b/base/file/recursive.cc	2026-09-23 14:06:03
+--- a/base/file/recursive.cc
++++ b/base/file/recursive.cc
 @@ -105,7 +105,8 @@
  }
  }  // namespace
@@ -36,9 +39,8 @@ diff -ur a/base/file/recursive.cc b/base/file/recursive.cc
      (defined(TARGET_OS_OSX) && TARGET_OS_OSX)
  
  absl::Status DeleteRecursively(const zstring_view path) {
-diff -ur a/build_mozc.py b/build_mozc.py
---- a/build_mozc.py	2026-09-23 14:05:40
-+++ b/build_mozc.py	2026-09-23 14:05:49
+--- a/build_mozc.py
++++ b/build_mozc.py
 @@ -54,6 +54,8 @@
  from build_tools.util import ColoredLoggingFilter
  from build_tools.util import ColoredText
@@ -70,16 +72,18 @@ diff -ur a/build_mozc.py b/build_mozc.py
      gyp_file_names.extend(glob.glob('%s/unix/emacs/*.gyp' % OSS_SRC_DIR))
    gyp_file_names.sort()
    return gyp_file_names
-@@ -181,10 +189,18 @@
+@@ -179,12 +187,20 @@
+ def ParseVerbose(unused_option, unused_opt_str, unused_value, unused_parser):
+   # Set log level to DEBUG if required.
    logging.getLogger().setLevel(logging.DEBUG)
- 
- 
++
++
 +def IsBSDTarget(target_platform):
 +  """Returns true for the BSDs, which build the same way as Linux here."""
 +  return target_platform in ('FreeBSD', 'NetBSD', 'OpenBSD', 'DragonFly',
 +                             'MidnightBSD')
-+
-+
+ 
+ 
  # TODO(b/68382821): Remove this method. We no longer need --target_platform.
  def AddTargetPlatformOption(parser):
    if IsLinux():
@@ -98,9 +102,8 @@ diff -ur a/build_mozc.py b/build_mozc.py
      targets = [
          OSS_SRC_DIR + '/server/server.gyp:mozc_server',
          OSS_SRC_DIR + '/gui/gui.gyp:mozc_tool',
-diff -ur a/build_tools/mozc_version.py b/build_tools/mozc_version.py
---- a/build_tools/mozc_version.py	2026-09-23 14:05:40
-+++ b/build_tools/mozc_version.py	2026-09-23 14:05:49
+--- a/build_tools/mozc_version.py
++++ b/build_tools/mozc_version.py
 @@ -62,6 +62,12 @@
      'Windows': '0',
      'Mac': '1',
@@ -114,9 +117,8 @@ diff -ur a/build_tools/mozc_version.py b/build_tools/mozc_version.py
      'Android': '3',
      'ChromeOS': '4',
      'iOS': '6',
-diff -ur a/build_tools/util.py b/build_tools/util.py
---- a/build_tools/util.py	2026-09-23 14:05:40
-+++ b/build_tools/util.py	2026-09-23 14:05:49
+--- a/build_tools/util.py
++++ b/build_tools/util.py
 @@ -54,6 +54,23 @@
    return os.name == 'posix' and os.uname()[0] == 'Linux'
  
@@ -141,9 +143,8 @@ diff -ur a/build_tools/util.py b/build_tools/util.py
  def CaseAwareAbsPath(path: str) -> str:
    """Wraps os.path.abspath() with case normalization.
  
-diff -ur a/gyp/common.gypi b/gyp/common.gypi
---- a/gyp/common.gypi	2026-09-23 14:05:40
-+++ b/gyp/common.gypi	2026-09-23 14:06:03
+--- a/gyp/common.gypi
++++ b/gyp/common.gypi
 @@ -103,6 +103,20 @@
          'compiler_target': 'gcc',
          'compiler_host': 'gcc',
@@ -165,12 +166,44 @@ diff -ur a/gyp/common.gypi b/gyp/common.gypi
      ],
    },
    'target_defaults': {
-@@ -220,6 +234,22 @@
-           # We use deprecated <hash_map> and <hash_set> instead of upcoming
-           # <unordered_map> and <unordered_set>.
+@@ -132,6 +146,16 @@
+               '<@(debug_extra_cflags)',
+             ],
+           }],
++          # gyp の OS は sys.platform から来るので BSD では "linux" にならず、
++          # 上の block が外れる。既定の -O2 (Release) と -O0 -g (Debug) が
++          # 渡らないまま建っていた。落ちないので log には出ない。
++          ['target_platform=="FreeBSD" or target_platform=="NetBSD" or '
++           'target_platform=="OpenBSD" or target_platform=="DragonFly" or '
++           'target_platform=="MidnightBSD"', {
++            'cflags': [
++              '<@(debug_extra_cflags)',
++            ],
++          }],
+         ],
+       },
+       'Release': {
+@@ -149,6 +173,16 @@
+         },
+         'conditions': [
+           ['OS=="linux"', {
++            'cflags': [
++              '<@(release_extra_cflags)',
++            ],
++          }],
++          # gyp の OS は sys.platform から来るので BSD では "linux" にならず、
++          # 上の block が外れる。既定の -O2 (Release) と -O0 -g (Debug) が
++          # 渡らないまま建っていた。落ちないので log には出ない。
++          ['target_platform=="FreeBSD" or target_platform=="NetBSD" or '
++           'target_platform=="OpenBSD" or target_platform=="DragonFly" or '
++           'target_platform=="MidnightBSD"', {
+             'cflags': [
+               '<@(release_extra_cflags)',
+             ],
+@@ -222,6 +256,22 @@
            '-Wno-deprecated',
-+        ],
-+      }],
+         ],
+       }],
 +      # gyp の OS は sys.platform から来るので BSD では "linux" にならず、
 +      # この block が丸ごと外れる。-pthread が渡らず、abseil の mutex が
 +      # pthread_getschedparam を見つけられずに link で落ちる。
@@ -185,6 +218,8 @@ diff -ur a/gyp/common.gypi b/gyp/common.gypi
 +          '<@(warning_cflags)',
 +          '-fPIC',
 +          '-fno-exceptions',
-         ],
-       }],
++        ],
++      }],
        ['OS=="mac"', {
+         'make_global_settings': [
+           ['CC', '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang'],
