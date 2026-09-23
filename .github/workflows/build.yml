@@ -28,7 +28,9 @@ on:
 
 # push で起こったものは、後から来た push に追い越された時点で用が無い。
 # ci/** を触るたびにこの workflow が起きるので、同じ枝の古い push の run が
-# 十数本並んで account 全体の queue を塞いでいた (2026-09-23 に 14 本)。
+# 十数本並ぶ (2026-09-23 に 14 本)。job 側の concurrency に待たされている間は
+# runner を掴んでいないので他の repo を塞ぎはしないが、順に走れば一本ずつ
+# NetBSD の package を建て直すので、CI 分をそのぶん食う。
 # schedule と workflow_dispatch は畳まない — 建て途中を止めると Releases の
 # tag を半端に書き換えることがあり、job 側の concurrency はそれを避けるため
 # に cancel-in-progress を切ってある。
