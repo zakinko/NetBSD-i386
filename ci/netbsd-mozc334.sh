@@ -391,7 +391,7 @@ echo "##### 4. 実際に打てるか #####"
 #
 # になり、server が無いときとまったく同じ見え方になる。VM の中は root なので
 # 一般ユーザを作ってそちらで測る。両方出して、区別がつかないことも示す。
-# (ci/netbsd-mozc226.sh が先に踏んだ。同じ道を二度通らないために書いておく。)
+# (226 の CI が先に踏んだ。同じ道を二度通らないために書いておく。)
 id mozctest >/dev/null 2>&1 || useradd -m -s /bin/sh mozctest
 # profile を先に作る。useradd -m は home を作るだけで .config は作らない。
 # mozc は profile が無いと
