@@ -386,7 +386,23 @@ else
 		echo "--- $BZ が無い"
 	fi
 	grep -n 'error\|ERROR\|not found\|Syntax\|syntax\|Bad substitution\|Bad fd\|unexpected' compile.log | tail -20
-	tail -40 compile.log
+	# 上は当たった行しか出さない。Starlark の fail() は複数行の traceback を
+	# 出し、原因はその中 (何を探して何が在ったか) に書いてある。一行だけ見て
+	# 「rules_python で落ちた」までは分かるが、なぜかは分からない
+	# (windows-arm64、run 35945125364 でそうなった)。最初の ERROR から先を
+	# まとめて出す。
+	#
+	# 進捗表示の消去列 (^[[1A^[[K) が混ざると読めないので落とす。tr で ESC を
+	# 消してから残りの列を sed で削る。BSD の sed は \x1b を解さないので、この
+	# 二段でないと portable にならない。
+	first=$(grep -n 'ERROR:' compile.log | head -1 | cut -d: -f1)
+	if [ -n "$first" ]; then
+		echo "--- 最初の ERROR (compile.log の $first 行目) から 40 行"
+		sed -n "${first},$((first + 40))p" compile.log |
+			tr -d '\033' | sed 's/\[[0-9;]*[A-Za-z]//g'
+	fi
+	echo "--- compile.log の末尾"
+	tail -40 compile.log | tr -d '\033' | sed 's/\[[0-9;]*[A-Za-z]//g'
 	# JVM が落ちたなら hs_err の頭 (どの frame、どの命令) を残す。VM は job と
 	# 一緒に消えるので、log に無ければ二度と読めない。
 	# rules_java の当て物が効いていないように見えるとき (run 35692632379 の
