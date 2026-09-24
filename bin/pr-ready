@@ -68,6 +68,32 @@ check_one() {
 		done
 	fi
 
+	# 1a. 当て物の頭が揃っているか。--- と +++ と @@ が一組ずつ要る。
+	#     どれかが欠けると patch は当てる先を決められず、対話で
+	#
+	#		File to patch:
+	#		No file found--skip this patch? [n]
+	#
+	#     を出す。標準入力が無い build では EOF を読んでこれを繰り返し、
+	#     止まらない。実際に三時間で 1.9GB のログを吐いて箱を満杯にした。
+	#     原因は当て物を別の diff から取り出すとき、外側の diff が付けた
+	#     + を剥がす filter が、中身の +++ 行まで落としていたこと。
+	if [ -d "$pkg/patches" ]; then
+		for p in "$pkg"/patches/patch-*; do
+			[ -f "$p" ] || continue
+			# grep -c は 0 件で exit 1。set -e の下では代入で落ちる
+			m=$(grep -c '^--- ' "$p" 2>/dev/null || true)
+			n=$(grep -c '^+++ ' "$p" 2>/dev/null || true)
+			h=$(grep -c '^@@ ' "$p" 2>/dev/null || true)
+			if [ "$m" -eq 0 ] || [ "$n" -eq 0 ] || [ "$h" -eq 0 ]; then
+				bad "頭が欠けている (--- $m, +++ $n, @@ $h): ${p##*/}"
+				note "   patch が当てる先を訊きに来て止まらなくなる"
+			elif [ "$m" -ne "$n" ]; then
+				bad "--- と +++ の数が合わない ($m / $n): ${p##*/}"
+			fi
+		done
+	fi
+
 	# 1b. pkgsrc が飛ばす名前になっていないか。~ で終わるものは編集器の
 	#     控えとみなされ、黙って無視される。改名でこれを二本作った。
 	if [ -d "$pkg/patches" ]; then
