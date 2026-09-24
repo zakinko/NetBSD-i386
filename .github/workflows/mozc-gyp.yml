@@ -65,6 +65,31 @@ jobs:
           envs: 'GITHUB_WORKSPACE MOZC_TAG'
           run: sh "$GITHUB_WORKSPACE/ci/mozc-gyp/build.sh"
 
+  # NetBSD/aarch64。gyp の当て物は target_platform=="NetBSD" で分岐していて CPU
+  # を見ていないので、通らない理由は構造上は無い。無いことと通ることは別なので
+  # 測る。ubuntu-24.04-arm は aarch64 の host なので、guest は KVM で走る
+  # (x86_64 の runner に載せると TCG になり、この build は現実的な時間で
+  # 終わらない)。
+  netbsd-aarch64:
+    if: ${{ inputs.only == '' || contains(format(',{0},', inputs.only), ',netbsd-aarch64,') }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: KVM が在るか
+        run: |
+          ls -l /dev/kvm || echo "/dev/kvm が無い。TCG になる"
+          echo "host: $(uname -m)"
+      - uses: vmactions/netbsd-vm@v1
+        with:
+          release: "11.0"
+          arch: aarch64
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE MOZC_TAG'
+          run: sh "$GITHUB_WORKSPACE/ci/mozc-gyp/build.sh"
+
   openbsd:
     if: ${{ inputs.only == '' || contains(format(',{0},', inputs.only), ',openbsd,') }}
     runs-on: ubuntu-latest
