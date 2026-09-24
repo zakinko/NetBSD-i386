@@ -133,9 +133,13 @@ jobs:
         run: |
           # info ドキュメント段は makeinfo が無くて落ちるが、本体はその前に
           # 出来ている。ここで無ければ本当の失敗なので job を落とす。
+          # link は落ちても出力 file を作ることがある。一度 0 バイトの
+          # xemacs.exe を「出来た」と読んだので、在るかではなく大きさで見る。
           $exe = "xemacs/src/xemacs.exe"
           if (-not (Test-Path $exe)) { throw "xemacs.exe が無い" }
           Get-Item xemacs/src/temacs.exe, $exe | Format-Table Name, Length
+          $len = (Get-Item $exe).Length
+          if ($len -lt 1000000) { throw "xemacs.exe が $len バイトしかない" }
 
       - name: xemacs.def と import library が出来たか
         shell: pwsh

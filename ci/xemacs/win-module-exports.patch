@@ -1,8 +1,16 @@
 diff --git a/nt/xemacs.mak b/nt/xemacs.mak
-index 3438897..4984073 100644
+index 3438897..c1e2bcf 100644
 --- a/nt/xemacs.mak
 +++ b/nt/xemacs.mak
-@@ -1198,8 +1198,10 @@ TEMACS_COMMON_LFLAGS=-nologo $(LIBRARIES) $(DEBUG_FLAGS_LINK) \
+@@ -784,6 +784,7 @@ TEMACS_COMMON_OBJS= \
+ 	$(OUTDIR)\gui.obj \
+ 	$(OUTDIR)\gutter.obj \
+ 	$(OUTDIR)\indent.obj \
++	$(OUTDIR)\inline.obj \
+ 	$(OUTDIR)\imgproc.obj \
+ 	$(OUTDIR)\insdel.obj \
+ 	$(OUTDIR)\intl.obj \
+@@ -1198,8 +1199,10 @@ TEMACS_COMMON_LFLAGS=-nologo $(LIBRARIES) $(DEBUG_FLAGS_LINK) \
   $(PROFILE_FLAGS) setargv.obj
  TEMACS_LFLAGS=$(TEMACS_COMMON_LFLAGS) \
   -pdb:$(BLDSRC)\temacs.pdb -map:$(BLDSRC)\temacs.map
@@ -14,10 +22,15 @@ index 3438897..4984073 100644
  
  
  ########################### Definitions for running temacs.exe/xemacs.exe
-@@ -1251,6 +1253,24 @@ $(OUTDIR)\temacs.res: $(NT)\xemacs.rc
+@@ -1251,6 +1254,29 @@ $(OUTDIR)\temacs.res: $(NT)\xemacs.rc
  
  TEMACS_DUMP_DEP = $(OUTDIR)\dump-id.obj
  
++## src/inline.c, added to TEMACS_COMMON_OBJS above, is the one
++## translation unit that defines each inline function out of line.
++## Without it the module API can name those functions but nothing
++## carries a symbol for the linker to export.
++##
 +## src/xemacs.def.in.in names the symbols a dynamic module may use.  On
 +## Unix configure runs it through the C preprocessor to produce
 +## src/xemacs.def, and src/Makefile.in.in hands that to dlltool.  This
@@ -31,7 +44,7 @@ index 3438897..4984073 100644
 +
 +$(XEMACS_DEF): $(SRC)\xemacs.def.in.in $(SRC)\config.h
 +	@copy $(SRC)\xemacs.def.in.in $(BLDSRC)\xemacs_def.c
-+	$(CCV) -nologo -EP -I$(SRC) -I$(NT) $(BLDSRC)\xemacs_def.c \
++	$(CCV) -nologo -EP $(INCLUDES) $(DEFINES) $(BLDSRC)\xemacs_def.c \
 +	  > $(BLDSRC)\xemacs_def.tmp
 +	findstr /v /b /c:"xemacs_def.c" $(BLDSRC)\xemacs_def.tmp > $@
 +	-$(DEL) $(BLDSRC)\xemacs_def.c $(BLDSRC)\xemacs_def.tmp
@@ -39,7 +52,7 @@ index 3438897..4984073 100644
  $(RAW_EXE): $(TEMACS_OBJS) $(TEMACS_DUMP_DEP)
  # Command line too long for some Windows installation:
  #	@echo link $(TEMACS_LFLAGS) -out:$@ $(TEMACS_OBJS) $(TEMACS_DUMP_DEP) $(TEMACS_LIBS)
-@@ -1276,7 +1296,7 @@ $(BLDSRC)\NEEDTODUMP:
+@@ -1276,7 +1302,7 @@ $(BLDSRC)\NEEDTODUMP:
  # This rule dumps xemacs and then possibly spawns sub-make if PURESPACE
  # requirements have changed.
  
