@@ -91,6 +91,15 @@ jobs:
       - name: XEmacs を取る
         run: git clone --quiet --depth 1 https://github.com/zakinko/XEmacs xemacs
 
+      - name: モジュール API を書き出す当て物を当てる
+        shell: bash
+        run: |
+          cd xemacs
+          patch -p1 -f -i "$GITHUB_WORKSPACE/ci/xemacs/win-module-exports.patch" </dev/null
+          # 当たったことを、当て物が入れた語そのもので確かめる。
+          grep -q -- '-implib:' nt/xemacs.mak
+          grep -q 'XEMACS_DEF' nt/xemacs.mak
+
       - uses: ilammy/msvc-dev-cmd@v1
 
       - name: config.inc を最小構成で置く
@@ -128,21 +137,55 @@ jobs:
           if (-not (Test-Path $exe)) { throw "xemacs.exe が無い" }
           Get-Item xemacs/src/temacs.exe, $exe | Format-Table Name, Length
 
-      - name: 素の build でモジュールが見えるか (基準)
-        shell: cmd
+      - name: xemacs.def と import library が出来たか
+        shell: pwsh
         run: |
-          rem pwsh の & で起動すると LASTEXITCODE が空のまま帰ってきた。
-          rem nmake は build 中に同じ exe を問題なく走らせているので、
-          rem そちらと同じ cmd から呼ぶ。
-          cd xemacs
-          dir src\xemacs.exe
-          src\xemacs.exe -batch -vanilla -load "%GITHUB_WORKSPACE%\ci\xemacs\win-modules-probe.el"
-          if errorlevel 1 (echo PROBE FAILED & exit /b 1)
+          # ここが当て物の要。configure を通らない build でも
+          # モジュール API が書き出せているかを、生成物で見る。
+          $def = "xemacs/src/xemacs.def"
+          if (-not (Test-Path $def)) { throw "xemacs.def が無い" }
+          Write-Host "--- xemacs.def の頭 ---"
+          Get-Content $def -TotalCount 12
+          $n = (Select-String -Path $def -Pattern '^[A-Za-z_][A-Za-z0-9_]*$').Count
+          Write-Host "def に並んだ symbol: $n"
+          if ($n -lt 100) { throw "symbol が少なすぎる ($n)。cpp が通っていない" }
+
+          $lib = "xemacs/src/xemacs.lib"
+          if (-not (Test-Path $lib)) { throw "import library xemacs.lib が無い" }
+          Get-Item $lib | Format-Table Name, Length
+
+          # exe 側にも本当に export されているかを dumpbin で数える。
+          $out = & dumpbin /exports xemacs/src/xemacs.exe
+          $e = ($out | Select-String -Pattern '^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]{8}\s+\S').Count
+          Write-Host "xemacs.exe の export: $e"
+          if ($e -lt 100) { throw "exe に export が乗っていない ($e)" }
+
+      - name: モジュールの feature が見えるか
+        shell: pwsh
+        run: |
+          # xemacs.exe は -subsystem:windows で建つので、console から
+          # 直に起動すると出力が返らず固まる。lib-src/i.c がそのための
+          # 連結役で、build 中の dump もこれ経由で走っている。
+          # 一時間の timeout を一度これで潰したので、上限も付ける。
+          # $args は PowerShell の自動変数なので使わない。
+          $a = @("src\xemacs.exe","-batch","-vanilla","-load",
+                 "$env:GITHUB_WORKSPACE\ci\xemacs\win-modules-probe.el")
+          # -FilePath は呼び出し側の cwd で解決されるので絶対 path で渡す。
+          $i = Join-Path $PWD "xemacs\lib-src\i.exe"
+          if (-not (Test-Path $i)) { throw "i.exe が無い" }
+          $p = Start-Process -FilePath $i -ArgumentList $a `
+                 -WorkingDirectory "$PWD\xemacs" -NoNewWindow -PassThru `
+                 -RedirectStandardOutput probe.out -RedirectStandardError probe.err
+          if (-not $p.WaitForExit(180000)) {
+            $p.Kill(); Get-Content probe.out, probe.err -EA SilentlyContinue
+            throw "probe が 180 秒で返らなかった"
+          }
+          Get-Content probe.out, probe.err -EA SilentlyContinue
+          Write-Host "exit: $($p.ExitCode)"
 
       - name: 動的ロードの足回りが object に入っているか
         shell: cmd
         run: |
-          rem 当初 -DHAVE_SHLIB を足す実験を置いていたが、前提が誤りだった。
           rem Windows は config.h.in をそのまま config.h にして使い、その中で
           rem s/windowsnt.h を読む。そこで HAVE_SHLIB は既に定義されている。
           cd xemacs

@@ -1,0 +1,50 @@
+diff --git a/nt/xemacs.mak b/nt/xemacs.mak
+index 3438897..4984073 100644
+--- a/nt/xemacs.mak
++++ b/nt/xemacs.mak
+@@ -1198,8 +1198,10 @@ TEMACS_COMMON_LFLAGS=-nologo $(LIBRARIES) $(DEBUG_FLAGS_LINK) \
+  $(PROFILE_FLAGS) setargv.obj
+ TEMACS_LFLAGS=$(TEMACS_COMMON_LFLAGS) \
+  -pdb:$(BLDSRC)\temacs.pdb -map:$(BLDSRC)\temacs.map
++XEMACS_DEF=$(BLDSRC)\xemacs.def
+ XEMACS_LFLAGS=$(TEMACS_COMMON_LFLAGS) \
+- -pdb:$(BLDSRC)\xemacs.pdb -map:$(BLDSRC)\xemacs.map
++ -pdb:$(BLDSRC)\xemacs.pdb -map:$(BLDSRC)\xemacs.map \
++ -def:$(XEMACS_DEF) -implib:$(BLDSRC)\xemacs.lib
+ 
+ 
+ ########################### Definitions for running temacs.exe/xemacs.exe
+@@ -1251,6 +1253,24 @@ $(OUTDIR)\temacs.res: $(NT)\xemacs.rc
+ 
+ TEMACS_DUMP_DEP = $(OUTDIR)\dump-id.obj
+ 
++## src/xemacs.def.in.in names the symbols a dynamic module may use.  On
++## Unix configure runs it through the C preprocessor to produce
++## src/xemacs.def, and src/Makefile.in.in hands that to dlltool.  This
++## build runs neither configure nor that Makefile, so nothing exported
++## the symbols and no import library was produced: a module could be
++## compiled but had nothing to link against.  Preprocess it here.
++##
++## cl picks the language from the suffix, so the source is copied to a
++## .c name first, and the filename cl echoes on stdout is dropped --
++## left in place it would be read as the name of an export.
++
++$(XEMACS_DEF): $(SRC)\xemacs.def.in.in $(SRC)\config.h
++	@copy $(SRC)\xemacs.def.in.in $(BLDSRC)\xemacs_def.c
++	$(CCV) -nologo -EP -I$(SRC) -I$(NT) $(BLDSRC)\xemacs_def.c \
++	  > $(BLDSRC)\xemacs_def.tmp
++	findstr /v /b /c:"xemacs_def.c" $(BLDSRC)\xemacs_def.tmp > $@
++	-$(DEL) $(BLDSRC)\xemacs_def.c $(BLDSRC)\xemacs_def.tmp
++
+ $(RAW_EXE): $(TEMACS_OBJS) $(TEMACS_DUMP_DEP)
+ # Command line too long for some Windows installation:
+ #	@echo link $(TEMACS_LFLAGS) -out:$@ $(TEMACS_OBJS) $(TEMACS_DUMP_DEP) $(TEMACS_LIBS)
+@@ -1276,7 +1296,7 @@ $(BLDSRC)\NEEDTODUMP:
+ # This rule dumps xemacs and then possibly spawns sub-make if PURESPACE
+ # requirements have changed.
+ 
+-$(DUMP_TARGET): $(RAW_EXE) $(BLDSRC)\NEEDTODUMP
++$(DUMP_TARGET): $(RAW_EXE) $(BLDSRC)\NEEDTODUMP $(XEMACS_DEF)
+ 	$(TEMACS_BATCH) -l $(LISP)\loadup.el dump
+ 	cd $(BLDSRC)
+ 	rc -d INCLUDE_DUMP -Fo $(OUTDIR)\xemacs.res $(NT)\xemacs.rc
