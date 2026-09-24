@@ -99,6 +99,7 @@ jobs:
           # 当たったことを、当て物が入れた語そのもので確かめる。
           grep -q -- '-implib:' nt/xemacs.mak
           grep -q 'XEMACS_DEF' nt/xemacs.mak
+          grep -q 'USE_CPLUSPLUS' nt/xemacs.mak src/config.h.in
 
       - uses: ilammy/msvc-dev-cmd@v1
 
