@@ -1,16 +1,43 @@
 build_windows_jni.sh always asks vcvarsall for the amd64 tools, so on an
-ARM64 Windows the JNI DLL comes out as AMD64 and the ARM64 JVM refuses it
-("Can't load AMD 64-bit .dll on a ARM 64-bit platform", run 35692632379).
-Pick the native tools for the machine the build runs on.  CI only for now.
+ARM64 Windows the JNI DLL comes out as AMD64 and the ARM64 JVM refuses it:
 
---- a/scripts/bootstrap/build_windows_jni.sh	2026-09-22 17:07:51
-+++ b/scripts/bootstrap/build_windows_jni.sh	2026-09-22 17:07:51
-@@ -116,7 +116,7 @@
+	windows_jni.dll: Can't load AMD 64-bit .dll on a ARM 64-bit platform
+
+The first attempt at this wrote the test into the generated batch file, as
+%PROCESSOR_ARCHITECTURE%=="ARM64". That is the one variable that cannot be
+believed here. run 35898166974 measured it: the shell saw ARM64 and applied
+this patch, and the batch file still chose amd64, because
+
+	PROCESSOR_ARCHITECTURE=AMD64
+	PROCESSOR_ARCHITEW6432=(none)
+	uname -m: x86_64  uname -s: MINGW64_NT-10.0-26200-ARM64
+
+The MSYS shell is an x86_64 build running under emulation, so it and the
+environment it inherits both report x86_64. uname -s carries the real one.
+
+Decide it in the shell, where that is readable, and write the answer into
+the batch file rather than a test.  CI only for now.
+
+--- a/scripts/bootstrap/build_windows_jni.sh
++++ b/scripts/bootstrap/build_windows_jni.sh
+@@ -114,9 +114,19 @@
+ # directory. See https://github.com/bazelbuild/bazel/issues/3906
+ abs_pwd="$(cygpath -a -w "${PWD}")"
  pwd_drive="$(echo "$abs_pwd" | head -c2)"
++# Pick the toolchain for the machine this is running on.  Neither of the two
++# obvious tests works on an ARM64 Windows: %PROCESSOR_ARCHITECTURE% reads
++# AMD64 because the MSYS shell is an x86_64 build running under emulation,
++# and uname -m says x86_64 for the same reason.  uname -s carries the real
++# one, as MINGW64_NT-10.0-26200-ARM64.
++case "$(uname -s)" in
++*ARM64*|*arm64*) vs_arch=arm64 ;;
++*)               vs_arch=amd64 ;;
++esac
++
  cat > "${VSTEMP}/windows_jni.bat" <<EOF
  @echo OFF
 -@call "${VSVARS}" amd64
-+@if "%PROCESSOR_ARCHITECTURE%"=="ARM64" (call "${VSVARS}" arm64) else (call "${VSVARS}" amd64)
++@call "${VSVARS}" ${vs_arch}
  @$pwd_drive
  @cd "$abs_pwd"
  @set TMP=$(cygpath -a -w "${VSTEMP}")
