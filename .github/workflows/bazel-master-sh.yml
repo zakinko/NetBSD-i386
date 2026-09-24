@@ -69,19 +69,15 @@ concurrency:
 
 jobs:
   dist:
-    # QNAP の中の使い捨て VM。GitHub の runner は account 全体で取り合いに
-    # なり、cache に当たれば 20 秒で終わるこの job が行列の後ろで一時間以上
-    # 待つことがあった。self-hosted は同時実行枠を使わないので待たない。
+    # 一時期 QNAP の中の VM を self-hosted runner にしてここへ充てていた。
+    # GitHub の runner は account 全体で取り合いになり、cache に当たれば
+    # 数十秒で終わるこの job が行列で一時間以上待つことがあったため。
     #
-    # cache が外れた回は dist archive を作り直す。Celeron J3455 では 30 分では
-    # 済まないので timeout を伸ばしてある。
-    #
-    # 2026-09-24: self-hosted (QNAP の中の VM) から GitHub の runner へ戻した。
-    # cache に当たる回は 35 秒〜4 分でどちらでも同じだが、外れた回を QNAP は
-    # こなせない。Celeron J3455 で dist を素から作ると 4 時間の timeout に
-    # 当たって切られる (run 35963876082, 35965182472, 35984845218 の三回とも)。
-    # 行列待ちが最大一時間なのに対して、外れた回が必ず 4 時間潰れて何も出ない
-    # ほうが高く付く。
+    # 2026-09-24 に戻した。cache に当たる回は 35 秒から 4 分で、どちらの
+    # runner でも変わらない。違うのは外れた回で、Celeron J3455 では dist を
+    # 素から作りきれず 4 時間の timeout に当たって切られた (run 35963876082,
+    # 35965182472, 35984845218 の三回とも)。待ちは最大一時間、外れた回は必ず
+    # 四時間潰れて何も出ない、という比較なので割に合わない。
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
