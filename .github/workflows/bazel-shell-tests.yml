@@ -1,0 +1,83 @@
+# shell の選び方を触った枝で、bazel 自身の試験を回す。
+#
+# bazel-master-sh.yml は bootstrap して煙試験まで見るが、bazel の unit test は
+# 一つも走らせていない。shell の選び方は
+#
+#   ShellConfiguration.getShellExecutable(OS)      genrule が呼ぶ側
+#   BazelRuleClassProvider.getShellExecutableForOs rule の既定値を書く側
+#
+# の二つに分かれていて、どちらにも上流の試験が在る。BazelRuleClassProviderTest
+# は Linux の CI 上で「FreeBSD なら何が選ばれるか」を訊く形なので、実装が手元の
+# filesystem を見に行くと落ちる。実際にその設計の誤りをこれで見つけた。
+#
+# bootstrap は要らない。released の bazel (bazelisk) で source 木を建てて試験を
+# 回すのが上流と同じやり方。
+name: bazel-shell-tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'zakinko/bazel の枝'
+        type: string
+        default: 'shell-fallback'
+      targets:
+        description: '回す試験 (空なら shell に関わる三つ)'
+        type: string
+        default: ''
+
+concurrency:
+  group: bazel-shell-tests-${{ inputs.branch }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: 枝を引く
+        run: |
+          set -x
+          git clone --depth 1 --branch "${{ inputs.branch }}" \
+            https://github.com/zakinko/bazel.git src
+          git -C src log --oneline -1
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '25' }
+      - name: bazelisk
+        run: |
+          set -e
+          curl -fsSLo /usr/local/bin/bazel \
+            https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
+          chmod +x /usr/local/bin/bazel
+          bazel --version
+      # 試験は source 木の大半を建てる。枝を撃ち直すたびに一から建てると
+      # 一時間では済まないので、disk cache を枝ごとに取っておく
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/bazel-disk
+          key: shell-tests-${{ inputs.branch }}-${{ github.run_id }}
+          restore-keys: |
+            shell-tests-${{ inputs.branch }}-
+            shell-tests-
+      - name: 試験
+        working-directory: src
+        run: |
+          set -x
+          t="${{ inputs.targets }}"
+          [ -n "$t" ] || t="//src/test/java/com/google/devtools/build/lib/analysis:ShellConfigurationTest
+                            //src/test/java/com/google/devtools/build/lib/bazel/rules:BazelRuleTests
+                            //src/test/java/com/google/devtools/build/lib/bazel/rules/genrule:GenruleTests"
+          # shellcheck disable=SC2086
+          bazel --output_user_root=/tmp/bzl test \
+            --disk_cache="$HOME/.cache/bazel-disk" \
+            --test_output=errors --keep_going \
+            --nobuild_tests_only \
+            $t
+      - name: 落ちた試験の log
+        if: failure()
+        working-directory: src
+        run: |
+          find bazel-testlogs -name test.log 2>/dev/null | while read -r f; do
+            echo "########## $f"
+            tail -60 "$f"
+          done
