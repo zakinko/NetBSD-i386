@@ -139,29 +139,12 @@ jobs:
           src\xemacs.exe -batch -vanilla -load "%GITHUB_WORKSPACE%\ci\xemacs\win-modules-probe.el"
           if errorlevel 1 (echo PROBE FAILED & exit /b 1)
 
-      - name: HAVE_SHLIB を足して建て直す (上書きではなく追記)
-        shell: pwsh
-        continue-on-error: true
-        run: |
-          cd xemacs/nt
-          # OPT_DEFINES を command line で渡すと変数ごと置き換わり、
-          # -DHAVE_MS_WINDOWS 等が消えて device-msw.c が壊れる。mak に足す。
-          $m = Get-Content xemacs.mak
-          $i = ($m | Select-String -Pattern '^OPT_DEFINES=\$\(OPT_DEFINES\) -DHAVE_MS_WINDOWS' | Select-Object -First 1).LineNumber
-          if (-not $i) { throw "OPT_DEFINES の行が見つからない" }
-          $m = $m[0..($i-1)] + 'OPT_DEFINES=$(OPT_DEFINES) -DHAVE_SHLIB' + $m[$i..($m.Length-1)]
-          Set-Content xemacs.mak $m
-          Select-String -Path xemacs.mak -Pattern 'HAVE_SHLIB|HAVE_MS_WINDOWS' | Select-Object -First 5
-          nmake -f xemacs.mak clean
-          nmake -f xemacs.mak
-
-      - name: HAVE_SHLIB 版でモジュールが見えるか
+      - name: 動的ロードの足回りが object に入っているか
         shell: cmd
-        continue-on-error: true
         run: |
+          rem 当初 -DHAVE_SHLIB を足す実験を置いていたが、前提が誤りだった。
+          rem Windows は config.h.in をそのまま config.h にして使い、その中で
+          rem s/windowsnt.h を読む。そこで HAVE_SHLIB は既に定義されている。
           cd xemacs
-          if exist src\xemacs.exe (
-            src\xemacs.exe -batch -vanilla -load "%GITHUB_WORKSPACE%\ci\xemacs\win-modules-probe.el"
-          ) else (
-            echo xemacs.exe が無い ^(この実験では建たなかった^)
-          )
+          findstr /C:"define HAVE_SHLIB" src\s\windowsnt.h
+          dir nt\obj\emodules.obj nt\obj\sysdll.obj
