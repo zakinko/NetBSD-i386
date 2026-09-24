@@ -11,7 +11,19 @@ alpine)
 	apk add --no-cache openjdk25 build-base linux-headers zip unzip curl python3 patch findutils coreutils grep sed which git bash
 	echo "JAVA_HOME=/usr/lib/jvm/java-25-openjdk" >> "$GITHUB_ENV" ;;
 debian|ubuntu)
-	apt-get update -q; DEBIAN_FRONTEND=noninteractive apt-get install -y -q build-essential zip unzip curl python3 patch git ;;
+	apt-get update -q; DEBIAN_FRONTEND=noninteractive apt-get install -y -q build-essential zip unzip curl python3 patch git
+	# docker run の箱 (IN_DOCKER) には setup-java が届かない。i386 では
+	# そもそも temurin に 32bit の像が無く、JDK 25 は JEP 503 で 32bit x86 の
+	# port ごと消えているので、distro の JDK を入れる。25 が無ければ 21
+	if [ -n "${IN_DOCKER:-}" ]; then
+		if DEBIAN_FRONTEND=noninteractive apt-get install -y -q openjdk-25-jdk 2>/dev/null; then
+			echo "JAVA_HOME=$(ls -d /usr/lib/jvm/java-25-openjdk-* | head -1)" >> "$GITHUB_ENV"
+		else
+			DEBIAN_FRONTEND=noninteractive apt-get install -y -q openjdk-21-jdk
+			echo "JAVA_HOME=$(ls -d /usr/lib/jvm/java-21-openjdk-* | head -1)" >> "$GITHUB_ENV"
+			echo "JAVA_VERSION=21" >> "$GITHUB_ENV"
+		fi
+	fi ;;
 fedora|rocky|almalinux)
 	# Rocky 9 の像は curl-minimal を持ち、curl と衝突する (run 35676218786)。
 	# --allowerasing で入れ替えさせる

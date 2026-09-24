@@ -38,6 +38,10 @@ on:
         description: 'master を JDK 21 (JAVA_VERSION=21) で建てられるかを Ubuntu で測るだけ'
         type: boolean
         default: false
+      i386:
+        description: '32bit x86 (Debian i386 の container) でも建てる。JDK 25 は JEP 503 で 32bit x86 の port ごと消えているので distro の openjdk-21'
+        type: boolean
+        default: false
       netbsd:
         description: 'NetBSD と DragonFly も回す (bazel #31069 と module の当て物を差す)'
         type: boolean
@@ -372,6 +376,35 @@ jobs:
           RP_BUMP: ${{ inputs.rp_bump }}
           NO_MUSL_PATCH: ${{ inputs.no_musl_patch && '1' || '0' }}
           JAVA_VERSION: '21'
+
+  # 32bit x86。CPU は amd64 の runner がそのまま 32bit code を走らせるので
+  # emulation ではない (--platform linux/386 で像だけ 32bit にする)。
+  #
+  # ここで測りたいのは一つ: bazel が i386 で動くのか。bazel の木に i386 を
+  # 拒む code は無く (util/CPU.java:24 が i386 を X86_32 として持っている)、
+  # 壁は JDK の側にある。JEP 503 が JDK 25 で 32bit x86 の port を削除したので
+  # 25 は存在せず、Debian が i386 向けに建てている openjdk-21 で
+  # JAVA_VERSION=21 として建てる。
+  i386:
+    needs: dist
+    if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), ',i386,')) || (inputs.only == '' && inputs.i386) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: master-sh-dist, path: master-sh-dist }
+      - name: 像が本当に 32bit か
+        run: |
+          docker run --rm --platform linux/386 i386/debian:stable \
+            sh -c 'uname -m; dpkg --print-architecture; file /bin/sh'
+      - name: bootstrap the dist on i386 (JDK 21)
+        run: |
+          docker run --rm --platform linux/386 -v "$GITHUB_WORKSPACE:/w" -w /w \
+            -e SH_BIN=/bin/sh -e LOG_BASH=1 -e NO_VIS=0 -e "RP_BUMP=${{ inputs.rp_bump }}" \
+            -e IN_SHELL=/bin/sh \
+            i386/debian:stable /bin/sh \
+            ci/bazel-bootstrap/linux-in-docker.sh /w /w/master-sh-dist/bazel-distfile.zip
 
   netbsd:
     needs: dist
