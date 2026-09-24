@@ -2,7 +2,7 @@ name: mozc334
 
 # mozc 3.34.6239 を gyp で建てる。i386 で通るかを見るのが主目的。
 #
-# 3.34 に gyp は無い。zakinko/mozc-server334 が 3.33.6089 の tarball から
+# 3.34 に gyp は無い。zakinko/mozc-server が 3.33.6089 の tarball から
 # 足場だけを写して建てる。bazel を一度も呼ばないので、singlejar の
 #
 #	#error This code for 64 bit Unix.

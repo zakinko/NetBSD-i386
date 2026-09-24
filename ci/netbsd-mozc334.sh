@@ -9,7 +9,7 @@
 # 一本も無く、建て方は bazel だけである。消えたのは 3.34 ではなく 3.33.6133
 # で、その一つ前の 3.33.6089 が gyp を積んだ最後のタグになる。
 #
-# zakinko/mozc-server334 は 6089 の tarball をもう一本取り、gyp の足場だけを
+# zakinko/mozc-server は 6089 の tarball をもう一本取り、gyp の足場だけを
 # 3.34.6239 の木へ流し込む。被せる規則は「6089 に在って 3.34 に無いものだけ」
 # の一つで足りる。詳しくは doc/audit.md の
 # 「3.34 に GYP を戻せば、i386 の壁は消える」を見よ。
@@ -202,10 +202,10 @@ mv pkgsrc-zakinko-main /usr/pkgsrc/zakinko
 # いるのでそこへ動かしているが、334 はまだ出す先が決まっていない。
 # Makefile.common の DISTINFO_FILE と PATCHDIR も zakinko/ を指している。
 # 無いまま進むと「測っていないのに測ったような出力」になる。先に見て止める。
-for d in mozc-server334 mozc-elisp334; do
+for d in mozc-server mozc-elisp; do
 	[ -d /usr/pkgsrc/zakinko/$d ] || { echo "!! overlay に $d が無い"; exit 1; }
 done
-ls -d /usr/pkgsrc/zakinko/mozc-server334 /usr/pkgsrc/zakinko/mozc-elisp334
+ls -d /usr/pkgsrc/zakinko/mozc-server /usr/pkgsrc/zakinko/mozc-elisp
 
 echo "=== 道具を binary package で入れる ==="
 # ソースから建てると devel/ninja-build が devel/re2c を、re2c が
@@ -242,12 +242,12 @@ for p in ninja-build py313-gyp py313-six gcc12 "$EPKG"; do
 	pkg_info -e "$p" >/dev/null 2>&1 || { echo "!! $p を binary で入れられなかった"; exit 1; }
 done
 unset PKG_PATH
-# 入れた emacs が、mozc-elisp334 が要求するものと同じ名前かを見る。
+# 入れた emacs が、mozc-elisp が要求するものと同じ名前かを見る。
 # 名前が違っても pkg_info -e は通るので、上の輪では気づけない。ここで
 # 見ておかないと、emacs を一時間かけて建て終わったあとの depends.mk で
 # 落ちる。pkgsrc-2026Q2 の emacs30-nox11/version.mk がまさにそれだった。
-EREQ=$(cd /usr/pkgsrc/zakinko/mozc-elisp334 && 	make show-var VARNAME=DEPENDS EMACS_TYPE="$ETYPE" 2>/dev/null | tr ' ' '\n' | grep '^emacs')
-echo "  mozc-elisp334 が要る emacs: ${EREQ:-(取れなかった)}"
+EREQ=$(cd /usr/pkgsrc/zakinko/mozc-elisp && 	make show-var VARNAME=DEPENDS EMACS_TYPE="$ETYPE" 2>/dev/null | tr ' ' '\n' | grep '^emacs')
+echo "  mozc-elisp が要る emacs: ${EREQ:-(取れなかった)}"
 if [ -n "$EREQ" ] && ! pkg_info -e "${EREQ%%:*}" >/dev/null 2>&1; then
 	echo "!! 入れた $EPKG は ${EREQ%%:*} を満たさない"
 	pkg_info -e 'emacs*' | sed 's/^/    入っている: /'
@@ -273,7 +273,7 @@ EOF
 # i386 では options.mk が gyp を既定にする。それが効いているかを測るのが
 # この script の目的なので、i386 では何も足さない。
 #
-# 64bit の箱で回すと既定は bazel になり、TOOL_DEPENDS が zakinko/bazel9 を
+# 64bit の箱で回すと既定は bazel になり、TOOL_DEPENDS が zakinko/bazel を
 # 引く。あれは bootstrap に二時間から三時間かかるので、測りたいものと
 # 関係のない時間を CI が払うことになる。i386 以外では gyp を明示する。
 case $(uname -m) in
@@ -288,7 +288,7 @@ echo "##### 0. 6089 の足場が 3.34 の木に載ったか #####"
 # 3.34 に gyp は無い。Makefile.common の post-extract が 3.33.6089 の tarball
 # から足場だけを写す。ここが空振りしていると、この先は「gyp が無い」ではなく
 # 「build_mozc.py が無い」という分かりにくい落ち方をする。先に見て止める。
-cd /usr/pkgsrc/zakinko/mozc-server334
+cd /usr/pkgsrc/zakinko/mozc-server
 make patch >/tmp/patch.log 2>&1 || { echo 'RESULT patch: 落ちた'; tail -30 /tmp/patch.log; exit 1; }
 S=$(make show-var VARNAME=WRKSRC 2>/dev/null)
 echo "  WRKSRC = $S"
@@ -306,11 +306,11 @@ if grep -qE '^Ignoring patch file|Hunk #[0-9]+ FAILED|saving rejects to|\*\*\* E
 	grep -E '^Ignoring patch file|Hunk #[0-9]+ FAILED|saving rejects to' /tmp/patch.log | head -10
 	exit 1
 fi
-echo "  当て物 $(ls /usr/pkgsrc/zakinko/mozc-server334/patches | wc -l) 本、reject 無し"
+echo "  当て物 $(ls /usr/pkgsrc/zakinko/mozc-server/patches | wc -l) 本、reject 無し"
 
 echo
 echo "##### 1. gyp の configure が通るか #####"
-cd /usr/pkgsrc/zakinko/mozc-server334
+cd /usr/pkgsrc/zakinko/mozc-server
 V=$(make show-var VARNAME=PKGNAME 2>/dev/null)
 [ -n "$V" ] || { echo "!! PKGNAME が取れない。ここで止める"; exit 1; }
 echo "  PKGNAME     = $V"
@@ -347,20 +347,20 @@ grep -h 'Version string is' /tmp/conf.log | sed 's/^/  /'
 echo
 echo "##### 2. 建つか #####"
 if make package-install >/tmp/server.log 2>&1; then
-	echo 'RESULT mozc-server334: 通った'
+	echo 'RESULT mozc-server: 通った'
 else
-	echo 'RESULT mozc-server334: 落ちた'
+	echo 'RESULT mozc-server: 落ちた'
 	tail -40 /tmp/server.log
 	exit 1
 fi
 grep -oE '^\[[0-9]+/[0-9]+\] LINK mozc_server' /tmp/server.log | sed 's/^/  /'
 
-cd /usr/pkgsrc/zakinko/mozc-elisp334
+cd /usr/pkgsrc/zakinko/mozc-elisp
 echo "DEPENDS:"; make show-depends 2>/dev/null | sed 's/^/  /'
 if make package-install >/tmp/elisp.log 2>&1; then
-	echo 'RESULT mozc-elisp334: 通った'
+	echo 'RESULT mozc-elisp: 通った'
 else
-	echo 'RESULT mozc-elisp334: 落ちた'
+	echo 'RESULT mozc-elisp: 落ちた'
 	tail -40 /tmp/elisp.log
 	exit 1
 fi
@@ -499,7 +499,7 @@ else
 		# /usr/pkg/libexec/mozc_server は INSTALL_PROGRAM が -s で入れるので
 		# stripped で、bt が ?? だらけになる。work に未 strip のものが残って
 		# いるので、在ればそちらを使う。
-		B=/usr/pkgsrc/zakinko/mozc-server334/work/mozc-3.33.6089/src/out_bsd/Release/mozc_server
+		B=/usr/pkgsrc/zakinko/mozc-server/work/mozc-3.33.6089/src/out_bsd/Release/mozc_server
 		[ -f "$B" ] || B=/usr/pkg/libexec/mozc_server
 		echo "  binary: $B"
 		file "$B" | sed 's/^/  /'
