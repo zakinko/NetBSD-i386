@@ -364,8 +364,8 @@ echo "=== 道具を binary package で入れる ==="
 # 入れて pkgsrc には「found」と言わせる。mozc-server226 と mozc-elisp226 は
 # ソースから建てるので、測るものは変わらない。
 #
-# netbsd-mozc333.sh が先に同じことをしている。あちらは ninja が re2c を、
-# re2c が cmake を引いて / が溢れたのがきっかけだった。
+# mozc 3.33 を建てていたときに先に同じことをしている。あちらは ninja が
+# re2c を、re2c が cmake を引いて / が溢れたのがきっかけだった。
 REL=$(uname -r | sed 's/_.*//')
 BINPKG=https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$(uname -p)/$REL/All
 echo "  $BINPKG"
