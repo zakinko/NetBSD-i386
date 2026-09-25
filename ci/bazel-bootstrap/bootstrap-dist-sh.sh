@@ -74,6 +74,18 @@ FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|OpenBSD|NetBSD|DragonFly)
 	cat "$CI_DIR/protobuf-29694.patch" >> third_party/protobuf.patch ;;
 esac
 
+# 32bit x86 も同じ。rules_python は linux の 32bit x86 向けの CPython を配って
+# いないので、pip.parse が評価の時点で interpreter を見つけられずに落ちる。
+# run 36148686126 の "Expected to find python_3_11_host among registered
+# versions:" の後ろが空で、一つも登録されていないことが出ている。
+if [ "${I386:-0}" = 1 ]; then
+	echo "=== pip の塊を落とす (i386)"
+	python3 "$CI_DIR/drop_pip_dev_deps.py" .
+	if grep -rq bazel_pip_dev_deps MODULE.bazel third_party/py 2>/dev/null; then
+		echo "pip の塊が残っている"; exit 1
+	fi
+fi
+
 # NetBSD と DragonFly は master が host として未対応 (#31069 が open)。#31069 の
 # diff を dist に当て (build_unix_jni.sh の腕は sh 形に写した物、unix_jni.h は
 # musl の当て物が代わり)、platforms / rules_java / zstd-jni / rules_go に
