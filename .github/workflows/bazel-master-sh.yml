@@ -387,7 +387,8 @@ jobs:
     needs: dist
     if: ${{ (inputs.only != '' && contains(format(',{0},', inputs.only), ',i386,')) || (inputs.only == '' && inputs.i386) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    # 32bit の JVM は遅い。GitHub の job の上限 (6 時間) まで取る
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -403,7 +404,7 @@ jobs:
         run: |
           docker run --rm --platform linux/386 -v "$GITHUB_WORKSPACE:/w" -w /w \
             -e SH_BIN=/bin/sh -e LOG_BASH=1 -e NO_VIS=0 -e "RP_BUMP=${{ inputs.rp_bump }}" \
-            -e IN_SHELL=/bin/sh -e I386=1 \
+            -e IN_SHELL=/bin/sh -e I386=1 -e JDK_WANT=21 \
             i386/debian:stable /bin/sh \
             ci/bazel-bootstrap/linux-in-docker.sh /w /w/master-sh-dist/bazel-distfile.zip
 

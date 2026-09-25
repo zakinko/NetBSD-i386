@@ -15,7 +15,17 @@ debian|ubuntu)
 	# docker run の箱 (IN_DOCKER) には setup-java が届かない。i386 では
 	# そもそも temurin に 32bit の像が無く、JDK 25 は JEP 503 で 32bit x86 の
 	# port ごと消えているので、distro の JDK を入れる。25 が無ければ 21
-	if [ -n "${IN_DOCKER:-}" ]; then
+	#
+	# JDK_WANT=21 のときは 21 を名指しする。i386 では Debian の openjdk-25 が
+	# lib/zero/libjvm.so しか持たず (JEP 503 の後は Zero しか建たない)、
+	# openjdk-21 は lib/server と lib/client を持つ。25 を先に試す順だと
+	# 黙って Zero が入り、bootstrap が interpreter で 3 時間を超えた
+	# (run 36167481928)。
+	if [ -n "${IN_DOCKER:-}" ] && [ "${JDK_WANT:-}" = 21 ]; then
+		DEBIAN_FRONTEND=noninteractive apt-get install -y -q openjdk-21-jdk
+		echo "JAVA_HOME=$(ls -d /usr/lib/jvm/java-21-openjdk-* | head -1)" >> "$GITHUB_ENV"
+		echo "JAVA_VERSION=21" >> "$GITHUB_ENV"
+	elif [ -n "${IN_DOCKER:-}" ]; then
 		if DEBIAN_FRONTEND=noninteractive apt-get install -y -q openjdk-25-jdk 2>/dev/null; then
 			echo "JAVA_HOME=$(ls -d /usr/lib/jvm/java-25-openjdk-* | head -1)" >> "$GITHUB_ENV"
 		else

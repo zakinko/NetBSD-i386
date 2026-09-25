@@ -410,7 +410,19 @@ WRAP
 fi
 
 echo "=== bootstrap を $SH_BIN で"
-"$SH_BIN" ./compile.sh > compile.log 2>&1 || true
+# 出力は compile.log に取るので、job の timeout で切られると何も残らない
+# (i386 の run 36167481928 は 3 時間黙ったまま切られた)。5 分ごとに bazel の
+# 進捗行を一行だけ出す。loop は compile.sh の pid が生きている間だけ回る。
+"$SH_BIN" ./compile.sh > compile.log 2>&1 &
+cpid=$!
+while kill -0 "$cpid" 2>/dev/null; do
+	sleep 300
+	kill -0 "$cpid" 2>/dev/null || break
+	p=$(tr '\r' '\n' < compile.log | tr -d '\033' | sed 's/\[[0-9;]*[A-Za-z]//g' |
+	    grep -o '\[[0-9,]* / [0-9,]*\].*' | tail -1 | cut -c1-160)
+	echo "... $(date +%H:%M) ${p:-(進捗行はまだ無い)}"
+done
+wait "$cpid" || true
 BZ=output/bazel
 if [ -x output/bazel.exe ]; then BZ=output/bazel.exe; fi
 if [ -x "$BZ" ] && "$BZ" version 2>/dev/null | grep -q '^Build label:'; then
