@@ -11,9 +11,9 @@ of the translations.
 The print() is here to record which spelling this box actually reports, since
 os.arch may also be i686 or x86.  CI only.
 
---- a/go/private/sdk.bzl
-+++ b/go/private/sdk.bzl
-@@ -470,10 +470,13 @@ def detect_host_platform(ctx):
+--- a/go/private/sdk.bzl	2026-09-25 23:34:53
++++ b/go/private/sdk.bzl	2026-09-25 23:34:53
+@@ -470,10 +470,13 @@
          goos = "windows"
  
      goarch = ctx.os.arch
@@ -26,3 +26,4 @@ os.arch may also be i686 or x86.  CI only.
 +        goarch = "386"
  
      return goos, goarch
+ 

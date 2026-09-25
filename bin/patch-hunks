@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""当て物の hunk header の行数が本体と合っているかを数える。
+
+GNU の当て器は数を数えず、fuzz で当ててしまう。bazel の
+single_version_override の適用器は数えるので、手で書いた hunk の
+末尾 context を一行落としただけで
+
+    error applying single_version_override patch ...:
+    Expecting more chunk line at line 29
+
+と、当て物の中身とは関係の無い顔で落ちる (run 36143273161)。手元の空当ては
+数えないので、そこでは見えない。
+
+引数を与えなければ ci/ 以下の *.patch を全部見る。
+"""
+import re, sys, pathlib
+
+HUNK = re.compile(r'^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@')
+
+
+def check(path, text):
+    """その file の不備の一覧を返す。"""
+    bad = []
+    # splitlines は ^L でも切るので使わない (diff の中に在り得る)。
+    # 末尾の改行が作る空要素だけを落とす — 残すと context 行として
+    # 数えてしまい、末尾 context の落ちを見逃す (自己試験がこれを捕まえた)。
+    lines = text.split('\n')
+    if lines and lines[-1] == '':
+        lines.pop()
+    i = 0
+    while i < len(lines):
+        m = HUNK.match(lines[i])
+        if not m:
+            i += 1
+            continue
+        want_old = int(m.group(2)) if m.group(2) is not None else 1
+        want_new = int(m.group(4)) if m.group(4) is not None else 1
+        old = new = 0
+        j = i + 1
+        while j < len(lines) and (old < want_old or new < want_new):
+            ln = lines[j]
+            if ln.startswith('+'):
+                new += 1
+            elif ln.startswith('-'):
+                old += 1
+            elif ln.startswith(' ') or ln == '':
+                old += 1
+                new += 1
+            elif ln.startswith('\\'):   # \ No newline at end of file
+                pass
+            else:                        # hunk の外へ出た
+                break
+            j += 1
+        if old != want_old or new != want_new:
+            bad.append('%s:%d: header は -%d,%d +%d,%d だが本体は -%d +%d'
+                       % (path, i + 1, int(m.group(1)), want_old,
+                          int(m.group(3)), want_new, old, new))
+        i = j
+    return bad
+
+
+SELF_TESTS = [
+    ('健全', '@@ -1,3 +1,4 @@\n a\n-b\n+B\n+c\n d\n', 0),
+    ('末尾 context 落ち', '@@ -1,3 +1,4 @@\n a\n-b\n+B\n+c\n', 1),
+    ('数だけ多い', '@@ -1,9 +1,4 @@\n a\n-b\n+B\n+c\n d\n', 1),
+    ('省略形 (, 無し)', '@@ -1 +1 @@\n-a\n+b\n', 0),
+]
+
+
+def self_test():
+    for name, text, want in SELF_TESTS:
+        got = len(check('<self-test>', text))
+        if got != want:
+            print('自己試験が落ちた: %s は %d 件のはずが %d 件' % (name, want, got))
+            return False
+    print('自己試験 OK (健全 2 種を通し、不良 2 種を捕まえた)')
+    return True
+
+
+def main():
+    if not self_test():
+        return 2
+    args = sys.argv[1:]
+    paths = [pathlib.Path(a) for a in args] if args else sorted(pathlib.Path('ci').rglob('*.patch'))
+    print('%d 本の当て物を見る' % len(paths))
+    bad = []
+    for p in paths:
+        bad += check(str(p), p.read_text(encoding='utf-8', errors='replace'))
+    for b in bad:
+        print('NG ' + b)
+    if bad:
+        print('%d 個の hunk で header と本体が合わない' % len(bad))
+        return 1
+    print('OK: すべての hunk で header と本体が一致')
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
