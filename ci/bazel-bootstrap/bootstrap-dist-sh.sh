@@ -337,8 +337,11 @@ fi
 # master の bazel は incompatible_no_implicit_file_export が既定 true で、
 # rules_python 1.7.0 は runtime_env_toolchain_interpreter.sh を export して
 # いないので、bootstrap.sh が渡す --extra_toolchains=@rules_python//... で
-# analysis が落ちる。検査を切るのではなく、rules_python にその一行 (main には
-# 既に在る) を当てる。#30914 (rules_python の bump) が入れば要らなくなる。
+# analysis が落ちる。検査を切るのではなく、rules_python にその一行を当てる。
+#
+# 2026-09-25 に bazel#30914 (d8e92bf7f819) が master の rules_python を
+# 1.9.2 に上げ、1.9.2 は python/private/BUILD.bazel の 32 行目で export を
+# 持っている。当て物は 1.7.0 の上の枝のためにだけ残す。
 if [ "$NO_VIS" = 1 ]; then
 	EXTRA_BAZEL_ARGS="$EXTRA_BAZEL_ARGS --check_visibility=false"
 elif [ -n "${RP_BUMP:-}" ]; then
@@ -355,7 +358,11 @@ MOD
 	echo "rules_python を $RP_BUMP に上げた (当て物なし)"
 else
 	RP=$(grep -o 'name = "rules_python", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
-	[ -f "$CI_DIR/rules_python-$RP-export.patch" ] || { echo "rules_python $RP 向けの export の当て物が無い"; exit 1; }
+	if [ ! -f "$CI_DIR/rules_python-$RP-export.patch" ]; then
+		# 当て物を持っているのは export を欠く版だけ。持っていない版は export が
+		# 在るものとして当てない。欠けていれば解析が visibility で落ちるので黙らない。
+		echo "=== rules_python $RP: export の当て物は当てない (この版は持っている前提)"
+	else
 	mkdir -p toolchain_local
 	cp "$CI_DIR/rules_python-$RP-export.patch" toolchain_local/rules_python-export.patch
 	[ -f toolchain_local/BUILD ] || printf 'exports_files(glob(["*.patch"]))\n' > toolchain_local/BUILD
@@ -371,6 +378,7 @@ single_version_override(
 )
 MOD
 	echo "rules_python $RP に export の一行を当てた (--check_visibility は既定のまま)"
+	fi
 fi
 export EXTRA_BAZEL_ARGS
 echo "EXTRA_BAZEL_ARGS=$EXTRA_BAZEL_ARGS"
