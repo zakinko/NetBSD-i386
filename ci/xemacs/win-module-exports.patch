@@ -1,5 +1,5 @@
 diff --git a/nt/xemacs.mak b/nt/xemacs.mak
-index 3438897..19534d5 100644
+index 3438897..c2e0cb7 100644
 --- a/nt/xemacs.mak
 +++ b/nt/xemacs.mak
 @@ -691,6 +691,10 @@ PROFILE_FLAGS=
@@ -21,7 +21,47 @@ index 3438897..19534d5 100644
  	$(OUTDIR)\imgproc.obj \
  	$(OUTDIR)\insdel.obj \
  	$(OUTDIR)\intl.obj \
-@@ -1198,8 +1203,10 @@ TEMACS_COMMON_LFLAGS=-nologo $(LIBRARIES) $(DEBUG_FLAGS_LINK) \
+@@ -971,6 +976,39 @@ CONFIG_VALUES = $(BLDLIB_SRC)\config.values
+ !endif
+ !if [echo LISPDIR>>$(CONFIG_VALUES) && echo "\\$(LISP:\=\\)">>$(CONFIG_VALUES)]
+ !endif
++
++# lisp/ellcc.el drives the module compiler and linker, and takes every
++# tool and flag from config.values.  None of the names it reads were
++# written here, so config-value handed it nil and it could not run at
++# all.  The Unix values come from configure; these are the same values
++# as this makefile already uses to build XEmacs itself.
++!if [echo XEMACS_CC>>$(CONFIG_VALUES) && echo "$(CC:\=\\)">>$(CONFIG_VALUES)]
++!endif
++!if [echo XE_CFLAGS>>$(CONFIG_VALUES) && echo "$(CFLAGS:\=\\)">>$(CONFIG_VALUES)]
++!endif
++!if [echo c_switch_all>>$(CONFIG_VALUES) && echo "$(INCLUDES:\=\\)">>$(CONFIG_VALUES)]
++!endif
++!if [echo LDFLAGS>>$(CONFIG_VALUES) && echo "">>$(CONFIG_VALUES)]
++!endif
++# MSVC has no position-independent-code switch; code is relocatable.
++!if [echo dll_cflags>>$(CONFIG_VALUES) && echo "">>$(CONFIG_VALUES)]
++!endif
++!if [echo dll_ld>>$(CONFIG_VALUES) && echo "link.exe">>$(CONFIG_VALUES)]
++!endif
++!if [echo dll_ldflags>>$(CONFIG_VALUES) && echo "-nologo -dll">>$(CONFIG_VALUES)]
++!endif
++# link takes the output name joined to the switch, not as a separate
++# argument the way -o does.
++!if [echo dll_ldo>>$(CONFIG_VALUES) && echo "-out:">>$(CONFIG_VALUES)]
++!endif
++# The import library the xemacs.exe link now produces.  A module
++# resolves the module API against it.
++!if [echo dll_post>>$(CONFIG_VALUES) && echo "$(BLDSRC:\=\\)\\xemacs.lib">>$(CONFIG_VALUES)]
++!endif
++!if [echo configuration>>$(CONFIG_VALUES) && echo "$(EMACS_CONFIGURATION)">>$(CONFIG_VALUES)]
++!endif
++!if [echo version>>$(CONFIG_VALUES) && echo "$(XEMACS_VERSION_STRING)">>$(CONFIG_VALUES)]
++!endif
+ !if defined(PATH_LATE_PACKAGE_DIRECTORIES)
+ # PATH_LATE_PACKAGE_DIRECTORIES is already a quoted string.
+ ! if [echo PATH_LATE_PACKAGE_DIRECTORIES>>$(CONFIG_VALUES) && echo $(PATH_LATE_PACKAGE_DIRECTORIES)>>$(CONFIG_VALUES)]
+@@ -1198,8 +1236,10 @@ TEMACS_COMMON_LFLAGS=-nologo $(LIBRARIES) $(DEBUG_FLAGS_LINK) \
   $(PROFILE_FLAGS) setargv.obj
  TEMACS_LFLAGS=$(TEMACS_COMMON_LFLAGS) \
   -pdb:$(BLDSRC)\temacs.pdb -map:$(BLDSRC)\temacs.map
@@ -33,7 +73,7 @@ index 3438897..19534d5 100644
  
  
  ########################### Definitions for running temacs.exe/xemacs.exe
-@@ -1251,6 +1258,29 @@ $(OUTDIR)\temacs.res: $(NT)\xemacs.rc
+@@ -1251,6 +1291,29 @@ $(OUTDIR)\temacs.res: $(NT)\xemacs.rc
  
  TEMACS_DUMP_DEP = $(OUTDIR)\dump-id.obj
  
@@ -63,7 +103,7 @@ index 3438897..19534d5 100644
  $(RAW_EXE): $(TEMACS_OBJS) $(TEMACS_DUMP_DEP)
  # Command line too long for some Windows installation:
  #	@echo link $(TEMACS_LFLAGS) -out:$@ $(TEMACS_OBJS) $(TEMACS_DUMP_DEP) $(TEMACS_LIBS)
-@@ -1276,7 +1306,7 @@ $(BLDSRC)\NEEDTODUMP:
+@@ -1276,7 +1339,7 @@ $(BLDSRC)\NEEDTODUMP:
  # This rule dumps xemacs and then possibly spawns sub-make if PURESPACE
  # requirements have changed.
  

@@ -100,6 +100,7 @@ jobs:
           grep -q -- '-implib:' nt/xemacs.mak
           grep -q 'XEMACS_DEF' nt/xemacs.mak
           grep -q 'USE_CPLUSPLUS' nt/xemacs.mak src/config.h.in
+          grep -q 'echo dll_ld>>' nt/xemacs.mak
 
       - uses: ilammy/msvc-dev-cmd@v1
 
@@ -187,6 +188,44 @@ jobs:
           }
           Get-Content probe.out, probe.err -EA SilentlyContinue
           Write-Host "exit: $($p.ExitCode)"
+
+      - name: ellcc が config.values を読めるか
+        shell: pwsh
+        run: |
+          # ellcc は module の compiler/linker 駆動で、道具も flag も全て
+          # config.values から引く。nt/xemacs.mak が書いていた 8 個には
+          # 一つも含まれていなかったので、config-value は nil を返し、
+          # ellcc は起動すらできなかった。足した値が届いているかを見る。
+          # ここで測れるのは「ellcc が走って値を見ている」ことまで。
+          # .ell が建つかは別に測る。
+          $i = Join-Path $PWD "xemacs\lib-src\i.exe"
+          $el = Join-Path $PWD "xemacs\lisp\ellcc.el"
+          $a = @("src\xemacs.exe","-batch","--script",$el,"--",
+                 "--mode=verbose","--mode=verbose","--mod-name=sample",
+                 "--mod-version=0.0.1","--mod-title=probe")
+          $p = Start-Process -FilePath $i -ArgumentList $a `
+                 -WorkingDirectory "$PWD\xemacs" -NoNewWindow -PassThru `
+                 -RedirectStandardOutput ellcc.out -RedirectStandardError ellcc.err
+          if (-not $p.WaitForExit(180000)) {
+            $p.Kill(); Get-Content ellcc.out, ellcc.err -EA SilentlyContinue
+            throw "ellcc が 180 秒で返らなかった"
+          }
+          Write-Host "--- config.values ---"
+          Get-Content xemacs/lib-src/config.values
+          Write-Host "--- ellcc --mode=verbose ---"
+          Get-Content ellcc.out, ellcc.err -EA SilentlyContinue
+          Write-Host "exit: $($p.ExitCode)"
+          # 足した値を一つずつ名指しで確かめる。ここで "= nil" を一律に
+          # 弾くと ARCHLIBDIR で落ちる — あれはまだ足していないので
+          # "Include directory = nil/include" と出るのが正しい姿。
+          $o = (Get-Content ellcc.out -Raw -EA SilentlyContinue)
+          foreach ($pat in 'LD = link\.exe',
+                           'LDFLAGS = -nologo -dll',
+                           'architecture = \S+-pc-win32',
+                           'CC = \S') {
+            if ($o -notmatch $pat) { throw "config.values が届いていない: $pat" }
+          }
+          Write-Host "ARCHLIBDIR はまだ足していないので Include directory は nil のまま"
 
       - name: 動的ロードの足回りが object に入っているか
         shell: cmd
