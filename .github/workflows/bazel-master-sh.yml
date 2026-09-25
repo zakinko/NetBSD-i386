@@ -403,7 +403,7 @@ jobs:
         run: |
           docker run --rm --platform linux/386 -v "$GITHUB_WORKSPACE:/w" -w /w \
             -e SH_BIN=/bin/sh -e LOG_BASH=1 -e NO_VIS=0 -e "RP_BUMP=${{ inputs.rp_bump }}" \
-            -e IN_SHELL=/bin/sh \
+            -e IN_SHELL=/bin/sh -e I386=1 \
             i386/debian:stable /bin/sh \
             ci/bazel-bootstrap/linux-in-docker.sh /w /w/master-sh-dist/bazel-distfile.zip
 

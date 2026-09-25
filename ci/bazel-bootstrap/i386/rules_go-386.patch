@@ -1,0 +1,28 @@
+rules_go translates the JRE's os.arch into a GOARCH, but the table only
+covers aarch64 and x86_64, so on a 32-bit x86 host "i386" passes through
+unchanged and the generated toolchains reference @rules_go//go/toolchain:i386,
+which does not exist -- the GOARCH is spelled "386", as go/private/platforms.bzl
+already has it.
+
+The i686 -> 386 case used to be there; it was dropped in cf20167d (#3282),
+which replaced the uname-based detection with ctx.os.arch and kept only two
+of the translations.
+
+The print() is here to record which spelling this box actually reports, since
+os.arch may also be i686 or x86.  CI only.
+
+--- a/go/private/sdk.bzl
++++ b/go/private/sdk.bzl
+@@ -470,10 +470,13 @@ def detect_host_platform(ctx):
+         goos = "windows"
+ 
+     goarch = ctx.os.arch
++    print("rules_go-386.patch: ctx.os.arch = " + goarch)
+     if goarch == "aarch64":
+         goarch = "arm64"
+     elif goarch == "x86_64":
+         goarch = "amd64"
++    elif goarch in ("i386", "i486", "i586", "i686", "i786", "x86"):
++        goarch = "386"
+ 
+     return goos, goarch

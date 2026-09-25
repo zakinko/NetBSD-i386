@@ -232,6 +232,30 @@ MOD
 	;;
 esac
 
+# 32bit x86。rules_go の detect_host_platform が JRE の os.arch を GOARCH へ
+# 翻訳する表に i386 の腕が無く、//go/toolchain:i386 という在りもしない label が
+# 組み立てられて解析が止まる (run 36022221000)。GOARCH の綴り 386 自体は
+# go/private/platforms.bzl に在るので、翻訳を一つ足すだけ。
+# i686 -> 386 の腕は昔は在り、uname から ctx.os.arch へ移す refactor
+# (rules_go cf20167d, #3282) で落ちている。
+if [ "${I386:-0}" = 1 ]; then
+	echo "=== i386: rules_go に GOARCH の翻訳を足す"
+	RG=$(grep -o 'name = "rules_go", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
+	mkdir -p toolchain_local
+	cp "$CI_DIR/i386/rules_go-386.patch" toolchain_local/
+	printf 'exports_files(glob(["*.patch"]))\n' > toolchain_local/BUILD
+	cat >> MODULE.bazel <<MOD
+
+# rules_go does not translate a 32-bit x86 os.arch into the GOARCH 386 (CI only).
+single_version_override(
+    module_name = "rules_go",
+    version = "$RG",
+    patch_strip = 1,
+    patches = ["//toolchain_local:rules_go-386.patch"],
+)
+MOD
+fi
+
 # OS ごとの手当て。どれも sh 化とは無関係で、素の dist を bash で建てるときにも要る物。
 EXTRA_BAZEL_ARGS="${EXTRA_BAZEL_ARGS:-} --shell_executable=$SH_BIN"
 case "$OS" in
