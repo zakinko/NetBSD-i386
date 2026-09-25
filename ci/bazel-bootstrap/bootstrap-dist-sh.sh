@@ -251,6 +251,16 @@ esac
 # i686 -> 386 の腕は昔は在り、uname から ctx.os.arch へ移す refactor
 # (rules_go cf20167d, #3282) で落ちている。
 if [ "${I386:-0}" = 1 ]; then
+	# singlejar の mmap 実装は 2016 年の最初の checkin から 64bit 限定を
+	# #error で宣言している (run 36157607631)。消えた物ではなく設計上の制限
+	# なので上流の話とは別。どこまで行くかを見るためだけに外す (CI 限定)。
+	# 32bit では 4GB を超える jar を map できないが、bootstrap の jar は届かない。
+	f=src/tools/singlejar/mapped_file_posix.inc
+	n0=$(grep -c '__SIZEOF_POINTER__ == 8)' "$f" || true)
+	sed 's/__SIZEOF_POINTER__ == 8)/(__SIZEOF_POINTER__ == 8 || __SIZEOF_POINTER__ == 4))/' "$f" > "$f.new" && mv "$f.new" "$f"
+	n1=$(grep -c '__SIZEOF_POINTER__ == 4' "$f" || true)
+	echo "=== i386: singlejar の 64bit guard を緩める (前 $n0 箇所 -> 後 $n1 箇所)"
+	[ "$n0" = 1 ] && [ "$n1" = 1 ] || { echo "singlejar の guard が想定と違う"; exit 1; }
 	echo "=== i386: rules_go に GOARCH の翻訳を足す"
 	RG=$(grep -o 'name = "rules_go", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
 	mkdir -p toolchain_local
