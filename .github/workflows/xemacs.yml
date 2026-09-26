@@ -32,7 +32,7 @@ on:
       target:
         description: 'どれを回すか'
         type: choice
-        options: [both, overread, windows, alloca, check]
+        options: [both, overread, windows, alloca, check, recheck]
         default: both
 
 concurrency:
@@ -392,3 +392,69 @@ jobs:
               check-$os-base/check.log check-$os-patched/check.log || rc=1
           done
           exit $rc
+
+  windows-recheck:
+    if: ${{ inputs.target == 'recheck' }}
+    name: Windows の差が木に付くか箱に付くか (同じ job で交互に)
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 後で走らせる PowerShell を先に構文だけ通す
+        shell: pwsh
+        run: |
+          $bad = 0
+          foreach ($f in Get-ChildItem ci/xemacs/*.ps1) {
+            $errs = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $f.FullName, [ref]$null, [ref]$errs)
+            if ($errs) { $errs | ForEach-Object { "$($f.Name): $_" }; $bad++ }
+            else { "$($f.Name): ok" }
+          }
+          if ($bad) { throw "構文エラーのある script: $bad" }
+
+      - name: XEmacs を二つ取り、片方にだけ当てる
+        shell: bash
+        run: |
+          git clone --quiet --depth 1 https://github.com/zakinko/XEmacs xb
+          cp -a xb xp
+          cd xp
+          patch -p1 -f -i "$GITHUB_WORKSPACE/ci/xemacs/win-module-exports.patch" </dev/null
+          grep -q 'emodule_noop_' lisp/ellcc.el
+          cd ../xb && ! grep -q 'emodule_noop_' lisp/ellcc.el
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: config.inc を両方に置く
+        shell: pwsh
+        run: |
+          ci/xemacs/win-config-inc.ps1 "$PWD/xb"
+          ci/xemacs/win-config-inc.ps1 "$PWD/xp"
+
+      - name: 素の木を建てる
+        shell: cmd
+        continue-on-error: true
+        run: |
+          cd xb\nt
+          nmake -f xemacs.mak
+
+      - name: 当てた木を建てる
+        shell: cmd
+        continue-on-error: true
+        run: |
+          cd xp\nt
+          nmake -f xemacs.mak
+
+      - name: 両方の xemacs.exe が出来たか
+        shell: pwsh
+        run: |
+          foreach ($t in 'xb','xp') {
+            $len = (Get-Item "$t/src/xemacs.exe").Length
+            Write-Host "$t/src/xemacs.exe: $len bytes"
+            if ($len -lt 1000000) { throw "$t の xemacs.exe が $len バイトしかない" }
+          }
+
+      - name: 二つの test を交互に三回ずつ
+        shell: pwsh
+        run: ci/xemacs/win-recheck.ps1 "$PWD\xb" "$PWD\xp"

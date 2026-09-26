@@ -17,9 +17,12 @@ the base tree already had are shown but are not the patch's.
 import re
 import sys
 
-OK = re.compile(r'^(\S+)\s+(\d+) of (\d+) tests successful')
-NONE = re.compile(r'^(\S+)\s+No tests run\.')
-ABORT = re.compile(r'^(\S+)\s+(\d+) tests completed \(aborted\)')
+# test-harness pads the counts to a column ("18 of    18"), so every gap
+# is \s+.  A first version wrote single spaces and matched only the lines
+# whose counts filled the column, 7 files of 39.
+OK = re.compile(r'^(\S+?):?\s+(\d+)\s+of\s+(\d+)\s+tests successful')
+NONE = re.compile(r'^(\S+?):?\s+No tests run\.')
+ABORT = re.compile(r'^(\S+?):?\s+(\d+)\s+tests completed \(aborted\)')
 
 
 def summary(path):
@@ -54,6 +57,19 @@ def main():
         sys.exit('no test-harness summary in the base log: nothing measured')
     if not patched:
         sys.exit('no test-harness summary in the patched log: nothing measured')
+    # Count the files named on anything that looks like a summary line
+    # against the files parsed, so a parser that misses a format cannot
+    # report a partial comparison as a whole one.  Names, not lines: each
+    # summary appears twice in the log, once as the file finishes and once
+    # in the table at the end.
+    for path, got in ((sys.argv[1], base), (sys.argv[2], patched)):
+        with open(path, encoding='utf-8', errors='replace') as f:
+            seen = {l.split()[0].rstrip(':') for l in f
+                    if re.search(r'tests successful|No tests run|\(aborted\)', l)
+                    and l.split()}
+        if seen != set(got):
+            sys.exit(f'{path}: summary lines name {len(seen)} files, parsed '
+                     f'{len(got)}; not parsed: {sorted(seen - set(got))}')
 
     worse = []
     width = max(len(k) for k in base.keys() | patched.keys())
