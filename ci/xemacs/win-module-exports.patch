@@ -1,3 +1,21 @@
+--- a/lisp/ChangeLog
++++ b/lisp/ChangeLog
+@@ -1,3 +1,15 @@
++2026-09-26  Showta Ishizaki  <zakinko@snowrabbit.org>
++
++	* ellcc.el:
++	* ellcc.el (msvc-exports): New.
++	In the init file, under MSVC, ask the linker to export the names
++	emodules.c looks up; an MSVC DLL exports only what it is told to.
++	The optional modules_of_ and unload_ fall back to a function that
++	does nothing.  On x86 the exported name is mapped to the
++	underscored one in the object file.
++	When dll_ldo ends in a colon or an equals sign, join it to the
++	output file name; MSVC's link wants -out:NAME.
++
+ 2025-09-23  Aidan Kehoe  <kehoea@parhasard.net>
+ 
+ 	* XEmacs 21.5.37 "lettuce" is released.
 --- a/lisp/ellcc.el
 +++ b/lisp/ellcc.el
 @@ -196,8 +196,25 @@
@@ -62,9 +80,9 @@
  
 +#ifdef _MSC_VER
 +/* emodules.c finds these by name.  An MSVC DLL exports only what it is
-+   told to, unlike GNU ld, which exports everything when nothing is
-+   marked.  The optional entry points fall back to a function that does
-+   nothing, which is what their absence means to emodules.c. */
++   told to, unlike GNU ld on Windows, which exports everything when
++   nothing is marked.  The optional entry points fall back to a function
++   that does nothing, which is what their absence means to emodules.c. */
 +void emodule_noop_%s (void) { }
 +# ifdef _M_IX86
 +/* On 32-bit x86 a C name carries a leading underscore in the object
@@ -97,6 +115,30 @@
  	   (write-file (expand-file-name module-output)))
  
  	 (load "make-docfile.elc"))))))
+--- a/nt/ChangeLog
++++ b/nt/ChangeLog
+@@ -1,3 +1,21 @@
++2026-09-26  Showta Ishizaki  <zakinko@snowrabbit.org>
++
++	Support dynamic modules in the native Windows (MSVC) build.
++	* xemacs.mak (XEMACS_DEF, XEMACS_LFLAGS):
++	Generate xemacs.def from src/xemacs.def.in.in with cl -EP, and
++	link xemacs.exe with it and with -implib, so that the module API
++	is exported and xemacs.lib is there to link modules against.
++	configure and src/Makefile.in.in do this on the other platforms;
++	this build runs neither.
++	* xemacs.mak (TEMACS_COMMON_OBJS): Add inline.obj, for the
++	out-of-line definitions of the DECLARE_INLINE_MODULE_API functions
++	that xemacs.def names.
++	* xemacs.mak (CPLUSPLUS_COMPILE_FLAGS): Define USE_CPLUSPLUS when
++	compiling as C++; see src/config.h.in.
++	* xemacs.mak (CONFIG_VALUES): Write the values lisp/ellcc.el reads.
++	c_switch_all carries the -D options, which this build passes on
++	the command line rather than in config.h.
++
+ 2025-09-23  Aidan Kehoe  <kehoea@parhasard.net>
+ 
+ 	* XEmacs 21.5.37 "lettuce" is released.
 --- a/nt/xemacs.mak
 +++ b/nt/xemacs.mak
 @@ -691,6 +691,10 @@
@@ -126,9 +168,9 @@
 +
 +# lisp/ellcc.el drives the module compiler and linker, and takes every
 +# tool and flag from config.values.  None of the names it reads were
-+# written here, so config-value handed it nil and it could not run at
-+# all.  The Unix values come from configure; these are the same values
-+# as this makefile already uses to build XEmacs itself.
++# written here, so config-value returned nil for each of them.  The Unix
++# values come from configure; these are the values this makefile already
++# uses to build XEmacs itself.
 +!if [echo XEMACS_CC>>$(CONFIG_VALUES) && echo "$(CC:\=\\)">>$(CONFIG_VALUES)]
 +!endif
 +!if [echo XE_CFLAGS>>$(CONFIG_VALUES) && echo "$(CFLAGS:\=\\)">>$(CONFIG_VALUES)]
@@ -136,12 +178,12 @@
 +# On Unix these options live in the generated config.h.  Here config.h
 +# is config.h.in copied verbatim and they arrive as -D switches, so a
 +# module needs the same switches to agree with the executable on
-+# MODULE_API, UNICODE_INTERNAL and the error-checking layout.
++# MODULE_API and UNICODE_INTERNAL, among others.
 +!if [echo c_switch_all>>$(CONFIG_VALUES) && echo "$(INCLUDES:\=\\) $(OPT_DEFINES) -DWIN32_LEAN_AND_MEAN -DWIN32_NATIVE -DHAVE_CONFIG_H">>$(CONFIG_VALUES)]
 +!endif
 +!if [echo LDFLAGS>>$(CONFIG_VALUES) && echo "">>$(CONFIG_VALUES)]
 +!endif
-+# MSVC has no position-independent-code switch; code is relocatable.
++# MSVC has no switch for position-independent code.
 +!if [echo dll_cflags>>$(CONFIG_VALUES) && echo "">>$(CONFIG_VALUES)]
 +!endif
 +!if [echo dll_ld>>$(CONFIG_VALUES) && echo "link.exe">>$(CONFIG_VALUES)]
@@ -211,6 +253,21 @@
  	$(TEMACS_BATCH) -l $(LISP)\loadup.el dump
  	cd $(BLDSRC)
  	rc -d INCLUDE_DUMP -Fo $(OUTDIR)\xemacs.res $(NT)\xemacs.rc
+--- a/src/ChangeLog
++++ b/src/ChangeLog
+@@ -1,3 +1,12 @@
++2026-09-26  Showta Ishizaki  <zakinko@snowrabbit.org>
++
++	* config.h.in (XEMACS_DEFS_NEEDS_INLINE_DECLS):
++	Don't define this for a C++ build under MSVC either.  configure
++	defines USE_GPLUSPLUS only for g++; nt/xemacs.mak now defines
++	USE_CPLUSPLUS.  With -TP there is no out-of-line copy of these
++	functions, and the MSVC link failed on each name xemacs.def
++	exported.
++
+ 2025-09-23  Aidan Kehoe  <kehoea@parhasard.net>
+ 
+ 	* XEmacs 21.5.37 "lettuce" is released.
 --- a/src/config.h.in
 +++ b/src/config.h.in
 @@ -1195,7 +1195,14 @@
