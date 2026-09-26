@@ -408,29 +408,32 @@ check_diff() {
 	fi
 	rm -f /tmp/pr-ready-hunk.$$
 
-	# 10. 版を動かす報告なら、doc/pkg-vulnerabilities をどう扱ったかが
-	#     本文に無いと出せない。NVD に在って木の一覧に無い CVE は実際に
-	#     ある。editors/xwpe は木が 1.5.30a のまま CVE-2016-20037
-	#     (CVSS 8.4) が NVD に在り、doc/pkg-vulnerabilities には xwpe の
-	#     行が一つも無かった。更新の報告を出す直前に引いて初めて出た。
+	# 10. doc/pkg-vulnerabilities の扱い。
 	#
-	#     足す行が無いこともある (版を上げれば既定の上限がそのまま正しく
-	#     なる、その file は配っていない)。その場合は「無い」と本文に
-	#     書く。書かずに出すのは、確かめていないのと見分けが付かない。
+	#     足す行が在るなら hunk を付け、本文でその行を説明する。NVD に在って
+	#     木の一覧に無い CVE は実際にある。editors/xwpe は木が 1.5.30a の
+	#     まま CVE-2016-20037 が NVD に在り、doc/pkg-vulnerabilities には
+	#     xwpe の行が一つも無かった。取り下げられた CVE でも # で無効化して
+	#     入れる (木にその形が 157 件在る)。
+	#
+	#     足す行が無いなら、本文に書かない。「vulnerabilities の記載には何も
+	#     要らない」「pmatch で確かめた」と書いていた時期があるが、報告は
+	#     当て物の話であって、調べた過程の話ではない。hunk が無いのに本文が
+	#     vulnerabilities に触れていたら落とす。
+	#
+	#     版が動くのに hunk が無いときは、NVD と突き合わせたかを思い出させる
+	#     (落とさない。突き合わせた結果が「無し」なら、それで正しい)。
 	if [ -s "$TMP/pr-ready-body.$$" ]; then
 		_body=$TMP/pr-ready-body.$$
-		# 版が動く報告か。DISTNAME か PKGREVISION の hunk で見る。
-		if grep -qE '^\+(DISTNAME|PKGREVISION)=' "$d"; then
-			if grep -q 'doc/pkg-vulnerabilities' "$d"; then
-				note "   doc/pkg-vulnerabilities の hunk が在る"
-			elif grep -qi 'vulnerabilit' "$_body"; then
-				note "   doc/pkg-vulnerabilities の hunk は無いが、本文が触れている"
-			else
-				note "版が動く。NVD をその package の CPE で引き、"
-				note "   doc/pkg-vulnerabilities と突き合わせたか。"
-				note "   足す行が在るなら hunk を付ける (取り下げ CVE も"
-				note "   # で無効化して入れる)。無いなら書かなくてよい"
-			fi
+		if grep -q '^--- doc/pkg-vulnerabilities' "$d"; then
+			note "   doc/pkg-vulnerabilities の hunk が在る"
+		elif grep -qi 'vulnerabilit' "$_body"; then
+			bad "doc/pkg-vulnerabilities の hunk が無いのに、本文が vulnerabilities に触れている"
+			grep -ni 'vulnerabilit' "$_body" | sed 's/^/     /'
+			note "   足す行が無いなら書かない"
+		elif grep -qE '^\+(DISTNAME|PKGREVISION)=' "$d"; then
+			note "   版が動く。NVD をその package の CPE で引き、"
+			note "   doc/pkg-vulnerabilities と突き合わせたか。足す行が在れば hunk を付ける"
 		fi
 		rm -f "$TMP/pr-ready-body.$$"
 	fi
