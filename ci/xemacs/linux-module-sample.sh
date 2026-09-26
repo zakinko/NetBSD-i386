@@ -43,7 +43,7 @@ ls -l "$M/sample.ell"
 nm -D --defined-only "$M/sample.ell" | grep -E 'emodule_|_of_sample|unload_sample'
 
 out=$(SAMPLE_ELL="$M/sample.ell" "$X" -batch -vanilla \
-        -l "$GITHUB_WORKSPACE/ci/xemacs/module-load.el")
+        -l "$GITHUB_WORKSPACE/ci/xemacs/module-load.el" 2>&1)
 echo "$out"
 for pat in 'loaded=t' 'sample-function=t' 'sample-boolean=nil' 'list-modules=.*sample'; do
   echo "$out" | grep -Eq "$pat" || { echo "!! not seen: $pat"; exit 7; }

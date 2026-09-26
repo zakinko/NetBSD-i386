@@ -2,19 +2,16 @@
 ;; SAMPLE_ELL names the file; the caller builds it first.
 ;; Prints one line per fact so the job can match each by name.
 ;;
-;; Each line is also appended to SAMPLE_LOG as it is produced.  stdout
-;; is buffered, and a process that dies inside load-module takes the
-;; buffer with it; the first run on Windows came back with exit 1 and
-;; not even the line printed before the load.
+;; Lines go to external-debugging-output, which is stderr and is not
+;; buffered.  On Windows, run through lib-src/i.exe, whatever princ had
+;; sent to stdout was thrown away when kill-emacs ended the process: a
+;; file doing nothing but (princ "hello") (kill-emacs 3) came back with
+;; exit 3 and no hello.
 
 (setq load-modules-quietly nil)
 
 (defun module-load-say (fmt &rest args)
-  (let ((line (concat (apply #'format fmt args) "\n"))
-	(log (getenv "SAMPLE_LOG")))
-    (princ line)
-    (when log
-      (write-region line nil log t 'silent))))
+  (princ (concat (apply #'format fmt args) "\n") 'external-debugging-output))
 
 (let ((file (getenv "SAMPLE_ELL")))
   (module-load-say "file=%s exists=%s" file (and file (file-exists-p file)))

@@ -25,11 +25,9 @@ function Invoke-XEmacs([string]$label, [string[]]$rest, [int]$expect = 0) {
   # A crash shows as an NTSTATUS such as 0xC0000005, not as 1.
   Write-Host ("=== $label (exit {0} = 0x{0:X8}) ===" -f $p.ExitCode)
   Get-Content $out, $err -EA SilentlyContinue
-  if ($env:SAMPLE_LOG -and (Test-Path $env:SAMPLE_LOG)) {
-    Write-Host "--- $env:SAMPLE_LOG ---"; Get-Content $env:SAMPLE_LOG
-  }
   if ($p.ExitCode -ne $expect) { throw "$label failed (expected exit $expect)" }
-  return (Get-Content $out -Raw -EA SilentlyContinue)
+  return ((Get-Content $out -Raw -EA SilentlyContinue) + "`n" +
+          (Get-Content $err -Raw -EA SilentlyContinue))
 }
 
 function Invoke-Ellcc([string]$label, [string[]]$rest) {
@@ -64,14 +62,19 @@ Write-Host '--- exports of sample.ell ---'
 $hello = Join-Path $mod 'hello.el'
 Set-Content -Path $hello -Value '(princ "hello from -l\n") (kill-emacs 3)'
 Invoke-XEmacs 'diag-l' @('-vanilla', '-l', $hello) 3 | Out-Null
+# The run above returned 3 and printed nothing.  The same line sent to
+# stderr instead: if it arrives, stdout was lost at kill-emacs.
+$hello2 = Join-Path $mod 'hello2.el'
+Set-Content -Path $hello2 -Value '(princ "hello via stderr\n" (quote external-debugging-output)) (kill-emacs 3)'
+$o = Invoke-XEmacs 'diag-l2' @('-vanilla', '-l', $hello2) 3
+if ($o -notmatch 'hello via stderr') { throw 'stderr did not arrive either' }
 
 $probe = Join-Path $env:GITHUB_WORKSPACE 'ci\xemacs\module-load.el'
-$env:SAMPLE_LOG = Join-Path $mod 'probe-only.log'
 $env:SAMPLE_ELL = Join-Path $mod 'no-such.ell'
-Invoke-XEmacs 'diag-probe' @('-vanilla', '-l', $probe) 1 | Out-Null
+$o = Invoke-XEmacs 'diag-probe' @('-vanilla', '-l', $probe) 1
+if ($o -notmatch 'error=') { throw 'probe did not reach its error branch' }
 
 $env:SAMPLE_ELL = $ell
-$env:SAMPLE_LOG = Join-Path $mod 'load.log'
 $o = Invoke-XEmacs 'load' @('-vanilla', '-l',
   (Join-Path $env:GITHUB_WORKSPACE 'ci\xemacs\module-load.el'))
 foreach ($pat in 'loaded=t', 'sample-function=t',
