@@ -12,7 +12,7 @@ $x    = Join-Path $root 'src\xemacs.exe'
 $el   = Join-Path $root 'lisp\ellcc.el'
 $mod  = Join-Path $root 'modules\sample\external'
 
-function Invoke-XEmacs([string]$label, [string[]]$rest) {
+function Invoke-XEmacs([string]$label, [string[]]$rest, [int]$expect = 0) {
   $out = Join-Path $mod "$label.out"
   $err = Join-Path $mod "$label.err"
   $p = Start-Process -FilePath $i -ArgumentList (@($x, '-batch') + $rest) `
@@ -28,7 +28,7 @@ function Invoke-XEmacs([string]$label, [string[]]$rest) {
   if ($env:SAMPLE_LOG -and (Test-Path $env:SAMPLE_LOG)) {
     Write-Host "--- $env:SAMPLE_LOG ---"; Get-Content $env:SAMPLE_LOG
   }
-  if ($p.ExitCode -ne 0) { throw "$label failed" }
+  if ($p.ExitCode -ne $expect) { throw "$label failed (expected exit $expect)" }
   return (Get-Content $out -Raw -EA SilentlyContinue)
 }
 
@@ -57,6 +57,18 @@ if ($len -lt 1024) { throw "sample.ell is only $len bytes" }
 
 Write-Host '--- exports of sample.ell ---'
 & dumpbin /exports $ell | Select-String -Pattern 'emodule_|_of_sample|unload_sample'
+
+# The first load came back with exit 1, no output, and an empty log
+# file.  Separate the three things that could be at fault before the
+# real load: the -l path itself, the probe file, and load-module.
+$hello = Join-Path $mod 'hello.el'
+Set-Content -Path $hello -Value '(princ "hello from -l\n") (kill-emacs 3)'
+Invoke-XEmacs 'diag-l' @('-vanilla', '-l', $hello) 3 | Out-Null
+
+$probe = Join-Path $env:GITHUB_WORKSPACE 'ci\xemacs\module-load.el'
+$env:SAMPLE_LOG = Join-Path $mod 'probe-only.log'
+$env:SAMPLE_ELL = Join-Path $mod 'no-such.ell'
+Invoke-XEmacs 'diag-probe' @('-vanilla', '-l', $probe) 1 | Out-Null
 
 $env:SAMPLE_ELL = $ell
 $env:SAMPLE_LOG = Join-Path $mod 'load.log'
