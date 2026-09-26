@@ -1,6 +1,33 @@
 --- a/lisp/ellcc.el
 +++ b/lisp/ellcc.el
-@@ -322,8 +322,16 @@
+@@ -196,8 +196,25 @@
+ 	       (apply #'format-into 'external-debugging-output args)
+ 	       (terpri 'external-debugging-output)
+ 	       (kill-emacs 1))
+-	   (apply #'error args))))
++	   (apply #'error args)))
+ 
++       (msvc-exports (prefix)
++	 ;; One /EXPORT line for each name emodules.c looks up by name.
++	 ;; PREFIX is what the compiler puts in front of a C name in the
++	 ;; object file; the exported name is the plain one.
++	 (mapconcat
++	  #'(lambda (entry)
++	      (format "#  pragma comment(linker, \"/EXPORT:%s=%s%s%s\")"
++		      (car entry) prefix (car entry)
++		      (if (cdr entry) ",DATA" "")))
++	  (list* '("emodule_compiler" . t) '("emodule_name" . t)
++		 '("emodule_version" . t) '("emodule_title" . t)
++		 '("emodule_coding" . t)
++		 (mapcar #'(lambda (stem) (cons (concat stem module-name) nil))
++			 '("modules_of_" "syms_of_" "vars_of_" "docs_of_"
++			   "unload_")))
++	  "\n")))
++
+     (declare (inline space-or-tab-p prefixp))
+ 
+     (unless (featurep 'modules)
+@@ -322,8 +339,16 @@
         (apply #'call-process-and-exit
  	      (append
  	       (mapcan #'split-into-command-line-args
@@ -19,7 +46,7 @@
  	       (reduce #'cons command-line-args :from-end t
  		       :initial-value (split-into-command-line-args
  				       ellcc-dll-post)
-@@ -354,7 +362,8 @@
+@@ -354,7 +379,8 @@
  	   (write-line (mapconcat #'identity command-line-args " ") t))
  
  	 (with-temp-buffer
@@ -29,7 +56,7 @@
  			"/* DO NOT EDIT - AUTOMATICALLY GENERATED */
  #include <emodules.h>
  
-@@ -369,13 +378,41 @@
+@@ -369,13 +395,38 @@
  }
  #endif
  
@@ -40,22 +67,16 @@
 +   nothing, which is what their absence means to emodules.c. */
 +void emodule_noop_%s (void) { }
 +# ifdef _M_IX86
++/* On 32-bit x86 a C name carries a leading underscore in the object
++   file; the names emodules.c asks for do not. */
 +#  pragma comment(linker, \"/ALTERNATENAME:_modules_of_%s=_emodule_noop_%s\")
 +#  pragma comment(linker, \"/ALTERNATENAME:_unload_%s=_emodule_noop_%s\")
++%s
 +# else
 +#  pragma comment(linker, \"/ALTERNATENAME:modules_of_%s=emodule_noop_%s\")
 +#  pragma comment(linker, \"/ALTERNATENAME:unload_%s=emodule_noop_%s\")
++%s
 +# endif
-+# pragma comment(linker, \"/EXPORT:emodule_compiler,DATA\")
-+# pragma comment(linker, \"/EXPORT:emodule_name,DATA\")
-+# pragma comment(linker, \"/EXPORT:emodule_version,DATA\")
-+# pragma comment(linker, \"/EXPORT:emodule_title,DATA\")
-+# pragma comment(linker, \"/EXPORT:emodule_coding,DATA\")
-+# pragma comment(linker, \"/EXPORT:modules_of_%s\")
-+# pragma comment(linker, \"/EXPORT:syms_of_%s\")
-+# pragma comment(linker, \"/EXPORT:vars_of_%s\")
-+# pragma comment(linker, \"/EXPORT:docs_of_%s\")
-+# pragma comment(linker, \"/EXPORT:unload_%s\")
 +#endif
 +
  const long emodule_compiler = %ld;
@@ -66,10 +87,13 @@
 -void docs_of_%s (void)\n"   module-name module-revision module-name
 -			ellcc-module-version module-title module-name)
 +void docs_of_%s (void)\n"
-+	    module-name
-+	    (nconc (make-list 14 module-name)
-+		   (list module-revision module-name ellcc-module-version
-+			 module-title module-name)))
++	    module-name module-name
++	    module-name module-name module-name module-name
++	    (msvc-exports "_")
++	    module-name module-name module-name module-name
++	    (msvc-exports "")
++	    module-revision module-name ellcc-module-version
++	    module-title (list module-name))
  	   (write-file (expand-file-name module-output)))
  
  	 (load "make-docfile.elc"))))))
