@@ -34,8 +34,10 @@ ellcc() { ( cd "$M" && "$X" -batch --script "$E" -- --mode=verbose "$@" ); }
 ellcc --mode=init --mod-output=sample_i.c --mod-name=sample \
       --mod-version=0.0.1 --mod-title=Sample sample.c
 echo "--- sample_i.c ---"; cat "$M/sample_i.c"
-ellcc --mode=compile -c sample.c
-ellcc --mode=compile -c sample_i.c
+# modules/sample/external/Makefile.in.in passes -I$(MODARCHDIR)/include,
+# the installed headers.  Built in the tree, the headers are in src/.
+ellcc --mode=compile -I"$SRC/src" -c sample.c
+ellcc --mode=compile -I"$SRC/src" -c sample_i.c
 ellcc --mode=link --mod-output=sample.ell sample.o sample_i.o
 ls -l "$M/sample.ell"
 nm -D --defined-only "$M/sample.ell" | grep -E 'emodule_|_of_sample|unload_sample'
