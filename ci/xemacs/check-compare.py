@@ -44,6 +44,12 @@ def summary(path):
     return res
 
 
+def fails(r):
+    if r is None or r[0] != 'ok':
+        return None
+    return r[2] - r[1]
+
+
 def show(r):
     if r is None:
         return 'missing'
@@ -77,15 +83,20 @@ def main():
     for k in sorted(base.keys() | patched.keys()):
         b, p = base.get(k), patched.get(k)
         mark = ''
+        # Worse means more failures, not fewer successes: some files
+        # (query-coding-tests.el) generate a different number of tests
+        # from run to run, with no failure at all on either side.
+        fb = fails(b)
+        fp = fails(p)
         if b is not None and (p is None or
                               (b[0] != 'aborted' and p[0] == 'aborted') or
-                              p[1] < b[1]):
-            mark = '  <-- worse'
+                              (fb is not None and fp is not None and fp > fb)):
+            mark = f'  <-- worse ({fb} -> {fp} failed)' if fp is not None else '  <-- worse'
             worse.append(k)
-        elif b is not None and p is not None and p[1] > b[1]:
-            mark = '  (better)'
-        elif b is not None and b[0] == 'ok' and b[1] < b[2]:
-            mark = '  (fails in base too)'
+        elif fb is not None and fp is not None and fp < fb:
+            mark = f'  (better: {fb} -> {fp} failed)'
+        elif fb:
+            mark = f'  (fails in base too: {fb})'
         print(f'{k:<{width}}  {show(b):>14}  {show(p):>14}{mark}')
 
     tb = sum(r[1] for r in base.values())
