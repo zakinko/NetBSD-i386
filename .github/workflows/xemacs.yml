@@ -32,7 +32,7 @@ on:
       target:
         description: 'どれを回すか'
         type: choice
-        options: [both, overread, windows, alloca, check, recheck, gui]
+        options: [both, overread, windows, alloca, check, recheck, gui, control]
         default: both
 
 concurrency:
@@ -578,3 +578,44 @@ jobs:
         with:
           name: gui-screenshots-${{ matrix.arch }}
           path: gui-out
+
+  windows-control:
+    if: ${{ inputs.target == 'control' }}
+    name: config.h.in の部分だけ外すと link が落ちるか (対照)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 上流 tip を取り、当て物から config.h.in の部分だけ外す
+        shell: bash
+        run: |
+          ci/xemacs/fetch-upstream.sh xemacs
+          ci/xemacs/win-control-config-h.sh "$PWD/xemacs"
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: config.inc を最小構成で置く
+        shell: pwsh
+        run: ci/xemacs/win-config-inc.ps1 "$PWD/xemacs"
+
+      - name: nmake で建てる (落ちるはず)
+        shell: cmd
+        continue-on-error: true
+        run: |
+          cd xemacs\nt
+          nmake -f xemacs.mak > "%GITHUB_WORKSPACE%\build.log" 2>&1
+          echo nmake exited %ERRORLEVEL%
+
+      - name: xemacs.exe の link が inline 関数の名前で落ちたか
+        shell: bash
+        run: |
+          tr -d '\r' < build.log | grep -o 'unresolved external symbol [A-Za-z_0-9]*' \
+            | sed 's/.* //' | sort -u > unresolved.txt || true
+          echo "unresolved: $(wc -l < unresolved.txt)"
+          cat unresolved.txt
+          tr -d '\r' < build.log | grep -E 'fatal error LNK|LNK1120' || true
+          # 落ちたこと、そして落ちたのが inline 関数 (qxestr*) であること。
+          [ -s unresolved.txt ] || { echo "!! link は落ちなかった"; exit 1; }
+          grep -q '^qxestr' unresolved.txt || { echo "!! 落ちた名前が想定と違う"; exit 1; }
+          echo "config.h.in の部分が無いと xemacs.exe の link が落ちる"
