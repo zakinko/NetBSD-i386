@@ -329,7 +329,10 @@ MINGW*|MSYS*|CYGWIN*)
 			"$c" --version >/dev/null 2>&1 && { PY=$c; break; }
 		done
 		[ -n "$PY" ] || { echo "python が見つからない"; exit 1; }
-		"$PY" "$CI_DIR/drop_pip_dev_deps.py" .
+		# Windows の python は標準出力が cp1252 で、script の日本語の印字で
+		# UnicodeEncodeError になる (run 36227639573)。file の読み書きは script が
+		# encoding="utf-8" を名指ししているので、効かせたいのは印字だけ。
+		PYTHONUTF8=1 "$PY" "$CI_DIR/drop_pip_dev_deps.py" .
 		if grep -rq bazel_pip_dev_deps MODULE.bazel third_party/py 2>/dev/null; then
 			echo "pip の塊が残っている"; exit 1
 		fi
