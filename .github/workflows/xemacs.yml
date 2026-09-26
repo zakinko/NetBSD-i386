@@ -18,6 +18,12 @@ name: xemacs
 #              src/config.h.in にも触るので、Unix 側が壊れていないことを
 #              別の箱で確かめる。windows を回すときは必ず一緒に回る。
 #
+#   check      win-module-exports.patch の前後で make check を比べる。
+#              Linux と Windows のそれぞれで素の木と当てた木を建て、
+#              test-harness の要約をファイルごとに突き合わせる。元から
+#              落ちている test は当て物のせいではないので、減ったかだけを
+#              見る。
+#
 # どちらも押すまで動かない。overread は数十秒、windows は数分。
 
 on:
@@ -26,7 +32,7 @@ on:
       target:
         description: 'どれを回すか'
         type: choice
-        options: [both, overread, windows, alloca]
+        options: [both, overread, windows, alloca, check]
         default: both
 
 concurrency:
@@ -152,22 +158,7 @@ jobs:
 
       - name: config.inc を最小構成で置く
         shell: pwsh
-        run: |
-          cd xemacs/nt
-          Copy-Item config.inc.samp config.inc
-          # 追加ライブラリは一つも入れない。建つかどうかだけを見る。
-          # 変数名は config.inc.samp の実物に合わせてある (HAVE_ZLIB は無い)。
-          $c = Get-Content config.inc
-          foreach ($v in 'HAVE_XPM','HAVE_GIF','HAVE_PNG','HAVE_JPEG','HAVE_TIFF','HAVE_XFACE') {
-            $c = $c -replace "^$v=1", "$v=0"
-          }
-          # 既定の PERL は Cygwin を指す。runner に居る perl を使う。
-          $perl = (Get-Command perl -ErrorAction SilentlyContinue).Source
-          if (-not $perl) { throw "perl が見つからない" }
-          Write-Host "perl: $perl"
-          $c = $c -replace '^PERL=.*', ("PERL=" + $perl)
-          Set-Content config.inc $c
-          Select-String -Path config.inc -Pattern '^(HAVE_|UNICODE_|PERL=)'
+        run: ci/xemacs/win-config-inc.ps1 "$PWD/xemacs"
 
       - name: nmake で建てる (info 段は makeinfo が無いので落ちる。既知)
         shell: cmd
@@ -285,3 +276,119 @@ jobs:
           cd xemacs
           findstr /C:"define HAVE_SHLIB" src\s\windowsnt.h
           dir nt\obj\emodules.obj nt\obj\sysdll.obj
+
+  linux-check:
+    if: ${{ inputs.target == 'check' }}
+    name: make check (Linux, ${{ matrix.tree }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        tree: [base, patched]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 依存
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libncurses-dev texinfo
+
+      - name: XEmacs を取る
+        run: git clone --quiet --depth 1 https://github.com/zakinko/XEmacs xemacs
+
+      - name: 建てて make check
+        run: ci/xemacs/linux-check.sh "$PWD/xemacs" ${{ matrix.tree }} "$PWD/check.log"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: check-linux-${{ matrix.tree }}
+          path: check.log
+
+  windows-check:
+    if: ${{ inputs.target == 'check' }}
+    name: make check (Windows, ${{ matrix.tree }})
+    runs-on: windows-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        tree: [base, patched]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: XEmacs を取る
+        run: git clone --quiet --depth 1 https://github.com/zakinko/XEmacs xemacs
+
+      - name: 当て物を当てる (patched のときだけ)
+        if: ${{ matrix.tree == 'patched' }}
+        shell: bash
+        run: |
+          cd xemacs
+          patch -p1 -f -i "$GITHUB_WORKSPACE/ci/xemacs/win-module-exports.patch" </dev/null
+          grep -q 'emodule_noop_' lisp/ellcc.el
+          grep -q 'USE_CPLUSPLUS' nt/xemacs.mak src/config.h.in
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: config.inc を最小構成で置く
+        shell: pwsh
+        run: ci/xemacs/win-config-inc.ps1 "$PWD/xemacs"
+
+      - name: nmake で建てる (info 段は makeinfo が無いので落ちる。既知)
+        shell: cmd
+        continue-on-error: true
+        run: |
+          cd xemacs\nt
+          nmake -f xemacs.mak
+
+      - name: xemacs.exe が出来たか
+        shell: pwsh
+        run: |
+          $len = (Get-Item xemacs/src/xemacs.exe).Length
+          Write-Host "xemacs.exe: $len bytes"
+          if ($len -lt 1000000) { throw "xemacs.exe が $len バイトしかない" }
+
+      - name: make check
+        shell: cmd
+        timeout-minutes: 45
+        continue-on-error: true
+        run: |
+          cd xemacs\nt
+          nmake -f xemacs.mak check > "%GITHUB_WORKSPACE%\check.log" 2>&1
+          echo nmake check exited %ERRORLEVEL%
+
+      - name: 要約を出す
+        shell: bash
+        run: grep -E 'tests successful|No tests run|\(aborted\)' check.log | tr -d '\r' | tail -60 || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: check-windows-${{ matrix.tree }}
+          path: check.log
+
+  check-compare:
+    if: ${{ always() && inputs.target == 'check' }}
+    needs: [linux-check, windows-check]
+    name: make check を前後で突き合わせる
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: check-*
+
+      - name: 突き合わせる
+        run: |
+          rc=0
+          for os in linux windows; do
+            echo "=================== $os ==================="
+            if [ ! -f check-$os-base/check.log ] || [ ! -f check-$os-patched/check.log ]; then
+              echo "!! $os: log が揃っていない (測れていない)"; rc=1; continue
+            fi
+            python3 ci/xemacs/check-compare.py \
+              check-$os-base/check.log check-$os-patched/check.log || rc=1
+          done
+          exit $rc

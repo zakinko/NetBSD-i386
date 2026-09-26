@@ -38,6 +38,10 @@ function Invoke-Ellcc([string]$label, [string[]]$rest) {
   Invoke-XEmacs $label (@('--script', $el, '--', '--mode=verbose') + $rest)
 }
 
+# config.values: every key, old and new, must still come back.
+Invoke-XEmacs 'config-values' @('-vanilla', '-l',
+  (Join-Path $env:GITHUB_WORKSPACE 'ci\xemacs\config-values-check.el')) | Out-Null
+
 # A title with a space would be split by Start-Process, which joins
 # ArgumentList without quoting.
 Invoke-Ellcc 'init' @('--mode=init', '--mod-output=sample_i.c',
