@@ -1,5 +1,5 @@
 diff --git a/lisp/ellcc.el b/lisp/ellcc.el
-index a08e2a1..25cdfbb 100644
+index a08e2a1..617e56c 100644
 --- a/lisp/ellcc.el
 +++ b/lisp/ellcc.el
 @@ -322,8 +322,17 @@
@@ -32,7 +32,7 @@ index a08e2a1..25cdfbb 100644
  			"/* DO NOT EDIT - AUTOMATICALLY GENERATED */
  #include <emodules.h>
  
-@@ -369,13 +379,40 @@ extern void docs_of_%s (void);
+@@ -369,13 +379,41 @@ extern void docs_of_%s (void);
  }
  #endif
  
@@ -53,6 +53,7 @@ index a08e2a1..25cdfbb 100644
 +# pragma comment(linker, \"/EXPORT:emodule_name,DATA\")
 +# pragma comment(linker, \"/EXPORT:emodule_version,DATA\")
 +# pragma comment(linker, \"/EXPORT:emodule_title,DATA\")
++# pragma comment(linker, \"/EXPORT:emodule_coding,DATA\")
 +# pragma comment(linker, \"/EXPORT:modules_of_%s\")
 +# pragma comment(linker, \"/EXPORT:syms_of_%s\")
 +# pragma comment(linker, \"/EXPORT:vars_of_%s\")

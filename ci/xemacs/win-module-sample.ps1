@@ -58,7 +58,20 @@ Write-Host "sample.ell: $len bytes"
 if ($len -lt 1024) { throw "sample.ell is only $len bytes" }
 
 Write-Host '--- exports of sample.ell ---'
-& dumpbin /exports $ell | Select-String -Pattern 'emodule_|_of_sample|unload_sample'
+$exports = (& dumpbin /exports $ell) -join "`n"
+$exports -split "`n" | Select-String -Pattern 'emodule_|_of_sample|unload_sample' | Out-Host
+
+# Every name emodules.c looks up must be exported.  The first version of
+# the init file missed emodule_coding and the gap only showed at
+# load-module, as "Missing symbol".  Take the list from the loader itself
+# so a name added there later is caught here, right after the link.
+$loader = Get-Content (Join-Path $root 'src\emodules.c') -Raw
+$wanted = [regex]::Matches($loader, '"(emodule_[a-z]+|[a-z_]+_%s)"') |
+  ForEach-Object { $_.Groups[1].Value -replace '%s', 'sample' } |
+  Sort-Object -Unique
+Write-Host "loader looks up: $($wanted -join ' ')"
+$missing = $wanted | Where-Object { $exports -notmatch "\b$_\b" }
+if ($missing) { throw "not exported: $($missing -join ' ')" }
 
 # The first load came back with exit 1, no output, and an empty log
 # file.  Separate the three things that could be at fault before the
