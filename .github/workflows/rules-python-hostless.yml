@@ -1,0 +1,89 @@
+# rules_python へ出す直し (host で動く interpreter の無い版の pip.parse を
+# 飛ばす) が、実際に飛ばしているかを pip 拡張だけ起こして測る。
+#
+# bazel-master-sh.yml の windows-arm64 はこの直しで緑になったが、成功した
+# run は compile.log を捨てるので、拡張が評価されて直しの腕を通ったことは
+# そこからは言えない (run 36239540954)。bootstrap を回さず、bazel の master を
+# 素のまま checkout して bazel_pip_dev_deps を query すれば拡張が起きる。
+# 当て物なし・ありを同じ job で続けて撃ち、前後を並べる。
+#
+# Linux は対照。3.9 の interpreter が在るので、当て物を入れても何も飛ばない
+# ことを見る。
+name: rules-python-hostless
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: rules-python-hostless-${{ github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-arm64, os: windows-11-arm, bazelisk: bazelisk-windows-arm64.exe, bin: bzl.exe }
+          - { name: linux-x86_64,  os: ubuntu-latest,  bazelisk: bazelisk-linux-amd64,       bin: bzl }
+    name: probe (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: bazel の master と bazelisk
+        run: |
+          set -ex
+          git clone -q --depth 1 https://github.com/bazelbuild/bazel.git src
+          git -C src log --oneline -1
+          grep -o 'name = "rules_python", version = "[^"]*"' src/MODULE.bazel
+          grep -o 'name = "grpc", version = "[^"]*"' src/MODULE.bazel
+          curl -fsSL -o ${{ matrix.bin }} "https://github.com/bazelbuild/bazelisk/releases/latest/download/${{ matrix.bazelisk }}"
+          chmod +x ${{ matrix.bin }}
+      - name: 当て物なし
+        working-directory: src
+        env:
+          RULES_PYTHON_REPO_DEBUG_VERBOSITY: INFO
+        run: |
+          ../${{ matrix.bin }} query @bazel_pip_dev_deps//:all > ../before.log 2>&1 && echo rc=0 > ../before.rc || echo rc=$? > ../before.rc
+          cat ../before.rc
+          grep -o "Unable to find interpreter for pip hub '[a-z_]*' for python_version=[0-9.]*" ../before.log | sort -u || true
+          grep -o "Ignoring pip python version '[0-9.]*' for hub '[a-z_]*'[^.]*" ../before.log | sort -u || true
+          ../${{ matrix.bin }} shutdown || true
+      - name: 当て物あり
+        working-directory: src
+        env:
+          RULES_PYTHON_REPO_DEBUG_VERBOSITY: INFO
+        run: |
+          RP=$(grep -o 'name = "rules_python", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
+          P="$GITHUB_WORKSPACE/ci/bazel-bootstrap/rules_python-$RP-skip-hostless.patch"
+          [ -f "$P" ] || { echo "rules_python $RP 向けの当て物が無い"; exit 1; }
+          mkdir -p toolchain_local
+          cp "$P" toolchain_local/
+          printf 'exports_files(glob(["*.patch"]))\n' > toolchain_local/BUILD
+          cat >> MODULE.bazel <<MOD
+
+          single_version_override(
+              module_name = "rules_python",
+              version = "$RP",
+              patch_strip = 1,
+              patches = ["//toolchain_local:rules_python-$RP-skip-hostless.patch"],
+          )
+          MOD
+          ../${{ matrix.bin }} query @bazel_pip_dev_deps//:all > ../after.log 2>&1 && echo rc=0 > ../after.rc || echo rc=$? > ../after.rc
+          cat ../after.rc
+          grep -o "Unable to find interpreter for pip hub '[a-z_]*' for python_version=[0-9.]*" ../after.log | sort -u || true
+          grep -o "Ignoring pip python version '[0-9.]*' for hub '[a-z_]*'[^.]*" ../after.log | sort -u || true
+          grep -c 'error applying single_version_override' ../after.log || true
+      - name: 前後の比較
+        if: always()
+        run: |
+          echo "=== ${{ matrix.name }}"
+          echo "当て物なし: $(cat before.rc 2>/dev/null)   当て物あり: $(cat after.rc 2>/dev/null)"
+          echo "--- 当て物ありで飛ばした版"
+          grep -o "Ignoring pip python version '[0-9.]*' for hub '[a-z_]*'[^.]*" after.log | sort -u || echo "(無し)"
+          echo "--- 当て物ありの末尾"
+          tail -15 after.log | tr -d '\033' | sed 's/\[[0-9;]*[A-Za-z]//g'
