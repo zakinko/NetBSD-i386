@@ -147,10 +147,21 @@ case "$mode" in
 		curl -sfL "https://raw.githubusercontent.com/NetBSD/pkgsrc/trunk/$t" \
 			-o "$w/$t" && got=$((got+1))
 	done
-	out=$( cd "$w" && patch -C -f -F0 -p0 -i "$T/pvb.apd.$$" < /dev/null 2>&1 ) || {
+	out=$( cd "$w" && patch -C -f -F0 --verbose -p0 -i "$T/pvb.apd.$$" < /dev/null 2>&1 ) || {
 		bad "今日の pkgsrc trunk に当たらない"
 		echo "$out" | sed 's/^/     /' | head -8
 	}
+	# -F0 は fuzz を許さないが、offset (行番号のずれ) は黙って許す。文脈に
+	# $NetBSD の Id 行を持たない hunk (doc/pkg-vulnerabilities の末尾へ足す
+	# 物など) は、木が動いても pr-ready の版の突き合わせに掛からず、別の行に
+	# 差し込まれても「当たる」になる。offset が出たら、書いた日の木と今日の
+	# 木で当たる位置が違うということなので、作り直させる。
+	# macOS の patch は --verbose のときだけ「(offset N lines)」と言う。付け
+	# ないと offset で当たっても何も出ず、この検査は一度も鳴らなかった。
+	if echo "$out" | grep -qi 'offset'; then
+		bad "offset で当たった (木が動いた。今日の木で diff を作り直す)"
+		echo "$out" | grep -i 'offset' | sed 's/^/     /' | head -5
+	fi
 	[ $rc -eq 0 ] && echo "  ok 当たる (上流から $got file を引いた、fuzz 無し)"
 	rm -rf "$w" "$T/pvb.apd.$$"
 	;;
