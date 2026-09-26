@@ -43,6 +43,11 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # The module jobs build upstream at this changeset, taken from Heptapod
+  # by ci/xemacs/fetch-upstream.sh (2026-09-24, after 21.5.37).
+  XEMACS_UPSTREAM: eb16e65de2c72b97c6262ff0eceb910a8bd80734
+
 jobs:
   overread:
     if: ${{ inputs.target == 'both' || inputs.target == 'overread' }}
@@ -105,21 +110,27 @@ jobs:
           sudo apt-get install -y -qq libncurses-dev texinfo
 
       - name: XEmacs を取る
-        run: git clone --quiet --depth 1 https://github.com/zakinko/XEmacs xemacs
+        shell: bash
+        run: ci/xemacs/fetch-upstream.sh xemacs
 
       - name: 建てて、サンプルを ellcc で建てて読む
         run: ci/xemacs/linux-module-sample.sh "$PWD/xemacs"
 
   windows:
     if: ${{ inputs.target == 'both' || inputs.target == 'windows' }}
-    name: Windows で建つか (探り)
+    name: Windows で建つか (${{ matrix.arch }})
     runs-on: windows-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, x86]
     steps:
       - uses: actions/checkout@v4
 
       - name: XEmacs を取る
-        run: git clone --quiet --depth 1 https://github.com/zakinko/XEmacs xemacs
+        shell: bash
+        run: ci/xemacs/fetch-upstream.sh xemacs
 
       - name: 後で走らせる PowerShell を先に構文だけ通す
         shell: pwsh
@@ -155,6 +166,8 @@ jobs:
           grep -q 'emodule_noop_' lisp/ellcc.el
 
       - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
 
       - name: config.inc を最小構成で置く
         shell: pwsh
@@ -163,6 +176,10 @@ jobs:
       - name: nmake で建てる (info 段は makeinfo が無いので落ちる。既知)
         shell: cmd
         continue-on-error: true
+        env:
+          # xemacs.mak names the configuration from PROCESSOR_ARCHITECTURE,
+          # the host's; building x86 on an x64 runner it would say x86_64.
+          PROCESSOR_ARCHITECTURE: ${{ matrix.arch == 'x86' && 'x86' || 'AMD64' }}
         run: |
           cd xemacs\nt
           nmake -f xemacs.mak
@@ -192,6 +209,11 @@ jobs:
           $n = (Select-String -Path $def -Pattern '^[A-Za-z_][A-Za-z0-9_]*$').Count
           Write-Host "def に並んだ symbol: $n"
           if ($n -lt 100) { throw "symbol が少なすぎる ($n)。cpp が通っていない" }
+          # cl はファイル名を stderr に出す (以前の log で画面に出ていた)。
+          # stdout に来ていれば export の名前として def に紛れ込む。
+          if (Select-String -Path $def -Pattern '^xemacs_def\.c$' -Quiet) {
+            throw "xemacs.def に cl のファイル名の行が紛れ込んでいる"
+          }
 
           $lib = "xemacs/src/xemacs.lib"
           if (-not (Test-Path $lib)) { throw "import library xemacs.lib が無い" }
@@ -295,7 +317,8 @@ jobs:
           sudo apt-get install -y -qq libncurses-dev texinfo
 
       - name: XEmacs を取る
-        run: git clone --quiet --depth 1 https://github.com/zakinko/XEmacs xemacs
+        shell: bash
+        run: ci/xemacs/fetch-upstream.sh xemacs
 
       - name: 建てて make check
         run: ci/xemacs/linux-check.sh "$PWD/xemacs" ${{ matrix.tree }} "$PWD/check.log"
@@ -307,18 +330,20 @@ jobs:
 
   windows-check:
     if: ${{ inputs.target == 'check' }}
-    name: make check (Windows, ${{ matrix.tree }})
+    name: make check (Windows ${{ matrix.arch }}, ${{ matrix.tree }})
     runs-on: windows-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         tree: [base, patched]
+        arch: [x64, x86]
     steps:
       - uses: actions/checkout@v4
 
       - name: XEmacs を取る
-        run: git clone --quiet --depth 1 https://github.com/zakinko/XEmacs xemacs
+        shell: bash
+        run: ci/xemacs/fetch-upstream.sh xemacs
 
       - name: 当て物を当てる (patched のときだけ)
         if: ${{ matrix.tree == 'patched' }}
@@ -330,6 +355,8 @@ jobs:
           grep -q 'USE_CPLUSPLUS' nt/xemacs.mak src/config.h.in
 
       - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
 
       - name: config.inc を最小構成で置く
         shell: pwsh
@@ -338,6 +365,10 @@ jobs:
       - name: nmake で建てる (info 段は makeinfo が無いので落ちる。既知)
         shell: cmd
         continue-on-error: true
+        env:
+          # xemacs.mak names the configuration from PROCESSOR_ARCHITECTURE,
+          # the host's; building x86 on an x64 runner it would say x86_64.
+          PROCESSOR_ARCHITECTURE: ${{ matrix.arch == 'x86' && 'x86' || 'AMD64' }}
         run: |
           cd xemacs\nt
           nmake -f xemacs.mak
@@ -364,7 +395,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: check-windows-${{ matrix.tree }}
+          name: check-windows-${{ matrix.arch }}-${{ matrix.tree }}
           path: check.log
 
   check-compare:
@@ -383,7 +414,7 @@ jobs:
       - name: 突き合わせる
         run: |
           rc=0
-          for os in linux windows; do
+          for os in linux windows-x64 windows-x86; do
             echo "=================== $os ==================="
             if [ ! -f check-$os-base/check.log ] || [ ! -f check-$os-patched/check.log ]; then
               echo "!! $os: log が揃っていない (測れていない)"; rc=1; continue
@@ -417,7 +448,7 @@ jobs:
       - name: XEmacs を二つ取り、片方にだけ当てる
         shell: bash
         run: |
-          git clone --quiet --depth 1 https://github.com/zakinko/XEmacs xb
+          ci/xemacs/fetch-upstream.sh xb
           cp -a xb xp
           cd xp
           patch -p1 -f -i "$GITHUB_WORKSPACE/ci/xemacs/win-module-exports.patch" </dev/null
@@ -461,9 +492,13 @@ jobs:
 
   windows-gui:
     if: ${{ inputs.target == 'gui' }}
-    name: Windows の GUI で起動・入力・モジュール (素の木と当てた木)
+    name: Windows の GUI で起動・入力・モジュール (${{ matrix.arch }}, 素の木と当てた木)
     runs-on: windows-latest
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, x86]
     steps:
       - uses: actions/checkout@v4
 
@@ -483,13 +518,15 @@ jobs:
       - name: XEmacs を二つ取り、xemacs にだけ当てる
         shell: bash
         run: |
-          git clone --quiet --depth 1 https://github.com/zakinko/XEmacs xb
+          ci/xemacs/fetch-upstream.sh xb
           cp -a xb xemacs
           cd xemacs
           patch -p1 -f -i "$GITHUB_WORKSPACE/ci/xemacs/win-module-exports.patch" </dev/null
           grep -q 'emodule_noop_' lisp/ellcc.el
 
       - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
 
       - name: config.inc を両方に置く
         shell: pwsh
@@ -500,6 +537,8 @@ jobs:
       - name: 素の木を建てる
         shell: cmd
         continue-on-error: true
+        env:
+          PROCESSOR_ARCHITECTURE: ${{ matrix.arch == 'x86' && 'x86' || 'AMD64' }}
         run: |
           cd xb\nt
           nmake -f xemacs.mak
@@ -507,6 +546,8 @@ jobs:
       - name: 当てた木を建てる
         shell: cmd
         continue-on-error: true
+        env:
+          PROCESSOR_ARCHITECTURE: ${{ matrix.arch == 'x86' && 'x86' || 'AMD64' }}
         run: |
           cd xemacs\nt
           nmake -f xemacs.mak
@@ -535,5 +576,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{ always() }}
         with:
-          name: gui-screenshots
+          name: gui-screenshots-${{ matrix.arch }}
           path: gui-out

@@ -16,8 +16,7 @@ case "$TREE" in
 	   grep -q 'emodule_noop_' lisp/ellcc.el ;;
   *) echo "base or patched" >&2; exit 2 ;;
 esac
-echo "== $TREE: $(git log --oneline -1) =="
-git status --short
+echo "== $TREE: upstream $(cat .upstream-rev) =="
 
 # The same options as linux-module-sample.sh.
 ./configure --with-modules --without-x \

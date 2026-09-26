@@ -1,8 +1,6 @@
-diff --git a/lisp/ellcc.el b/lisp/ellcc.el
-index a08e2a1..617e56c 100644
 --- a/lisp/ellcc.el
 +++ b/lisp/ellcc.el
-@@ -322,8 +322,17 @@
+@@ -322,8 +322,16 @@
         (apply #'call-process-and-exit
  	      (append
  	       (mapcan #'split-into-command-line-args
@@ -10,10 +8,9 @@ index a08e2a1..617e56c 100644
 -			     ellcc-dll-ldflags ellcc-dll-ldo module-output))
 +		       (list ellcc-dll-ld ellcc-ldflags ellcc-dll-ldflags))
 +	       ;; Most linkers take the output name as the argument after
-+	       ;; -o.  MSVC's link takes it joined to the switch, -out:NAME;
-+	       ;; handed over as two arguments, -out: names nothing and
-+	       ;; NAME is read as an input file.  A dll_ldo ending in a
-+	       ;; colon or an equals sign asks for the joined form.
++	       ;; -o.  MSVC's link takes it joined to the switch, -out:NAME.
++	       ;; A dll_ldo ending in a colon or an equals sign asks for the
++	       ;; joined form.
 +	       (if (and ellcc-dll-ldo
 +			(string-match "[:=]\\'" ellcc-dll-ldo))
 +		   (list (concat ellcc-dll-ldo module-output))
@@ -22,7 +19,7 @@ index a08e2a1..617e56c 100644
  	       (reduce #'cons command-line-args :from-end t
  		       :initial-value (split-into-command-line-args
  				       ellcc-dll-post)
-@@ -354,7 +363,8 @@
+@@ -354,7 +362,8 @@
  	   (write-line (mapconcat #'identity command-line-args " ") t))
  
  	 (with-temp-buffer
@@ -32,7 +29,7 @@ index a08e2a1..617e56c 100644
  			"/* DO NOT EDIT - AUTOMATICALLY GENERATED */
  #include <emodules.h>
  
-@@ -369,13 +379,41 @@ extern void docs_of_%s (void);
+@@ -369,13 +378,41 @@
  }
  #endif
  
@@ -76,11 +73,9 @@ index a08e2a1..617e56c 100644
  	   (write-file (expand-file-name module-output)))
  
  	 (load "make-docfile.elc"))))))
-diff --git a/nt/xemacs.mak b/nt/xemacs.mak
-index 3438897..b143763 100644
 --- a/nt/xemacs.mak
 +++ b/nt/xemacs.mak
-@@ -691,6 +691,10 @@ PROFILE_FLAGS=
+@@ -691,6 +691,10 @@
  
  !if $(CPLUSPLUS_COMPILE)
  CPLUSPLUS_COMPILE_FLAGS=-TP
@@ -91,7 +86,7 @@ index 3438897..b143763 100644
  !else
  CPLUSPLUS_COMPILE_FLAGS=
  !endif
-@@ -784,6 +788,7 @@ TEMACS_COMMON_OBJS= \
+@@ -784,6 +788,7 @@
  	$(OUTDIR)\gui.obj \
  	$(OUTDIR)\gutter.obj \
  	$(OUTDIR)\indent.obj \
@@ -99,10 +94,11 @@ index 3438897..b143763 100644
  	$(OUTDIR)\imgproc.obj \
  	$(OUTDIR)\insdel.obj \
  	$(OUTDIR)\intl.obj \
-@@ -971,6 +976,43 @@ CONFIG_VALUES = $(BLDLIB_SRC)\config.values
+@@ -970,7 +975,44 @@
+ !if [echo CPPFLAGS>>$(CONFIG_VALUES) && echo "$(CPPFLAGS:\=\\)">>$(CONFIG_VALUES)]
  !endif
  !if [echo LISPDIR>>$(CONFIG_VALUES) && echo "\\$(LISP:\=\\)">>$(CONFIG_VALUES)]
- !endif
++!endif
 +
 +# lisp/ellcc.el drives the module compiler and linker, and takes every
 +# tool and flag from config.values.  None of the names it reads were
@@ -135,7 +131,7 @@ index 3438897..b143763 100644
 +# The import library the xemacs.exe link now produces.  A module
 +# resolves the module API against it.
 +!if [echo dll_post>>$(CONFIG_VALUES) && echo "$(BLDSRC:\=\\)\\xemacs.lib">>$(CONFIG_VALUES)]
-+!endif
+ !endif
 +!if [echo configuration>>$(CONFIG_VALUES) && echo "$(EMACS_CONFIGURATION)">>$(CONFIG_VALUES)]
 +!endif
 +!if [echo version>>$(CONFIG_VALUES) && echo "$(XEMACS_VERSION_STRING)">>$(CONFIG_VALUES)]
@@ -143,7 +139,7 @@ index 3438897..b143763 100644
  !if defined(PATH_LATE_PACKAGE_DIRECTORIES)
  # PATH_LATE_PACKAGE_DIRECTORIES is already a quoted string.
  ! if [echo PATH_LATE_PACKAGE_DIRECTORIES>>$(CONFIG_VALUES) && echo $(PATH_LATE_PACKAGE_DIRECTORIES)>>$(CONFIG_VALUES)]
-@@ -1198,8 +1240,10 @@ TEMACS_COMMON_LFLAGS=-nologo $(LIBRARIES) $(DEBUG_FLAGS_LINK) \
+@@ -1198,8 +1240,10 @@
   $(PROFILE_FLAGS) setargv.obj
  TEMACS_LFLAGS=$(TEMACS_COMMON_LFLAGS) \
   -pdb:$(BLDSRC)\temacs.pdb -map:$(BLDSRC)\temacs.map
@@ -155,37 +151,34 @@ index 3438897..b143763 100644
  
  
  ########################### Definitions for running temacs.exe/xemacs.exe
-@@ -1251,6 +1295,29 @@ $(OUTDIR)\temacs.res: $(NT)\xemacs.rc
+@@ -1251,6 +1295,26 @@
  
  TEMACS_DUMP_DEP = $(OUTDIR)\dump-id.obj
  
-+## src/inline.c, added to TEMACS_COMMON_OBJS above, is the one
-+## translation unit that defines each inline function out of line.
-+## Without it the module API can name those functions but nothing
-+## carries a symbol for the linker to export.
++## src/inline.c, added to TEMACS_COMMON_OBJS above, gives the functions
++## declared with DECLARE_INLINE_MODULE_API (write_ascstring and the like)
++## their one out-of-line definition.  Without it xemacs.def names them
++## but nothing carries a symbol for the linker to export.
 +##
-+## src/xemacs.def.in.in names the symbols a dynamic module may use.  On
-+## Unix configure runs it through the C preprocessor to produce
-+## src/xemacs.def, and src/Makefile.in.in hands that to dlltool.  This
++## src/xemacs.def.in.in names the symbols a dynamic module may use.
++## configure runs it through the C preprocessor to produce src/xemacs.def,
++## and on Cygwin and MinGW src/Makefile.in.in hands that to dlltool.  This
 +## build runs neither configure nor that Makefile, so nothing exported
 +## the symbols and no import library was produced: a module could be
 +## compiled but had nothing to link against.  Preprocess it here.
 +##
 +## cl picks the language from the suffix, so the source is copied to a
-+## .c name first, and the filename cl echoes on stdout is dropped --
-+## left in place it would be read as the name of an export.
++## .c name first.
 +
 +$(XEMACS_DEF): $(SRC)\xemacs.def.in.in $(SRC)\config.h
 +	@copy $(SRC)\xemacs.def.in.in $(BLDSRC)\xemacs_def.c
-+	$(CCV) -nologo -EP $(INCLUDES) $(DEFINES) $(BLDSRC)\xemacs_def.c \
-+	  > $(BLDSRC)\xemacs_def.tmp
-+	findstr /v /b /c:"xemacs_def.c" $(BLDSRC)\xemacs_def.tmp > $@
-+	-$(DEL) $(BLDSRC)\xemacs_def.c $(BLDSRC)\xemacs_def.tmp
++	$(CCV) -nologo -EP $(INCLUDES) $(DEFINES) $(BLDSRC)\xemacs_def.c > $@
++	-$(DEL) $(BLDSRC)\xemacs_def.c
 +
  $(RAW_EXE): $(TEMACS_OBJS) $(TEMACS_DUMP_DEP)
  # Command line too long for some Windows installation:
  #	@echo link $(TEMACS_LFLAGS) -out:$@ $(TEMACS_OBJS) $(TEMACS_DUMP_DEP) $(TEMACS_LIBS)
-@@ -1276,7 +1343,7 @@ $(BLDSRC)\NEEDTODUMP:
+@@ -1276,7 +1340,7 @@
  # This rule dumps xemacs and then possibly spawns sub-make if PURESPACE
  # requirements have changed.
  
@@ -194,22 +187,20 @@ index 3438897..b143763 100644
  	$(TEMACS_BATCH) -l $(LISP)\loadup.el dump
  	cd $(BLDSRC)
  	rc -d INCLUDE_DUMP -Fo $(OUTDIR)\xemacs.res $(NT)\xemacs.rc
-diff --git a/src/config.h.in b/src/config.h.in
-index 38db1b6..064e0a9 100644
 --- a/src/config.h.in
 +++ b/src/config.h.in
-@@ -1195,7 +1195,14 @@ extern "C" {
+@@ -1195,7 +1195,14 @@
       check whether emacs is defined, since xemacs.def.in is not guaranteed
       to be processed with that set in the preprocessor. Aidan Kehoe, Wed,
       Mar 18, 2020 9:02:12 PM  */
 -#if !defined (USE_GPLUSPLUS)
-+/* USE_GPLUSPLUS only covers g++, which is the only C++ compiler the
-+   Unix build has ever used.  MSVC compiles the whole tree as C++ too
-+   whenever error checking is on (nt/xemacs.mak selects -TP), and there
-+   __cplusplus makes INLINE_HEADER `inline static' in inline.c as well,
-+   so no out-of-line copy exists for the linker to export.  Its link
-+   refuses the whole executable rather than shrugging the way dlltool
-+   does, which is how this surfaced.  */
++/* configure defines USE_GPLUSPLUS only when the compiler's name matches
++   g++ (XEMACS_CC_GPP), so the test below does not cover MSVC, which
++   compiles the whole tree as C++ whenever error checking is on
++   (nt/xemacs.mak selects -TP).  There __cplusplus makes INLINE_HEADER
++   `inline static' in inline.c as well, no out-of-line copy exists, and
++   the MSVC link fails on each such name xemacs.def exports.
++   nt/xemacs.mak defines USE_CPLUSPLUS for -TP.  */
 +#if !defined (USE_GPLUSPLUS) && !defined (USE_CPLUSPLUS)
  #define XEMACS_DEFS_NEEDS_INLINE_DECLS
  #endif
