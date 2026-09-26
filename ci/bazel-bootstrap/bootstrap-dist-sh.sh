@@ -323,6 +323,30 @@ MINGW*|MSYS*|CYGWIN*)
 		# python_version=3.9"、登録されていたのは 3.11 / 3.12 / 3.13)。
 		# bazel の pip の塊を落とすと build graph から pip 拡張への参照が消え、
 		# 拡張そのものが評価されない。BSD と同じ手当て。
+		if [ "${RP_SKIP_HOSTLESS:-0}" = 1 ]; then
+		# 上流へ出す rules_python の直し (host で動く interpreter の無い版の
+		# pip.parse を飛ばす) を 1.9.2 に写した物を当てる。pip の塊は落とさない。
+		# これで通ることが、直しの効き目の測定になる。
+		RP=$(grep -o 'name = "rules_python", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
+		[ -f "$CI_DIR/rules_python-$RP-skip-hostless.patch" ] || { echo "rules_python $RP 向けの skip-hostless の当て物が無い"; exit 1; }
+		if grep -q 'module_name = "rules_python"' MODULE.bazel; then
+			echo "rules_python の override が既に在る (一つの module に一つしか置けない)"; exit 1
+		fi
+		mkdir -p toolchain_local
+		cp "$CI_DIR/rules_python-$RP-skip-hostless.patch" toolchain_local/
+		[ -f toolchain_local/BUILD ] || printf 'exports_files(glob(["*.patch"]))\n' > toolchain_local/BUILD
+		cat >> MODULE.bazel <<MOD
+
+# rules_python: skip a pip.parse version with no interpreter for this host (CI only).
+single_version_override(
+    module_name = "rules_python",
+    version = "$RP",
+    patch_strip = 1,
+    patches = ["//toolchain_local:rules_python-$RP-skip-hostless.patch"],
+)
+MOD
+		echo "  → ARM64: rules_python $RP に skip-hostless を当てる (pip の塊は落とさない)"
+		else
 		echo "  → ARM64: pip の塊を落とす"
 		PY=
 		for c in python3 python py; do
@@ -335,6 +359,7 @@ MINGW*|MSYS*|CYGWIN*)
 		PYTHONUTF8=1 "$PY" "$CI_DIR/drop_pip_dev_deps.py" .
 		if grep -rq bazel_pip_dev_deps MODULE.bazel third_party/py 2>/dev/null; then
 			echo "pip の塊が残っている"; exit 1
+		fi
 		fi
 	else
 		echo "  → ARM64 ではないと判定。当て物は当てない"

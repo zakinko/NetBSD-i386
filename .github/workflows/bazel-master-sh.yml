@@ -38,6 +38,10 @@ on:
         description: 'master を JDK 21 (JAVA_VERSION=21) で建てられるかを Ubuntu で測るだけ'
         type: boolean
         default: false
+      rp_skip:
+        description: 'windows-arm64 で pip の塊を落とさず、上流へ出す rules_python の直し (host に interpreter の無い版の pip.parse を飛ばす) を当てて測る'
+        type: boolean
+        default: false
       i386:
         description: '32bit x86 (Debian i386 の container) でも建てる。JDK 25 は JEP 503 で 32bit x86 の port ごと消えているので distro の openjdk-21'
         type: boolean
@@ -508,6 +512,7 @@ jobs:
           NO_VIS: '0'
           RP_BUMP: ${{ inputs.rp_bump }}
           NO_MUSL_PATCH: ${{ inputs.no_musl_patch && '1' || '0' }}
+          RP_SKIP_HOSTLESS: ${{ inputs.rp_skip && '1' || '0' }}
 
   # aarch64 の BSD。像は在る (vmactions/freebsd-vm の conf に 15.1-aarch64、
   # openbsd-vm に 7.9-aarch64)。落ちていたのは host の方で、x86_64 の runner の

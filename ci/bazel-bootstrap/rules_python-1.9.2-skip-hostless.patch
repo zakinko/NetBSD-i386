@@ -1,0 +1,55 @@
+A pip.parse for a Python version that has a toolchain but no interpreter for
+this host fails the whole pip extension.  grpc 1.76.0 calls pip.parse for
+3.9 through 3.13, and rules_python ships no 3.9 or 3.10 CPython for
+aarch64-pc-windows-msvc, so on Windows ARM64 the extension fails and takes
+bazel's own 3.11 hub down with it.
+
+Skip such a version the way a version missing from minor_mapping is already
+skipped.  This is the change proposed upstream, back-ported to 1.9.2.  CI only.
+
+--- a/python/private/pypi/hub_builder.bzl	2026-09-26 20:38:31
++++ b/python/private/pypi/hub_builder.bzl	2026-09-26 20:38:51
+@@ -174,6 +174,25 @@
+             "Ignoring pip python version '{version}' for hub " +
+             "'{hub}' in module '{module}' because there is no registered " +
+             "toolchain for it."
++        ).format(
++            hub = self.name,
++            module = self.module_name,
++            version = python_version,
++        ))
++        return
++
++    if (pip_attr.python_interpreter_target == None and
++        not pip_attr.python_interpreter and
++        _host_interpreter_name(pip_attr.python_version) not in self._available_interpreters):
++        # The version has a toolchain, but none of its interpreters runs on
++        # this host, e.g. there is no CPython build for this os and cpu. Treat
++        # it like a version missing from minor_mapping instead of failing the
++        # extension, which would also take down every other version and hub,
++        # including ones this host can use.
++        self._logger.info(lambda: (
++            "Ignoring pip python version '{version}' for hub " +
++            "'{hub}' in module '{module}' because there is no " +
++            "interpreter for it that runs on this host."
+         ).format(
+             hub = self.name,
+             module = self.module_name,
+@@ -409,13 +428,14 @@
+         parallel_download = pip_attr.parallel_download,
+     )
+     return True
++
++def _host_interpreter_name(python_version):
++    return "python_{}_host".format(python_version.replace(".", "_"))
+ 
+ def _detect_interpreter(self, pip_attr):
+     python_interpreter_target = pip_attr.python_interpreter_target
+     if python_interpreter_target == None and not pip_attr.python_interpreter:
+-        python_name = "python_{}_host".format(
+-            pip_attr.python_version.replace(".", "_"),
+-        )
++        python_name = _host_interpreter_name(pip_attr.python_version)
+         if python_name not in self._available_interpreters:
+             fail((
+                 "Unable to find interpreter for pip hub '{hub_name}' for " +
