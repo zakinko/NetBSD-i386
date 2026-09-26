@@ -33,9 +33,15 @@
 (gui-probe-say "ready")
 
 ;; The runner types into the window while this waits, then screenshots.
-(run-at-time 25 nil
-	     (lambda ()
-	       (gui-probe-say "buffer=%S"
-			      (with-current-buffer "*gui-probe*" (buffer-string)))
-	       (gui-probe-say "exiting")
-	       (kill-emacs 0)))
+;; start-itimer, not run-at-time: the latter is GNU Emacs's, and under
+;; -vanilla it is not defined here.  The first GUI run stopped with
+;; "Symbol's function definition is void: run-at-time" in the echo area
+;; and never exited.
+(require 'itimer)
+(start-itimer "gui-probe-exit"
+	      (lambda ()
+		(gui-probe-say "buffer=%S"
+			       (with-current-buffer "*gui-probe*" (buffer-string)))
+		(gui-probe-say "exiting")
+		(kill-emacs 0))
+	      25)
