@@ -32,7 +32,7 @@ on:
       target:
         description: 'どれを回すか'
         type: choice
-        options: [both, overread, windows, alloca, check, recheck, gui, control]
+        options: [both, overread, windows, alloca, check, recheck, gui, control, posix]
         default: both
 
 concurrency:
@@ -619,3 +619,114 @@ jobs:
           [ -s unresolved.txt ] || { echo "!! link は落ちなかった"; exit 1; }
           grep -q '^qxestr' unresolved.txt || { echo "!! 落ちた名前が想定と違う"; exit 1; }
           echo "config.h.in の部分が無いと xemacs.exe の link が落ちる"
+
+  cygwin:
+    if: ${{ inputs.target == 'posix' }}
+    name: Cygwin (${{ matrix.tree }})
+    runs-on: windows-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        tree: [base, patched]
+    defaults:
+      run:
+        shell: C:\cygwin\bin\bash.exe --noprofile --norc -eo pipefail -o igncr '{0}'
+    steps:
+      - name: 改行を変えずに取る
+        shell: cmd
+        run: git config --global core.autocrlf input
+
+      - uses: actions/checkout@v4
+
+      - uses: cygwin/cygwin-install-action@v4
+        with:
+          packages: >-
+            gcc-core make patch curl tar gzip binutils perl texinfo
+            libncurses-devel zlib-devel
+
+      - name: 建てて、モジュールを試し、make check
+        run: |
+          export PATH=/usr/bin:$PATH
+          cd "$(cygpath -u "$GITHUB_WORKSPACE")"
+          export GITHUB_WORKSPACE="$PWD"
+          ci/xemacs/fetch-upstream.sh xemacs
+          ci/xemacs/posix-module-check.sh "$PWD/xemacs" ${{ matrix.tree }} "$PWD/out"
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: posix-cygwin-${{ matrix.tree }}
+          path: out
+
+  mingw:
+    if: ${{ inputs.target == 'posix' }}
+    name: MinGW (MSYS2 MINGW64, ${{ matrix.tree }})
+    runs-on: windows-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        tree: [base, patched]
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: 改行を変えずに取る
+        shell: cmd
+        run: git config --global core.autocrlf input
+
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils
+            make patch diffutils curl tar gzip perl texinfo
+
+      - name: 建てて、モジュールを試し、make check
+        run: |
+          cd "$(cygpath -u "$GITHUB_WORKSPACE")"
+          export GITHUB_WORKSPACE="$PWD"
+          ci/xemacs/fetch-upstream.sh xemacs
+          ci/xemacs/posix-module-check.sh "$PWD/xemacs" ${{ matrix.tree }} "$PWD/out"
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: posix-mingw-${{ matrix.tree }}
+          path: out
+
+  posix-compare:
+    if: ${{ always() && inputs.target == 'posix' }}
+    needs: [cygwin, mingw]
+    name: Cygwin と MinGW を前後で突き合わせる
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: posix-*
+
+      - name: 突き合わせる
+        run: |
+          rc=0
+          for os in cygwin mingw; do
+            echo "=================== $os ==================="
+            b=posix-$os-base p=posix-$os-patched
+            mb=$(cat $b/module.result 2>/dev/null || echo "not measured")
+            mp=$(cat $p/module.result 2>/dev/null || echo "not measured")
+            echo "module: base=$mb patched=$mp"
+            if [ "$mb" = loaded ] && [ "$mp" != loaded ]; then
+              echo "!! $os: 素の木では読めたモジュールが、当てた木で読めない"; rc=1
+            fi
+            if [ ! -f $b/check.log ] || [ ! -f $p/check.log ]; then
+              echo "!! $os: make check の log が揃っていない (測れていない)"; rc=1; continue
+            fi
+            python3 ci/xemacs/check-compare.py $b/check.log $p/check.log || rc=1
+          done
+          exit $rc
