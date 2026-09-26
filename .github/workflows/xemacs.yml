@@ -742,7 +742,7 @@ jobs:
         include:
           - mode: mingw32
             msystem: MINGW32
-          - mode: mingw64-match
+          - mode: mingw64
             msystem: MINGW64
     defaults:
       run:

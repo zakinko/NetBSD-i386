@@ -2,18 +2,17 @@
 # How far does a MinGW build of XEmacs 21.5 get?  A probe, not a test:
 # it never fails the job, it counts the walls.
 #
-#	$1	mingw32        MSYS2 MINGW32 (i686), configure as shipped
-#		mingw64-match  MSYS2 MINGW64, with the x86_64 branch of the
-#		               generated configure taught to recognise MinGW,
-#		               as the i386 branch already does
+#	$1	mingw32 | mingw64   (the MSYS2 environment the job set up)
 #	$2	the checkout (from fetch-upstream.sh)
 #	$3	directory for the logs
 #
-# configure.ac matches MinGW only under i[3-9]86-*-* (as *-pc-mingw*),
-# and config.guess calls MSYS2's MINGW64 x86_64-pc-mingw64, so a 64-bit
-# build is configured as generic Unix.  mingw64-match edits the shipped
-# configure rather than configure.ac, to see the next wall without
-# regenerating it; it is not a proposed change.
+# configure.ac recognises MinGW only as *-pc-mingw*, and only under
+# i[3-9]86-*-*.  MSYS2 hands configure the build type i686-w64-mingw32 or
+# x86_64-w64-mingw32: vendor w64, not pc.  Both are configured as generic
+# Unix, WIN32_NATIVE is never defined, and the build stops on sys/errno.h.
+# The probe edits the shipped configure so both branches take *-mingw*;
+# it edits configure rather than configure.ac to see the next wall
+# without regenerating it, and is not a proposed change.
 
 set -u
 MODE=$1 SRC=$2 OUT=$3
@@ -21,14 +20,12 @@ mkdir -p "$OUT"
 cd "$SRC" || exit 0
 echo "== $MODE: upstream $(cat .upstream-rev), $(uname -s), $(gcc -dumpmachine) =="
 
-if [ "$MODE" = mingw64-match ]; then
-  awk '{ print }
-       /^      \*-cygwin\* \)\topsys=cygwin64 ;;$/ {
-         print "      *-pc-mingw* )\topsys=mingw32 ;"
-         print "\t\t\t\ttest -z \"$with_tty\" && with_tty=\"no\";;"
-       }' configure > configure.new && mv configure.new configure && chmod +x configure
-  echo "configure now matches MinGW in $(grep -c 'opsys=mingw32' configure) places"
-fi
+awk '{ sub(/^      \*-pc-mingw\* \)/, "      *-mingw* )"); print }
+     /^      \*-cygwin\* \)\topsys=cygwin64 ;;$/ {
+       print "      *-mingw* )\topsys=mingw32 ;"
+       print "\t\t\t\ttest -z \"$with_tty\" && with_tty=\"no\";;"
+     }' configure > configure.new && mv configure.new configure && chmod +x configure
+echo "configure matches *-mingw* in $(grep -c -- '\*-mingw\* )' configure) places (expect 2)"
 
 # configure writes #include "$srcdir/src/m/intel386.h" into its test
 # programs.  With srcdir in MSYS form (/d/a/...), the native MinGW gcc
