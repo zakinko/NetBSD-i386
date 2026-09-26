@@ -32,7 +32,7 @@ on:
       target:
         description: 'どれを回すか'
         type: choice
-        options: [both, overread, windows, alloca, check, recheck, gui, control, posix]
+        options: [both, overread, windows, alloca, check, recheck, gui, control, posix, mingw]
         default: both
 
 concurrency:
@@ -730,3 +730,48 @@ jobs:
             python3 ci/xemacs/check-compare.py $b/check.log $p/check.log || rc=1
           done
           exit $rc
+
+  mingw-probe:
+    if: ${{ inputs.target == 'mingw' }}
+    name: MinGW はどこまで建つか (${{ matrix.mode }})
+    runs-on: windows-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: mingw32
+            msystem: MINGW32
+          - mode: mingw64-match
+            msystem: MINGW64
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: 改行を変えずに取る
+        shell: cmd
+        run: git config --global core.autocrlf input
+
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.msystem }}
+          update: false
+          pacboy: >-
+            gcc:p binutils:p
+          install: >-
+            make patch diffutils curl tar gzip perl texinfo
+
+      - name: 建ててみる (make -k で先まで)
+        run: |
+          cd "$(cygpath -u "$GITHUB_WORKSPACE")"
+          export GITHUB_WORKSPACE="$PWD"
+          ci/xemacs/fetch-upstream.sh xemacs
+          ci/xemacs/mingw-probe.sh ${{ matrix.mode }} "$PWD/xemacs" "$PWD/out"
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: mingw-probe-${{ matrix.mode }}
+          path: out
