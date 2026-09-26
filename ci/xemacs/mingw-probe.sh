@@ -30,11 +30,20 @@ if [ "$MODE" = mingw64-match ]; then
   echo "configure now matches MinGW in $(grep -c 'opsys=mingw32' configure) places"
 fi
 
-./configure --with-modules --without-x --with-postgresql=no --with-ldap=no \
-  --with-sound=none > "$OUT/conf.log" 2>&1
+# configure writes #include "$srcdir/src/m/intel386.h" into its test
+# programs.  With srcdir in MSYS form (/d/a/...), the native MinGW gcc
+# cannot open it: the first probe stopped there, the switches in
+# s/mingw32.h (-DWIN32_NATIVE among them) were never picked up, and the
+# build went on as generic Unix.  MSYS2 converts paths on command lines,
+# not inside files, so give srcdir in the D:/... form both can read.
+SRCDIR=$(cygpath -m "$PWD")
+echo "srcdir: $SRCDIR"
+./configure --srcdir="$SRCDIR" --with-modules --without-x \
+  --with-postgresql=no --with-ldap=no --with-sound=none > "$OUT/conf.log" 2>&1
 echo "configure exited $?"
 grep -m3 -E "^opsys=|^machine=|^canonical=" config.log || true
-grep -m5 -iE 'unrecognized|error:' "$OUT/conf.log" || true
+grep -m8 -iE 'unrecognized|error:|No such file' "$OUT/conf.log" config.log || true
+grep -E "^c_switch_system=|^opsysfile=|^machfile=" config.log || true
 
 make -k -j"$(nproc)" > "$OUT/make.log" 2>&1
 echo "make -k exited $?"
