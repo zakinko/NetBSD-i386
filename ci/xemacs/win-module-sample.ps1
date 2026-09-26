@@ -22,8 +22,12 @@ function Invoke-XEmacs([string]$label, [string[]]$rest) {
     $p.Kill(); Get-Content $out, $err -EA SilentlyContinue
     throw "${label}: no return in 300 s"
   }
-  Write-Host "=== $label (exit $($p.ExitCode)) ==="
+  # A crash shows as an NTSTATUS such as 0xC0000005, not as 1.
+  Write-Host ("=== $label (exit {0} = 0x{0:X8}) ===" -f $p.ExitCode)
   Get-Content $out, $err -EA SilentlyContinue
+  if ($env:SAMPLE_LOG -and (Test-Path $env:SAMPLE_LOG)) {
+    Write-Host "--- $env:SAMPLE_LOG ---"; Get-Content $env:SAMPLE_LOG
+  }
   if ($p.ExitCode -ne 0) { throw "$label failed" }
   return (Get-Content $out -Raw -EA SilentlyContinue)
 }
@@ -55,6 +59,7 @@ Write-Host '--- exports of sample.ell ---'
 & dumpbin /exports $ell | Select-String -Pattern 'emodule_|_of_sample|unload_sample'
 
 $env:SAMPLE_ELL = $ell
+$env:SAMPLE_LOG = Join-Path $mod 'load.log'
 $o = Invoke-XEmacs 'load' @('-vanilla', '-l',
   (Join-Path $env:GITHUB_WORKSPACE 'ci\xemacs\module-load.el'))
 foreach ($pat in 'loaded=t', 'sample-function=t',
