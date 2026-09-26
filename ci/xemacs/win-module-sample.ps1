@@ -20,7 +20,7 @@ function Invoke-XEmacs([string]$label, [string[]]$rest) {
          -RedirectStandardOutput $out -RedirectStandardError $err
   if (-not $p.WaitForExit(300000)) {
     $p.Kill(); Get-Content $out, $err -EA SilentlyContinue
-    throw "$label: no return in 300 s"
+    throw "${label}: no return in 300 s"
   }
   Write-Host "=== $label (exit $($p.ExitCode)) ==="
   Get-Content $out, $err -EA SilentlyContinue
