@@ -315,6 +315,24 @@ MINGW*|MSYS*|CYGWIN*)
 		patch -p1 -f -i "$CI_DIR/build_windows_jni-arm64.patch" </dev/null
 		grep -q 'PROCESSOR_ARCHITECTURE' scripts/bootstrap/build_windows_jni.sh \
 			|| { echo "当て物が効いていない"; exit 1; }
+		# grpc 1.76.0 は PYTHON_VERSIONS (3.9〜3.13) の全部に pip.parse を掛け、
+		# rules_python 1.9.2 は 3.9 と 3.10 の CPython を aarch64-pc-windows-msvc
+		# 向けに配っていない。host で動く interpreter の無い版の pip.parse が
+		# 一つでもあると pip 拡張ごと落ちる (run 36182622780:
+		# "Unable to find interpreter for pip hub 'grpc_python_dependencies' for
+		# python_version=3.9"、登録されていたのは 3.11 / 3.12 / 3.13)。
+		# bazel の pip の塊を落とすと build graph から pip 拡張への参照が消え、
+		# 拡張そのものが評価されない。BSD と同じ手当て。
+		echo "  → ARM64: pip の塊を落とす"
+		PY=
+		for c in python3 python py; do
+			"$c" --version >/dev/null 2>&1 && { PY=$c; break; }
+		done
+		[ -n "$PY" ] || { echo "python が見つからない"; exit 1; }
+		"$PY" "$CI_DIR/drop_pip_dev_deps.py" .
+		if grep -rq bazel_pip_dev_deps MODULE.bazel third_party/py 2>/dev/null; then
+			echo "pip の塊が残っている"; exit 1
+		fi
 	else
 		echo "  → ARM64 ではないと判定。当て物は当てない"
 	fi ;;
