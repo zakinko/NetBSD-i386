@@ -2,11 +2,9 @@
 ;; SAMPLE_ELL names the file; the caller builds it first.
 ;; Prints one line per fact so the job can match each by name.
 ;;
-;; Lines go to external-debugging-output, which is stderr and is not
-;; buffered.  On Windows, run through lib-src/i.exe, whatever princ had
-;; sent to stdout was thrown away when kill-emacs ended the process: a
-;; file doing nothing but (princ "hello") (kill-emacs 3) came back with
-;; exit 3 and no hello.
+;; Lines go to external-debugging-output, stderr, which is not buffered,
+;; so a process that dies inside load-module still leaves what it had
+;; reached.
 
 (setq load-modules-quietly nil)
 
