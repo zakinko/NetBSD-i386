@@ -1,5 +1,82 @@
+diff --git a/lisp/ellcc.el b/lisp/ellcc.el
+index a08e2a1..25cdfbb 100644
+--- a/lisp/ellcc.el
++++ b/lisp/ellcc.el
+@@ -322,8 +322,17 @@
+        (apply #'call-process-and-exit
+ 	      (append
+ 	       (mapcan #'split-into-command-line-args
+-		       (list ellcc-dll-ld ellcc-ldflags
+-			     ellcc-dll-ldflags ellcc-dll-ldo module-output))
++		       (list ellcc-dll-ld ellcc-ldflags ellcc-dll-ldflags))
++	       ;; Most linkers take the output name as the argument after
++	       ;; -o.  MSVC's link takes it joined to the switch, -out:NAME;
++	       ;; handed over as two arguments, -out: names nothing and
++	       ;; NAME is read as an input file.  A dll_ldo ending in a
++	       ;; colon or an equals sign asks for the joined form.
++	       (if (and ellcc-dll-ldo
++			(string-match "[:=]\\'" ellcc-dll-ldo))
++		   (list (concat ellcc-dll-ldo module-output))
++		 (mapcan #'split-into-command-line-args
++			 (list ellcc-dll-ldo module-output)))
+ 	       (reduce #'cons command-line-args :from-end t
+ 		       :initial-value (split-into-command-line-args
+ 				       ellcc-dll-post)
+@@ -354,7 +363,8 @@
+ 	   (write-line (mapconcat #'identity command-line-args " ") t))
+ 
+ 	 (with-temp-buffer
+-	   (format-into (current-buffer)
++	   (apply
++	    #'format-into (current-buffer)
+ 			"/* DO NOT EDIT - AUTOMATICALLY GENERATED */
+ #include <emodules.h>
+ 
+@@ -369,13 +379,40 @@ extern void docs_of_%s (void);
+ }
+ #endif
+ 
++#ifdef _MSC_VER
++/* emodules.c finds these by name.  An MSVC DLL exports only what it is
++   told to, unlike GNU ld, which exports everything when nothing is
++   marked.  The optional entry points fall back to a function that does
++   nothing, which is what their absence means to emodules.c. */
++void emodule_noop_%s (void) { }
++# ifdef _M_IX86
++#  pragma comment(linker, \"/ALTERNATENAME:_modules_of_%s=_emodule_noop_%s\")
++#  pragma comment(linker, \"/ALTERNATENAME:_unload_%s=_emodule_noop_%s\")
++# else
++#  pragma comment(linker, \"/ALTERNATENAME:modules_of_%s=emodule_noop_%s\")
++#  pragma comment(linker, \"/ALTERNATENAME:unload_%s=emodule_noop_%s\")
++# endif
++# pragma comment(linker, \"/EXPORT:emodule_compiler,DATA\")
++# pragma comment(linker, \"/EXPORT:emodule_name,DATA\")
++# pragma comment(linker, \"/EXPORT:emodule_version,DATA\")
++# pragma comment(linker, \"/EXPORT:emodule_title,DATA\")
++# pragma comment(linker, \"/EXPORT:modules_of_%s\")
++# pragma comment(linker, \"/EXPORT:syms_of_%s\")
++# pragma comment(linker, \"/EXPORT:vars_of_%s\")
++# pragma comment(linker, \"/EXPORT:docs_of_%s\")
++# pragma comment(linker, \"/EXPORT:unload_%s\")
++#endif
++
+ const long emodule_compiler = %ld;
+ const char *emodule_name = \"%s\";
+ const char *emodule_version = \"%s\";
+ const char *emodule_title = \"%s\";
+ 
+-void docs_of_%s (void)\n"   module-name module-revision module-name
+-			ellcc-module-version module-title module-name)
++void docs_of_%s (void)\n"
++	    module-name
++	    (nconc (make-list 14 module-name)
++		   (list module-revision module-name ellcc-module-version
++			 module-title module-name)))
+ 	   (write-file (expand-file-name module-output)))
+ 
+ 	 (load "make-docfile.elc"))))))
 diff --git a/nt/xemacs.mak b/nt/xemacs.mak
-index 3438897..c2e0cb7 100644
+index 3438897..b143763 100644
 --- a/nt/xemacs.mak
 +++ b/nt/xemacs.mak
 @@ -691,6 +691,10 @@ PROFILE_FLAGS=
@@ -21,7 +98,7 @@ index 3438897..c2e0cb7 100644
  	$(OUTDIR)\imgproc.obj \
  	$(OUTDIR)\insdel.obj \
  	$(OUTDIR)\intl.obj \
-@@ -971,6 +976,39 @@ CONFIG_VALUES = $(BLDLIB_SRC)\config.values
+@@ -971,6 +976,43 @@ CONFIG_VALUES = $(BLDLIB_SRC)\config.values
  !endif
  !if [echo LISPDIR>>$(CONFIG_VALUES) && echo "\\$(LISP:\=\\)">>$(CONFIG_VALUES)]
  !endif
@@ -35,7 +112,11 @@ index 3438897..c2e0cb7 100644
 +!endif
 +!if [echo XE_CFLAGS>>$(CONFIG_VALUES) && echo "$(CFLAGS:\=\\)">>$(CONFIG_VALUES)]
 +!endif
-+!if [echo c_switch_all>>$(CONFIG_VALUES) && echo "$(INCLUDES:\=\\)">>$(CONFIG_VALUES)]
++# On Unix these options live in the generated config.h.  Here config.h
++# is config.h.in copied verbatim and they arrive as -D switches, so a
++# module needs the same switches to agree with the executable on
++# MODULE_API, UNICODE_INTERNAL and the error-checking layout.
++!if [echo c_switch_all>>$(CONFIG_VALUES) && echo "$(INCLUDES:\=\\) $(OPT_DEFINES) -DWIN32_LEAN_AND_MEAN -DWIN32_NATIVE -DHAVE_CONFIG_H">>$(CONFIG_VALUES)]
 +!endif
 +!if [echo LDFLAGS>>$(CONFIG_VALUES) && echo "">>$(CONFIG_VALUES)]
 +!endif
@@ -61,7 +142,7 @@ index 3438897..c2e0cb7 100644
  !if defined(PATH_LATE_PACKAGE_DIRECTORIES)
  # PATH_LATE_PACKAGE_DIRECTORIES is already a quoted string.
  ! if [echo PATH_LATE_PACKAGE_DIRECTORIES>>$(CONFIG_VALUES) && echo $(PATH_LATE_PACKAGE_DIRECTORIES)>>$(CONFIG_VALUES)]
-@@ -1198,8 +1236,10 @@ TEMACS_COMMON_LFLAGS=-nologo $(LIBRARIES) $(DEBUG_FLAGS_LINK) \
+@@ -1198,8 +1240,10 @@ TEMACS_COMMON_LFLAGS=-nologo $(LIBRARIES) $(DEBUG_FLAGS_LINK) \
   $(PROFILE_FLAGS) setargv.obj
  TEMACS_LFLAGS=$(TEMACS_COMMON_LFLAGS) \
   -pdb:$(BLDSRC)\temacs.pdb -map:$(BLDSRC)\temacs.map
@@ -73,7 +154,7 @@ index 3438897..c2e0cb7 100644
  
  
  ########################### Definitions for running temacs.exe/xemacs.exe
-@@ -1251,6 +1291,29 @@ $(OUTDIR)\temacs.res: $(NT)\xemacs.rc
+@@ -1251,6 +1295,29 @@ $(OUTDIR)\temacs.res: $(NT)\xemacs.rc
  
  TEMACS_DUMP_DEP = $(OUTDIR)\dump-id.obj
  
@@ -103,7 +184,7 @@ index 3438897..c2e0cb7 100644
  $(RAW_EXE): $(TEMACS_OBJS) $(TEMACS_DUMP_DEP)
  # Command line too long for some Windows installation:
  #	@echo link $(TEMACS_LFLAGS) -out:$@ $(TEMACS_OBJS) $(TEMACS_DUMP_DEP) $(TEMACS_LIBS)
-@@ -1276,7 +1339,7 @@ $(BLDSRC)\NEEDTODUMP:
+@@ -1276,7 +1343,7 @@ $(BLDSRC)\NEEDTODUMP:
  # This rule dumps xemacs and then possibly spawns sub-make if PURESPACE
  # requirements have changed.
  

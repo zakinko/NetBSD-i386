@@ -9,9 +9,14 @@ name: xemacs
 #              関数の写しは持たず、checkout から抜き出して組む。素の木で
 #              落ち、当て物を入れると落ちないことを一つの job で両方見る。
 #
-#   windows    Windows のモジュール(動的ロード)未対応を触るための足場作り。
-#              まず VS で最小構成が建つかを測る。建たないなら、どこで
-#              止まるかが答えになる。探りなので job は落とさない。
+#   windows    Windows のモジュール(動的ロード)対応。win-module-exports.patch
+#              を当てて MSVC で建て、modules/sample/external を ellcc で
+#              建てて load-module で読むところまで。
+#
+#   modules-linux  同じ当て物を Linux の 21.5 に当て、同じ手順でサンプルを
+#              建てて読む。当て物は全 platform 共通の lisp/ellcc.el と
+#              src/config.h.in にも触るので、Unix 側が壊れていないことを
+#              別の箱で確かめる。windows を回すときは必ず一緒に回る。
 #
 # どちらも押すまで動かない。overread は数十秒、windows は数分。
 
@@ -80,6 +85,25 @@ jobs:
       - name: 当て物を入れると落ちないか
         run: ci/xemacs/alloca.sh "$PWD/x214patched" patched
 
+  modules-linux:
+    if: ${{ inputs.target == 'both' || inputs.target == 'windows' }}
+    name: 同じ当て物で Linux のモジュールが建って読めるか
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 依存
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libncurses-dev texinfo
+
+      - name: XEmacs を取る
+        run: git clone --quiet --depth 1 https://github.com/zakinko/XEmacs xemacs
+
+      - name: 建てて、サンプルを ellcc で建てて読む
+        run: ci/xemacs/linux-module-sample.sh "$PWD/xemacs"
+
   windows:
     if: ${{ inputs.target == 'both' || inputs.target == 'windows' }}
     name: Windows で建つか (探り)
@@ -101,6 +125,7 @@ jobs:
           grep -q 'XEMACS_DEF' nt/xemacs.mak
           grep -q 'USE_CPLUSPLUS' nt/xemacs.mak src/config.h.in
           grep -q 'echo dll_ld>>' nt/xemacs.mak
+          grep -q 'emodule_noop_' lisp/ellcc.el
 
       - uses: ilammy/msvc-dev-cmd@v1
 
@@ -226,6 +251,10 @@ jobs:
             if ($o -notmatch $pat) { throw "config.values が届いていない: $pat" }
           }
           Write-Host "ARCHLIBDIR はまだ足していないので Include directory は nil のまま"
+
+      - name: サンプルのモジュールを ellcc で建てて読む
+        shell: pwsh
+        run: ci/xemacs/win-module-sample.ps1
 
       - name: 動的ロードの足回りが object に入っているか
         shell: cmd
