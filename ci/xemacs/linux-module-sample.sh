@@ -15,7 +15,10 @@ patch -p1 -f -i "$P" </dev/null
 grep -q 'emodule_noop_' lisp/ellcc.el
 grep -q 'USE_CPLUSPLUS' src/config.h.in
 
-./configure --with-modules --with-x11=no --with-mule=yes --pdump \
+# 21.5's configure rejects options it does not know, and several of
+# 21.4's are gone: MULE is always on, the portable dumper is the
+# default, and X is autoconf's own --without-x.
+./configure --with-modules --without-x \
     --with-msw=no --with-postgresql=no --with-ldap=no --with-sound=none \
     > conf.log 2>&1 || { echo "!! configure"; tail -30 conf.log; exit 4; }
 grep -i 'modules' conf.log | head -5 || true
