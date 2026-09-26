@@ -83,28 +83,47 @@ case "$mode" in
 		|| { bad "本当てが落ちた"; rm -rf "$w"; exit 1; }
 	find "$w" -name '*.orig' -delete
 
-	# 本文の cvs rm を実行する。patch は file を消せないので、ここが
-	# 抜けると「fork には無いのに木には残る」形で差が出る。
-	for f in $(sed -n 's/.*cvs rm:[[:space:]]*//p' "$pr" | tr -d ','); do :; done
-	sed -n '/cvs rm:/,/^$/p' "$pr" | tr ' \t,' '\n\n\n' \
-	    | grep -E '^(patches|files)/' | while read -r f; do
-		rm -f "$w/$pkgdir/$f"
-	done
-	# 本文が「patches/a b c」と並べる書き方も拾う
-	sed -n '/cvs rm:/,/^$/p' "$pr" | tr ' \t,' '\n\n\n' \
-	    | grep -E '^patch-' | while read -r f; do
-		rm -f "$w/$pkgdir/patches/$f"
-	done
+	# patch は file を消せないので、消える file は本文に名前で書くしかない。
+	# 以前は本文の「cvs rm:」の行を読んで消していたが、その書き方を
+	# やめたとき、消える八本の名前が本文から丸ごと落ちたのに検査は
+	# 通った (下の diff -r が Only in を数えていなかったのと二重の穴)。
+	#
+	# 言い回しに頼らず、上流に在って fork に無い file を列挙し、その
+	# 名前が本文に在るかを見る。在れば消えたものとして扱う。無ければ
+	# committer に伝わらないので落とす。
+	_body=$T/pvb.body.$$
+	sed -n "1,$(( $(grep -n '^	--- ' "$pr" | head -1 | cut -d: -f1) - 1 ))p" "$pr" > "$_body"
+	( cd "$w/$pkgdir" && find . -type f | sed 's|^\./||' ) | sort > "$T/pvb.up.$$"
+	( cd "$fork" && find . -type f | sed 's|^\./||' ) | sort > "$T/pvb.fk.$$"
+	comm -23 "$T/pvb.up.$$" "$T/pvb.fk.$$" | while read -r f; do
+		case $f in CVS/*|*/CVS/*) continue ;; esac
+		if grep -qF "${f##*/}" "$_body"; then
+			rm -f "$w/$pkgdir/$f"
+		else
+			echo "BAD $f"
+		fi
+	done > "$T/pvb.gone.$$"
+	if [ -s "$T/pvb.gone.$$" ]; then
+		sed 's/^BAD /  !! 消える file の名前が本文に無い: /' "$T/pvb.gone.$$"
+		rc=1
+	fi
 	rmdir "$w/$pkgdir/files" 2>/dev/null || true
+	rm -f "$_body" "$T/pvb.up.$$" "$T/pvb.fk.$$" "$T/pvb.gone.$$"
 
 	echo "  === fork との差 (\$NetBSD\$ の Id 行だけなら同じ物) ==="
 	if diff -r --exclude=CVS "$w/$pkgdir" "$fork" > "$T/pvb.out.$$" 2>&1; then
 		echo "  ok 完全に同一"
 	else
-		# Id 行だけの差かどうかを数える
+		# Id 行だけの差かどうかを数える。片方にだけ在る file は
+		# 「Only in」の行になり < > を持たないので、別に数えないと
+		# 見えない。消えるはずの file が残っていても通していた。
+		_only=$(grep -c '^Only in ' "$T/pvb.out.$$" || true)
 		o=$(grep -c '^[<>]' "$T/pvb.out.$$" || true)
 		i=$(grep -c '^[<>].*\$NetBSD' "$T/pvb.out.$$" || true)
-		if [ "$o" = "$i" ] && [ "$o" != 0 ]; then
+		if [ "${_only:-0}" != 0 ]; then
+			bad "片方にだけ在る file が ${_only} 件"
+			grep '^Only in ' "$T/pvb.out.$$" | sed 's/^/     /'
+		elif [ "$o" = "$i" ] && [ "$o" != 0 ]; then
 			echo "  ok 差は \$NetBSD\$ の Id 行 $((o / 2)) 本だけ"
 		else
 			bad "Id 行以外の差がある ($o 行のうち Id 行は $i 行)"

@@ -317,19 +317,19 @@ check_diff() {
 		note "新しい file (本文に cvs add と書いたか):"
 		sed 's/^/     /' $TMP/pr-ready-add.$$
 		# .pr を見ているなら、書いたかどうかを人に訊かずに数える。
-		# 当て物だけが入って cvs add が漏れると、committer の木で
-		# build が壊れる。名前が本文に無いものと、cvs add の語が
-		# 一度も出てこないものを落とす。
+		# 当て物だけが入って新しい file の存在が伝わらないと、
+		# committer の木で build が壊れる。落とすのは「名前が本文に
+		# 無い」ときだけにする。cvs add という語そのものを求めていた
+		# ことがあるが、committer は増えた file を見れば分かるので、
+		# 報告に命令を書き写させるのは余計だった。名前が在れば足りる。
 		if [ -f $TMP/pr-ready-body.$$ ]; then
 			while read -r _f; do
 				grep -qF "$(basename "$_f")" $TMP/pr-ready-body.$$ \
 					|| bad "本文に $_f の名前が無い"
 			done < $TMP/pr-ready-add.$$
-			grep -qi 'cvs add' $TMP/pr-ready-body.$$ \
-				|| bad "新しい file が在るのに本文に cvs add が無い"
 		fi
 	fi
-	rm -f $TMP/pr-ready-add.$$ $TMP/pr-ready-body.$$
+	rm -f $TMP/pr-ready-add.$$
 
 	# 9. diff に混ざった binary。macOS の tar が運ぶ AppleDouble (._patch-*) が
 	#    patches/ に落ちていると、diff -urN は中身を出さずに
@@ -407,6 +407,123 @@ check_diff() {
 		note "   素の木から diff -u で取り直す"
 	fi
 	rm -f /tmp/pr-ready-hunk.$$
+
+	# 10. 版を動かす報告なら、doc/pkg-vulnerabilities をどう扱ったかが
+	#     本文に無いと出せない。NVD に在って木の一覧に無い CVE は実際に
+	#     ある。editors/xwpe は木が 1.5.30a のまま CVE-2016-20037
+	#     (CVSS 8.4) が NVD に在り、doc/pkg-vulnerabilities には xwpe の
+	#     行が一つも無かった。更新の報告を出す直前に引いて初めて出た。
+	#
+	#     足す行が無いこともある (版を上げれば既定の上限がそのまま正しく
+	#     なる、その file は配っていない)。その場合は「無い」と本文に
+	#     書く。書かずに出すのは、確かめていないのと見分けが付かない。
+	if [ -s "$TMP/pr-ready-body.$$" ]; then
+		_body=$TMP/pr-ready-body.$$
+		# 版が動く報告か。DISTNAME か PKGREVISION の hunk で見る。
+		if grep -qE '^\+(DISTNAME|PKGREVISION)=' "$d"; then
+			if grep -q 'doc/pkg-vulnerabilities' "$d"; then
+				note "   doc/pkg-vulnerabilities の hunk が在る"
+			elif grep -qi 'vulnerabilit' "$_body"; then
+				note "   doc/pkg-vulnerabilities の hunk は無いが、本文が触れている"
+			else
+				note "版が動く。NVD をその package の CPE で引き、"
+				note "   doc/pkg-vulnerabilities と突き合わせたか。"
+				note "   足す行が在るなら hunk を付ける (取り下げ CVE も"
+				note "   # で無効化して入れる)。無いなら書かなくてよい"
+			fi
+		fi
+		rm -f "$TMP/pr-ready-body.$$"
+	fi
+
+	# 11. 送る直前に、測った木がまだ現在かを見る。
+	#
+	#     本文は「Diff against pkgsrc-current of <日付> (Makefile 1.64)」
+	#     の形で、いつの木に当てた物かを言う。木は日々動くので、その日付が
+	#     古いまま出すと、committer が当てる木と食い違う。実際に三日前の
+	#     日付のまま送る一歩手前まで行った。
+	#
+	#     日付だけでは足りないので、diff の文脈に残っている $NetBSD の
+	#     版を上流の現在と突き合わせる。当て物の文脈に Id 行が入って
+	#     いれば、木が動いた瞬間にここで落ちる。
+	#
+	#     網が使えない所でも走らせたいので、引けなかったときは落とさず
+	#     note にする。落ちるのは「引けて、違った」ときだけ。
+	if [ -s "$TMP/pr-ready-body.$$2" ]; then :; fi
+	_today=$(date +%Y-%m-%d)
+	_bd=$(sed -n 's/.*pkgsrc-current[^0-9]*\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\).*/\1/p' "$d" | head -1)
+	if [ -n "$_bd" ] && [ "$_bd" != "$_today" ]; then
+		bad "本文の日付が $_bd で今日 ($_today) ではない"
+		note "   今日の木で当て直してから出す。pr-vs-built --applies も"
+	fi
+	if [ "${PR_READY_OFFLINE:-}" = 1 ]; then
+		note "   (PR_READY_OFFLINE=1 なので木の版は引かない)"
+	else
+		# 版は awk で切る。sed の後段に任せると、当たらなかったときに
+		# 行全体がそのまま「版」として残り、1.19 と 1.19 を比べて
+		# 違うと言う。ここで一度それを出した。
+		awk '
+			/^--- /{ f=$2; sub(/\.orig$/,"",f); next }
+			f != "" && /^ .*\$NetBSD: /{
+				for (i = 1; i <= NF; i++)
+					if ($i ~ /,v$/ && i < NF) { print f, $(i+1); break }
+				f = ""
+			}
+		' "$d" > $TMP/pr-ready-rev.$$ || true
+		while read -r _p _v; do
+			[ -n "${_v:-}" ] || continue
+			_up=$(curl -sf --max-time 20 \
+				"https://raw.githubusercontent.com/NetBSD/pkgsrc/trunk/$_p" |
+				sed -n 's/.*\$NetBSD: [^,]*,v \([^ ]*\) .*/\1/p' | head -1)
+			if [ -z "$_up" ]; then
+				note "   $_p の版を上流から引けなかった"
+			elif [ "$_up" != "$_v" ]; then
+				bad "$_p が木で動いた ($_v -> $_up)"
+				note "   その木で測り直してから出す"
+			fi
+		done < $TMP/pr-ready-rev.$$
+		rm -f $TMP/pr-ready-rev.$$
+
+		# 12. 版を上げる報告なら、上げた先が上流の最新かを見る。
+		#     tag の間隔が数日の上流も在るので、書いてから送るまでの
+		#     数日で追い越されることがある。
+		#
+		#     上流の在処は package の MASTER_SITES から引く。GitHub と
+		#     Codeberg だけを見て、それ以外は手で確かめろと言うに留める。
+		#     ここで分かるのは「最新か」だけで、上げるべきかは別の判断。
+		_dn=$(sed -n 's/^+DISTNAME=[[:space:]]*//p' "$d" | head -1)
+		if [ -n "$_dn" ]; then
+			_pkgdir=$(sed -n 's/^--- \(.*\)\/Makefile\.orig$/\1/p' "$d" | head -1)
+			# 上流の在処は diff の + 側を先に見る。版を上げる報告では
+			# MASTER_SITES ごと動くことがあり (xwpe は
+			# identicalsoftware.com から codeberg へ移った)、木の
+			# Makefile を見ると古い在処を引いて空を返す。
+			_mk=$(sed -n 's/^+//p' "$d" | grep MASTER_SITE || true)
+			[ -n "$_mk" ] || _mk=$(curl -sf --max-time 20 \
+			    "https://raw.githubusercontent.com/NetBSD/pkgsrc/trunk/$_pkgdir/Makefile" || true)
+			_ver=${_dn##*-}
+			_owner=$(printf '%s\n' "$_mk" | sed -n 's/.*MASTER_SITE_GITHUB:=\([^}/]*\).*/\1/p' | head -1)
+			_cb=$(printf '%s\n' "$_mk" | sed -n 's/.*MASTER_SITE_CODEBERG:=\([^}/]*\/[^}/]*\).*/\1/p' | head -1)
+			_pkgbase=$(printf '%s\n' "$_dn" | sed 's/-[^-]*$//')
+			_latest=
+			if [ -n "$_owner" ]; then
+				_latest=$(curl -sf --max-time 20 \
+				    "https://api.github.com/repos/$_owner/$_pkgbase/releases/latest" |
+				    sed -n 's/.*"tag_name"[^"]*"\([^"]*\)".*/\1/p' | head -1)
+			elif [ -n "$_cb" ]; then
+				_latest=$(curl -sf --max-time 20 \
+				    "https://codeberg.org/api/v1/repos/$_cb/releases/latest" |
+				    sed -n 's/.*"tag_name"[^"]*"\([^"]*\)".*/\1/p' | head -1)
+			fi
+			if [ -z "$_latest" ]; then
+				note "   上流の最新は引けなかった。$_ver が最新か手で確かめる"
+			elif [ "${_latest#v}" != "$_ver" ]; then
+				bad "上流は ${_latest#v} で、この diff は $_ver"
+				note "   出す版を決め直してから送る"
+			else
+				note "   上流の最新と同じ版 ($_ver)"
+			fi
+		fi
+	fi
 }
 
 for d in "$@"; do
