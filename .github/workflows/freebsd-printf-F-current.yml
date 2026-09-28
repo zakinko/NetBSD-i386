@@ -1,0 +1,29 @@
+# freebsd/freebsd-src#2420 を FreeBSD 16.0-CURRENT の上で測る。
+#
+# vmactions の FreeBSD は 15.1 までなので、FreeBSD 自身が配っている CURRENT の
+# VM 像 (BASIC-CLOUDINIT) を qemu と KVM で起こし、cloud-init の runcmd で
+# ci/freebsd-printf-F/boot.sh を root で走らせる。結果は専用の disk で返る。
+# 手順は ci/freebsd-printf-F/current-host.sh と run-current.sh の冒頭を見よ。
+name: freebsd-printf-F-current
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: freebsd-printf-F-current-${{ github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  current:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - name: qemu と genisoimage
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q qemu-system-x86 qemu-utils genisoimage
+      - name: CURRENT で測る
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh ci/freebsd-printf-F/current-host.sh
