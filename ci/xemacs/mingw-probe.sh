@@ -55,9 +55,31 @@ grep -m3 -E "^opsys=|^machine=|^canonical=" config.log || true
 grep -m8 -iE 'unrecognized|error:|No such file' "$OUT/conf.log" config.log || true
 grep -E "^c_switch_system=|^opsysfile=|^machfile=" config.log || true
 
-make -k -j"$(nproc)" > "$OUT/make.log" 2>&1
-echo "make -k exited $?"
+# The build runs the xemacs it has just linked (update-elc, the dump).
+# The 32-bit run of the seventh probe sat for over half an hour with no
+# way to see where; bound it, and show where it was when it stopped.
+timeout 1800 make -k -j"$(nproc)" > "$OUT/make.log" 2>&1
+rc=$?
+echo "make -k exited $rc"
+if [ $rc -eq 124 ]; then
+  echo "!! make did not finish in 30 minutes; the last lines:"
+  tail -15 "$OUT/make.log"
+fi
 [ -f src/xemacs.exe ] && echo "src/xemacs.exe built" || echo "no src/xemacs.exe"
+
+# An executable is not a working XEmacs: the dump may not have happened.
+# It is linked -mwindows and prints nothing to the console, so ask it to
+# write what it knows to a file.
+if [ -f src/xemacs.exe ]; then
+  ls -l src/xemacs.exe src/*.dmp 2>&1 | sed 's/^/  /'
+  MINGW_LOG=$(cygpath -m "$OUT/run.log"); export MINGW_LOG
+  rm -f "$OUT/run.log"
+  timeout 120 src/xemacs.exe -batch -vanilla \
+    -l "$(cygpath -m "$GITHUB_WORKSPACE/ci/xemacs/mingw-run.el")"
+  echo "xemacs.exe exited $?"
+  echo "--- what it wrote ---"
+  cat "$OUT/run.log" 2>/dev/null || echo "(nothing written)"
+fi
 
 echo "--- files with compile errors: first error in each ---"
 # Key each error by its file.  The paths can be absolute with a drive

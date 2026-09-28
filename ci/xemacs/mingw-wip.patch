@@ -38,6 +38,23 @@
    FILE *outfile = (FILE*)0;
  
    char block[BLOCKSIZE];
+--- a/src/Makefile.in.in
++++ b/src/Makefile.in.in
+@@ -340,7 +340,14 @@
+ cppflags = $(CPPFLAGS) -Demacs -I. -I$(SRC) $(c_switch_all)
+ cflags   = $(CFLAGS) $(cppflags)
+ #if defined (WIN32_NATIVE)
++## A C name carries a leading underscore on 32-bit Windows and none on
++## 64-bit; the wrong one leaves ld defaulting the entry to the start of
++## the image.
++# ifdef _WIN64
++ldflags  = $(LDFLAGS) -mwindows -e mainCRTStartup $(ld_switch_all) $(ld_dynamic_link_flags)
++# else
+ ldflags  = $(LDFLAGS) -mwindows -e _mainCRTStartup $(ld_switch_all) $(ld_dynamic_link_flags)
++# endif
+ #else
+ ldflags  = $(LDFLAGS) $(ld_switch_all) $(ld_dynamic_link_flags)
+ #endif
 --- a/src/event-msw.c
 +++ b/src/event-msw.c
 @@ -1551,7 +1551,9 @@
