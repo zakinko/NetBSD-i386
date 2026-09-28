@@ -38,7 +38,7 @@ echo "configure writes a native path in $(grep -c 'pwd -W' configure) include li
 
 # s/mingw32.h is from the days of Cygwin's gcc -mno-cygwin.
 patch -p1 -f -i "$GITHUB_WORKSPACE/ci/xemacs/mingw-wip.patch" </dev/null
-grep -q '^#include <process.h>' src/s/mingw32.h
+grep -q '^#include <../include/process.h>' src/s/mingw32.h src/sysproc.h
 
 # configure writes #include "$srcdir/src/m/intel386.h" into its test
 # programs.  With srcdir in MSYS form (/d/a/...), the native MinGW gcc

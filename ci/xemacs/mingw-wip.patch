@@ -1,6 +1,14 @@
 --- a/src/s/mingw32.h
 +++ b/src/s/mingw32.h
-@@ -33,8 +33,8 @@
+@@ -25,16 +25,13 @@
+ 
+ #define MINGW
+ 
+-/* We are using Cygwin-style headers in /usr/include, also used by
+-   Cygwin itself */
+-#define CYGWIN_HEADERS
+ 
+ #ifndef ORDINARY_LINK
  #define ORDINARY_LINK
  #endif
  
@@ -11,7 +19,7 @@
  #define WIN32_LEAN_AND_MEAN
  
  #define TIME_ONESHOT 0
-@@ -51,7 +51,7 @@
+@@ -51,7 +48,7 @@
  /* #ifndef HAVE_SOCKETS */
  #define HAVE_SOCKETS
  /* #endif */
@@ -20,12 +28,23 @@
  
  #undef MAIL_USE_SYSTEM_LOCK
  #define HAVE_MSW_C_DIRED
-@@ -66,7 +66,7 @@
+@@ -66,7 +63,7 @@
  
  #ifndef NOT_C_CODE
  #include <stdlib.h>
 -#include <../mingw/process.h>
-+#include <process.h>
++#include <../include/process.h>
  #define mkdir __mkdir
  #include <dir.h>
  #undef mkdir
+--- a/src/sysproc.h
++++ b/src/sysproc.h
+@@ -29,7 +29,7 @@
+ #endif
+ 
+ #ifdef MINGW
+-#include <../mingw/process.h>
++#include <../include/process.h>
+ #elif defined (WIN32_NATIVE)
+ /* <process.h> should not conflict with "process.h", as per ANSI definition.
+    This is not true with visual c though. The trick with <../include/process.h>
