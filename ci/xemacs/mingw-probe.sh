@@ -27,6 +27,19 @@ awk '{ sub(/^      \*-pc-mingw\* \)/, "      *-mingw* )"); print }
      }' configure > configure.new && mv configure.new configure && chmod +x configure
 echo "configure matches *-mingw* in $(grep -c -- '\*-mingw\* )' configure) places (expect 2)"
 
+# configure writes #include "$srcdir/src/s/mingw32.h" into its test
+# programs, with srcdir from `cd $srcdir && pwd`, which MSYS answers in
+# /d/a/... form; MSYS2 converts paths on command lines but not inside
+# files, so the native gcc cannot open it and the switches in
+# s/mingw32.h are never picked up.  Use pwd -W, the D:/... form, in those
+# two lines only; elsewhere the path reaches gcc on its command line.
+perl -pi -e 's{^#include "\$srcdir/src/\$(opsysfile|machfile)"$}{#include "\$(cd "\$srcdir" && (pwd -W 2>/dev/null || pwd))/src/\$$1"}' configure
+echo "configure writes a native path in $(grep -c 'pwd -W' configure) include lines (expect 2)"
+
+# s/mingw32.h is from the days of Cygwin's gcc -mno-cygwin.
+patch -p1 -f -i "$GITHUB_WORKSPACE/ci/xemacs/mingw-wip.patch" </dev/null
+grep -q '^#include <process.h>' src/s/mingw32.h
+
 # configure writes #include "$srcdir/src/m/intel386.h" into its test
 # programs.  With srcdir in MSYS form (/d/a/...), the native MinGW gcc
 # cannot open it: the first probe stopped there, the switches in
