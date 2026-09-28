@@ -1,0 +1,37 @@
+# freebsd/freebsd-src#2420 の直し (printf-pos.c が位置指定の %F に型を
+# 付けない) と、review で求められた試験を、FreeBSD の上で前後に分けて測る。
+# 中身は ci/freebsd-printf-F/run.sh の冒頭を見よ。
+#
+# vmactions の FreeBSD は 15.1 まで。直す file は releng/15.1 と main で
+# 一字も違わないので、15.1 の source に当てて測る。
+name: freebsd-printf-F
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: freebsd-printf-F-${{ github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: checkstyle9.pl
+        run: |
+          curl -fsSL -o checkstyle9.pl https://raw.githubusercontent.com/freebsd/freebsd-src/main/tools/build/checkstyle9.pl
+          for p in ci/freebsd-printf-F/0*.patch; do
+            echo "=== $p"
+            perl checkstyle9.pl "$p" || echo "rc=$?"
+          done
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          release: '15.1'
+          mem: 8192
+          cpu: 4
+          copyback: false
+          envs: 'GITHUB_WORKSPACE'
+          run: |
+            sh "$GITHUB_WORKSPACE/ci/freebsd-printf-F/run.sh"

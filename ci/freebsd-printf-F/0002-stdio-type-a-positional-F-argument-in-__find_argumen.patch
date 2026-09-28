@@ -1,0 +1,133 @@
+From ffdb5a1366d2bb4f57ef55a0e0570aa7a5709519 Mon Sep 17 00:00:00 2001
+From: Showta Ishizaki <zakinko@snowrabbit.org>
+Date: Tue, 29 Sep 2026 06:56:04 +0900
+Subject: [PATCH 2/2] stdio: type a positional %F argument in
+ __find_arguments()
+
+When a format uses positional arguments, __find_arguments() walks it
+first to learn the type of every argument, and lists the floating
+point conversions as A a E e f G g.  F is missing, so a double that
+is only referred to through %F never gets a type, its slot in the
+argument table stays unset, and the conversion reads whatever is
+there:
+
+    printf("[%1$F]\n", -INFINITY);   [0.000000]
+    printf("[%1$F]\n", 1.5);         [0.000000]
+    printf("[%F]\n", 1.5);           [1.500000]
+
+With a width taken from another argument, "%1$*2$F", vsnprintf(3)
+returned lengths like 2103024 for a ten character result; abseil's
+str_format test allocates that much and was killed for it on
+FreeBSD.  The same format with %1$f, or with any other conversion of
+the same argument, works because those give it a type.
+
+Add F ahead of f in both __find_arguments() and __find_warguments(),
+and test %F, plain and positional, in snprintf_test and
+swprintf_test.
+
+Signed-off-by: Showta Ishizaki <zakinko@snowrabbit.org>
+---
+ lib/libc/stdio/printf-pos.c          |  2 ++
+ lib/libc/tests/stdio/snprintf_test.c | 13 +++++++++++++
+ lib/libc/tests/stdio/swprintf_test.c | 13 +++++++++++++
+ 3 files changed, 28 insertions(+)
+
+diff --git a/lib/libc/stdio/printf-pos.c b/lib/libc/stdio/printf-pos.c
+index cbaed086213..07b518c5921 100644
+--- a/lib/libc/stdio/printf-pos.c
++++ b/lib/libc/stdio/printf-pos.c
+@@ -361,6 +361,7 @@ reswitch:	switch (ch) {
+ 		case 'a':
+ 		case 'E':
+ 		case 'e':
++		case 'F':
+ 		case 'f':
+ 		case 'G':
+ 		case 'g':
+@@ -550,6 +551,7 @@ reswitch:	switch (ch) {
+ 		case 'a':
+ 		case 'E':
+ 		case 'e':
++		case 'F':
+ 		case 'f':
+ 		case 'G':
+ 		case 'g':
+diff --git a/lib/libc/tests/stdio/snprintf_test.c b/lib/libc/tests/stdio/snprintf_test.c
+index 29b908b6512..c8f04b7e552 100644
+--- a/lib/libc/tests/stdio/snprintf_test.c
++++ b/lib/libc/tests/stdio/snprintf_test.c
+@@ -7,6 +7,7 @@
+ #include <assert.h>
+ #include <limits.h>
+ #include <locale.h>
++#include <math.h>
+ #include <stdint.h>
+ #include <stdio.h>
+ 
+@@ -81,6 +82,17 @@ ATF_TC_BODY(snprintf_d, tc)
+ 	SNPRINTF_TEST("2,147,483,647", "%'d", INT_MAX);
+ }
+ 
++ATF_TC_WITHOUT_HEAD(snprintf_F);
++ATF_TC_BODY(snprintf_F, tc)
++{
++	SNPRINTF_TEST("1.500000", "%F", 1.5);
++	SNPRINTF_TEST("INF", "%F", INFINITY);
++	SNPRINTF_TEST("-INF", "%F", -INFINITY);
++	SNPRINTF_TEST("1.500000", "%1$F", 1.5);
++	SNPRINTF_TEST("-INF", "%1$F", -INFINITY);
++	SNPRINTF_TEST("  1.500000", "%1$*2$F", 1.5, 10);
++}
++
+ ATF_TC_WITHOUT_HEAD(snprintf_x);
+ ATF_TC_BODY(snprintf_x, tc)
+ {
+@@ -197,6 +209,7 @@ ATF_TP_ADD_TCS(tp)
+ 	ATF_TP_ADD_TC(tp, snprintf_b);
+ 	ATF_TP_ADD_TC(tp, snprintf_B);
+ 	ATF_TP_ADD_TC(tp, snprintf_d);
++	ATF_TP_ADD_TC(tp, snprintf_F);
+ 	ATF_TP_ADD_TC(tp, snprintf_x);
+ 	ATF_TP_ADD_TC(tp, snprintf_X);
+ 	ATF_TP_ADD_TC(tp, snprintf_wN);
+diff --git a/lib/libc/tests/stdio/swprintf_test.c b/lib/libc/tests/stdio/swprintf_test.c
+index f00ecc7f1c1..fe295792834 100644
+--- a/lib/libc/tests/stdio/swprintf_test.c
++++ b/lib/libc/tests/stdio/swprintf_test.c
+@@ -7,6 +7,7 @@
+ #include <assert.h>
+ #include <limits.h>
+ #include <locale.h>
++#include <math.h>
+ #include <stdint.h>
+ #include <stdio.h>
+ #include <wchar.h>
+@@ -82,6 +83,17 @@ ATF_TC_BODY(swprintf_d, tc)
+ 	SWPRINTF_TEST("2,147,483,647", "%'d", INT_MAX);
+ }
+ 
++ATF_TC_WITHOUT_HEAD(swprintf_F);
++ATF_TC_BODY(swprintf_F, tc)
++{
++	SWPRINTF_TEST("1.500000", "%F", 1.5);
++	SWPRINTF_TEST("INF", "%F", INFINITY);
++	SWPRINTF_TEST("-INF", "%F", -INFINITY);
++	SWPRINTF_TEST("1.500000", "%1$F", 1.5);
++	SWPRINTF_TEST("-INF", "%1$F", -INFINITY);
++	SWPRINTF_TEST("  1.500000", "%1$*2$F", 1.5, 10);
++}
++
+ ATF_TC_WITHOUT_HEAD(swprintf_x);
+ ATF_TC_BODY(swprintf_x, tc)
+ {
+@@ -198,6 +210,7 @@ ATF_TP_ADD_TCS(tp)
+ 	ATF_TP_ADD_TC(tp, swprintf_b);
+ 	ATF_TP_ADD_TC(tp, swprintf_B);
+ 	ATF_TP_ADD_TC(tp, swprintf_d);
++	ATF_TP_ADD_TC(tp, swprintf_F);
+ 	ATF_TP_ADD_TC(tp, swprintf_x);
+ 	ATF_TP_ADD_TC(tp, swprintf_X);
+ 	ATF_TP_ADD_TC(tp, swprintf_wN);
+-- 
+2.54.0 (Apple Git-157)
+

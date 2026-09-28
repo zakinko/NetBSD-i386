@@ -1,0 +1,59 @@
+From 4006e3a3a82b0182bb14bcfc5507a55969d2a851 Mon Sep 17 00:00:00 2001
+From: Showta Ishizaki <zakinko@snowrabbit.org>
+Date: Tue, 29 Sep 2026 06:55:42 +0900
+Subject: [PATCH 1/2] stdio: sort the floating point conversions in
+ printf-pos.c
+
+Everywhere else in the switches of __find_arguments() and
+__find_warguments() an uppercase conversion comes ahead of its
+lowercase one (C c, D d, O o, S s, U u, X x).  The floating point
+conversions were listed the other way round.
+
+No functional change.
+
+Signed-off-by: Showta Ishizaki <zakinko@snowrabbit.org>
+---
+ lib/libc/stdio/printf-pos.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/lib/libc/stdio/printf-pos.c b/lib/libc/stdio/printf-pos.c
+index 4fa99316321..cbaed086213 100644
+--- a/lib/libc/stdio/printf-pos.c
++++ b/lib/libc/stdio/printf-pos.c
+@@ -357,13 +357,13 @@ reswitch:	switch (ch) {
+ 			if ((error = addsarg(&types, flags)))
+ 				goto error;
+ 			break;
+-		case 'a':
+ 		case 'A':
+-		case 'e':
++		case 'a':
+ 		case 'E':
++		case 'e':
+ 		case 'f':
+-		case 'g':
+ 		case 'G':
++		case 'g':
+ 			error = addtype(&types,
+ 			    (flags & LONGDBL) ? T_LONG_DOUBLE : T_DOUBLE);
+ 			if (error)
+@@ -546,13 +546,13 @@ reswitch:	switch (ch) {
+ 			if ((error = addsarg(&types, flags)))
+ 				goto error;
+ 			break;
+-		case 'a':
+ 		case 'A':
+-		case 'e':
++		case 'a':
+ 		case 'E':
++		case 'e':
+ 		case 'f':
+-		case 'g':
+ 		case 'G':
++		case 'g':
+ 			error = addtype(&types,
+ 			    (flags & LONGDBL) ? T_LONG_DOUBLE : T_DOUBLE);
+ 			if (error)
+-- 
+2.54.0 (Apple Git-157)
+
