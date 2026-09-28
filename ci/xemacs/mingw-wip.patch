@@ -1,3 +1,43 @@
+--- a/lib-src/make-dump-id.c
++++ b/lib-src/make-dump-id.c
+@@ -21,10 +21,10 @@
+ #include <stdlib.h>
+ #include "../src/systime.h"
+ 
+-#ifdef WIN32_NATIVE
++#if defined (WIN32_NATIVE) && !defined (MINGW)
+ #include <sys/timeb.h>
+ 
+-/* Emulate gettimeofday (Ulrich Leodolter, 1/11/95).  */
++/* Emulate gettimeofday (Ulrich Leodolter, 1/11/95).  MinGW has its own. */
+ void 
+ gettimeofday (struct timeval *tv, struct timezone *tz)
+ {
+--- a/lib-src/make-path.c
++++ b/lib-src/make-path.c
+@@ -32,6 +32,11 @@
+ #include <sys/stat.h>
+ #include <stdio.h>
+ #include <errno.h>
++#ifdef WIN32_NATIVE
++/* Windows's mkdir takes no mode, and is declared in <direct.h>. */
++#include <direct.h>
++#define mkdir(path, mode) _mkdir (path)
++#endif
+ 
+ char *prog_name;
+ 
+--- a/nt/minitar.c
++++ b/nt/minitar.c
+@@ -96,7 +96,7 @@
+   char magic[7];
+   char type;
+   
+-  gzFile *infile = (gzFile*)0;
++  gzFile infile = (gzFile)0;
+   FILE *outfile = (FILE*)0;
+ 
+   char block[BLOCKSIZE];
 --- a/src/event-msw.c
 +++ b/src/event-msw.c
 @@ -1551,7 +1551,9 @@

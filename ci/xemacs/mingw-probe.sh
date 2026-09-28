@@ -60,8 +60,14 @@ echo "make -k exited $?"
 [ -f src/xemacs.exe ] && echo "src/xemacs.exe built" || echo "no src/xemacs.exe"
 
 echo "--- files with compile errors: first error in each ---"
-grep -E '^[^ :]+\.(c|h):[0-9]+:[0-9]+: (fatal )?error:' "$OUT/make.log" \
-  | awk -F: '!seen[$1]++ { print }' | tee "$OUT/walls.txt" | head -60
+# Key each error by its file.  The paths can be absolute with a drive
+# letter (D:/a/.../minitar.c:115:17:), so the file is everything before
+# the last :LINE:COL:, not everything before the first colon; the first
+# version split on the first colon and reported 0 files while three were
+# failing.
+grep -E '\.(c|h):[0-9]+:[0-9]+: (fatal )?error:' "$OUT/make.log" \
+  | awk '{ f = $0; sub(/:[0-9]+:[0-9]+: .*/, "", f); if (!seen[f]++) print }' \
+  | tee "$OUT/walls.txt" | head -60
 echo "--- totals ---"
 echo "files with errors: $(wc -l < "$OUT/walls.txt")"
 echo "error lines: $(grep -cE '(fatal )?error:' "$OUT/make.log")"
