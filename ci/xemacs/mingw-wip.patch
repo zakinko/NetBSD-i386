@@ -1,3 +1,65 @@
+--- a/src/event-msw.c
++++ b/src/event-msw.c
+@@ -1551,7 +1551,9 @@
+ 	 (hyphen, VK_SUBTRACT) key on an 82-key keyboard.
+ 	 */
+ 
++#ifdef _MSC_VER
+       __try
++#endif
+ 	{
+ 	  /* This fixes a long outstanding bug, where XEmacs would occasionally
+ 	   * not redraw its window (or process other events) until "something
+@@ -1577,11 +1579,13 @@
+ 	      mswindows_is_blocking = 0;
+ 	    }
+ 	}
++#ifdef _MSC_VER
+       __except (GetExceptionCode () == EXCEPTION_BREAKPOINT ?
+ 		EXCEPTION_CONTINUE_EXECUTION :
+ 		EXCEPTION_CONTINUE_SEARCH)
+ 	{
+ 	}
++#endif
+ 
+       /* This will assert if handle being waited for becomes abandoned.
+ 	 Not the case currently tho */
+--- a/src/nt.c
++++ b/src/nt.c
+@@ -558,8 +558,9 @@
+ 
+ /* Emacs 20.6 contains a routine get_emacs_configuration() here to set
+    EMACS_CONFIGURATION. */ 
+-#ifndef HAVE_X_WINDOWS
+-/* X11R6 on NT provides the single parameter version of this command. */
++#if !defined (HAVE_X_WINDOWS) && !defined (MINGW)
++/* X11R6 on NT provides the single parameter version of this command.
++   MinGW has its own. */
+ 
+ #include <sys/timeb.h>
+ 
+--- a/src/process.h
++++ b/src/process.h
+@@ -17,6 +17,13 @@
+ You should have received a copy of the GNU General Public License
+ along with XEmacs.  If not, see <http://www.gnu.org/licenses/>. */
+ 
++#if defined (__MINGW32__) && !defined (emacs)
++/* lib-src and nt are compiled with -I../src, and MinGW's <unistd.h>
++   includes <process.h>, which would find this file in place of the
++   system one. */
++#include_next <process.h>
++#else
++
+ #ifndef INCLUDED_process_h_
+ #define INCLUDED_process_h_
+ 
+@@ -118,3 +125,5 @@
+ #endif
+ 
+ #endif /* INCLUDED_process_h_ */
++
++#endif /* __MINGW32__ && !emacs */
 --- a/src/s/mingw32.h
 +++ b/src/s/mingw32.h
 @@ -25,16 +25,13 @@
@@ -37,6 +99,22 @@
  #define mkdir __mkdir
  #include <dir.h>
  #undef mkdir
+--- a/src/syswindows.h
++++ b/src/syswindows.h
+@@ -1355,10 +1355,13 @@
+ /* ------------------------- Misc prototypes ------------------------- */
+ 
+ #ifdef WIN32_NATIVE
++#ifndef MINGW
++/* MinGW's <string.h> declares strcasecmp. */
+ DECLARE_INLINE_HEADER (int strcasecmp (const char *a, const char *b))
+ {
+   return qxestrcasecmp ((const Ibyte *) a, (const Ibyte *) b);
+ }
++#endif
+ 
+ #if defined (_MSC_VER) && _MSC_VER < 1900
+ #if _MSC_VER < 1300
 --- a/src/sysproc.h
 +++ b/src/sysproc.h
 @@ -29,7 +29,7 @@
@@ -48,3 +126,25 @@
  #elif defined (WIN32_NATIVE)
  /* <process.h> should not conflict with "process.h", as per ANSI definition.
     This is not true with visual c though. The trick with <../include/process.h>
+--- a/src/systime.h
++++ b/src/systime.h
+@@ -46,6 +46,11 @@
+ /* This defines struct timeval */
+ #include <winsock.h>
+ 
++#ifdef MINGW
++/* MinGW has struct timezone and gettimeofday in <sys/time.h>; what
++   follows is for MSVC, which has neither. */
++#include <sys/time.h>
++#else
+ struct timezone 
+   {
+     int	tz_minuteswest;	/* minutes west of Greenwich */
+@@ -60,6 +65,7 @@
+ /* X11R6 on NT provides the single parameter version of this command */
+ void gettimeofday (struct timeval *, struct timezone *);
+ #endif /* HAVE_X_WINDOWS */
++#endif /* MINGW */
+ 
+ #endif /* WIN32_NATIVE */
+ 
