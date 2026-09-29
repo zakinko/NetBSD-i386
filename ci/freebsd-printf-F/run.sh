@@ -71,7 +71,9 @@ kyua_counts before
 
 echo "=== 3. 直した libc を建てて入れる"
 cd /usr/src/lib/libc
-{ make -j4 obj && make -j4 all && make install; } >"$W/libc-build.log" 2>&1 \
+# MK_TESTS=no: lib/libc で make all を打つと tests/ まで降り、木の中にしか無い
+# libnetbsd を探して落ちる (run 36516236929)。要るのは libc 本体だけ
+{ make -j4 obj && make -j4 MK_TESTS=no all && make MK_TESTS=no install; } >"$W/libc-build.log" 2>&1 \
 	|| { echo "NG: libc が建たない"; grep -nE 'error|Error|\*\*\*' "$W/libc-build.log" | head -20; tail -40 "$W/libc-build.log"; exit 1; }
 LIBC_AFTER=$(sha256 -q /lib/libc.so.7)
 echo "libc.so.7: 前 ${LIBC_BEFORE%${LIBC_BEFORE#????????????}}  後 ${LIBC_AFTER%${LIBC_AFTER#????????????}}"

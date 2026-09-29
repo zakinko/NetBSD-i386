@@ -39,6 +39,10 @@ done
 grep -c "case 'F':" lib/libc/stdio/printf-pos.c
 
 echo "=== 試験を木の make で建てる (stdio 全部)"
+# stdio の試験には NetBSD 由来の物が混ざり、木の中の libnetbsd を link する
+# (-lnetbsd_pie が無いと落ちる、run 36516243796)。先に建てておく
+{ make -C /usr/src/lib/libnetbsd obj && make -C /usr/src/lib/libnetbsd -j4; } >"$W/libnetbsd-build.log" 2>&1 \
+	|| { echo "NG: libnetbsd が建たない"; tail -40 "$W/libnetbsd-build.log"; exit 1; }
 cd /usr/src/lib/libc/tests/stdio || exit 1
 { make obj && make -j4; } >"$W/tests-build.log" 2>&1 \
 	|| { echo "NG: 試験が建たない"; grep -nE 'error|Error|\*\*\*' "$W/tests-build.log" | head -20; tail -60 "$W/tests-build.log"; exit 1; }
@@ -64,7 +68,9 @@ done
 
 echo "=== 2. 直した libc を建てて入れる"
 cd /usr/src/lib/libc || exit 1
-{ make -j4 obj && make -j4 all && make install; } >"$W/libc-build.log" 2>&1 \
+# MK_TESTS=no: lib/libc で make all を打つと tests/ まで降り、木の中にしか無い
+# libnetbsd を探して落ちる (run 36516236929)。要るのは libc 本体だけ
+{ make -j4 obj && make -j4 MK_TESTS=no all && make MK_TESTS=no install; } >"$W/libc-build.log" 2>&1 \
 	|| { echo "NG: libc が建たない"; grep -nE 'error|Error|\*\*\*' "$W/libc-build.log" | head -20; tail -40 "$W/libc-build.log"; exit 1; }
 A=$(sha256 -q /lib/libc.so.7)
 echo "libc.so.7: 前 $B / 後 $A"
