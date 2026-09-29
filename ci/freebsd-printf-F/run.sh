@@ -30,8 +30,8 @@ grep -c "case 'F':" lib/libc/stdio/printf-pos.c | sed 's/^/printf-pos.c の case
 
 echo "=== 試験を木の make で建てる"
 cd /usr/src/lib/libc/tests/stdio
-make -s obj >/dev/null
-make -s snprintf_test swprintf_test
+make obj >"$W/tests-build.log" 2>&1 && make snprintf_test swprintf_test >>"$W/tests-build.log" 2>&1 \
+	|| { echo "NG: 試験が建たない"; tail -60 "$W/tests-build.log"; exit 1; }
 OBJ=$(make -V .OBJDIR)
 ls -l "$OBJ/snprintf_test" "$OBJ/swprintf_test"
 
@@ -51,8 +51,13 @@ cases() {
 kyua_counts() {
 	cd /usr/tests/lib/libc/stdio
 	kyua test >/dev/null 2>&1 || true
-	kyua report --verbose 2>/dev/null | grep -E '^[a-z_]+:[a-zA-Z_0-9]+  ->  ' | sed 's/  \[.*//' | sort > "$W/kyua.$1"
-	echo "Kyua ($1): $(grep -c -- '-> passed' "$W/kyua.$1") passed, $(grep -vc -- '-> passed' "$W/kyua.$1") その他"
+	# --verbose は通った case を並べないので、--results-filter で全部を出させる。
+	# 結果は "prog:case  ->  passed  [0.004s]" の形で、-> の後ろは空白二つ
+	kyua report --results-filter passed,skipped,xfail,broken,failed >"$W/kyua-raw.$1" 2>&1
+	grep -E '^[a-z_0-9]+:[A-Za-z_0-9]+  ->  ' "$W/kyua-raw.$1" | sed 's/  \[.*//; s/:  *[^ ].*//' | awk '{print $1, $3}' | sort > "$W/kyua.$1"
+	echo "Kyua ($1): $(wc -l <"$W/kyua.$1" | tr -d ' ') 件、passed $(awk '$2 == "passed"' "$W/kyua.$1" | wc -l | tr -d ' ')"
+	awk '$2 != "passed" && $2 != "skipped"' "$W/kyua.$1" | sed 's/^/  /'
+	grep -E '^Test cases:' "$W/kyua-raw.$1"
 }
 
 echo "=== 1. 素の libc"
@@ -66,9 +71,8 @@ kyua_counts before
 
 echo "=== 3. 直した libc を建てて入れる"
 cd /usr/src/lib/libc
-make -s -j4 obj >/dev/null
-make -s -j4 all >/dev/null
-make -s install >/dev/null
+{ make -j4 obj && make -j4 all && make install; } >"$W/libc-build.log" 2>&1 \
+	|| { echo "NG: libc が建たない"; grep -nE 'error|Error|\*\*\*' "$W/libc-build.log" | head -20; tail -40 "$W/libc-build.log"; exit 1; }
 LIBC_AFTER=$(sha256 -q /lib/libc.so.7)
 echo "libc.so.7: 前 ${LIBC_BEFORE%${LIBC_BEFORE#????????????}}  後 ${LIBC_AFTER%${LIBC_AFTER#????????????}}"
 [ "$LIBC_BEFORE" != "$LIBC_AFTER" ] || { echo "libc が入れ替わっていない"; exit 1; }
@@ -79,7 +83,7 @@ cases after
 kyua_counts after
 
 echo "=== 前後の比較"
-paste -d' ' "$W"/kyua.before "$W"/kyua.after | awk '{ if ($3 != $6) print "変わった: " $0 }'
+paste -d' ' "$W"/kyua.before "$W"/kyua.after | awk '{ if ($2 != $4) print "変わった: " $0 }'
 cmp -s "$W/kyua.before" "$W/kyua.after" && echo "Kyua の結果は前後で同じ"
 
 # 期待: 前は *_F だけ落ち、後は全部通る。一つでも外れたら落とす

@@ -40,13 +40,14 @@ grep -c "case 'F':" lib/libc/stdio/printf-pos.c
 
 echo "=== 試験を木の make で建てる (stdio 全部)"
 cd /usr/src/lib/libc/tests/stdio || exit 1
-make -s obj >/dev/null && make -s -j4 >/dev/null || { echo "NG: 試験が建たない"; exit 1; }
+{ make obj && make -j4; } >"$W/tests-build.log" 2>&1 \
+	|| { echo "NG: 試験が建たない"; grep -nE 'error|Error|\*\*\*' "$W/tests-build.log" | head -20; tail -60 "$W/tests-build.log"; exit 1; }
 OBJ=$(make -V .OBJDIR)
 ls "$OBJ"/Kyuafile "$OBJ"/snprintf_test "$OBJ"/swprintf_test || exit 1
 
 fails() {
 	( cd "$OBJ" && kyua test -k "$OBJ/Kyuafile" >/dev/null 2>&1 )
-	kyua report --verbose >"$W/report.$1" 2>&1
+	kyua report --results-filter passed,skipped,xfail,broken,failed >"$W/report.$1" 2>&1
 	grep -E '^[a-z_0-9]+:[A-Za-z_0-9]+  ->  ' "$W/report.$1" | sed 's/  \[.*//' | sort >"$W/all.$1"
 	grep -v -- '->  passed' "$W/all.$1" | grep -v -- '->  skipped' | awk '{print $1}' | sort >"$W/fail.$1"
 	echo "Kyua ($1): $(wc -l <"$W/all.$1" | tr -d ' ') 件中、落ちた/壊れた $(wc -l <"$W/fail.$1" | tr -d ' ') 件"
@@ -63,7 +64,8 @@ done
 
 echo "=== 2. 直した libc を建てて入れる"
 cd /usr/src/lib/libc || exit 1
-make -s -j4 obj >/dev/null && make -s -j4 all >/dev/null && make -s install >/dev/null || { echo "NG: libc が建たない"; exit 1; }
+{ make -j4 obj && make -j4 all && make install; } >"$W/libc-build.log" 2>&1 \
+	|| { echo "NG: libc が建たない"; grep -nE 'error|Error|\*\*\*' "$W/libc-build.log" | head -20; tail -40 "$W/libc-build.log"; exit 1; }
 A=$(sha256 -q /lib/libc.so.7)
 echo "libc.so.7: 前 $B / 後 $A"
 [ "$B" != "$A" ] || { echo "NG: libc が入れ替わっていない"; exit 1; }
