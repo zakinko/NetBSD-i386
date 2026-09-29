@@ -58,14 +58,33 @@ grep -E "^c_switch_system=|^opsysfile=|^machfile=" config.log || true
 # The build runs the xemacs it has just linked (update-elc, the dump).
 # The 32-bit run of the seventh probe sat for over half an hour with no
 # way to see where; bound it, and show where it was when it stopped.
-timeout 1800 make -k -j"$(nproc)" > "$OUT/make.log" 2>&1
+timeout 1500 make -k -j"$(nproc)" > "$OUT/make.log" 2>&1
 rc=$?
 echo "make -k exited $rc"
 if [ $rc -eq 124 ]; then
-  echo "!! make did not finish in 30 minutes; the last lines:"
+  echo "!! make did not finish in 25 minutes; the last lines:"
   tail -15 "$OUT/make.log"
 fi
 [ -f src/xemacs.exe ] && echo "src/xemacs.exe built" || echo "no src/xemacs.exe"
+
+# The eighth probe stopped here: the first run of the new xemacs in the
+# build (update-elc, with -nd) sat until the 30-minute bound, on 32-bit
+# and 64-bit alike.  It is a -mwindows program with no console; a fatal
+# error in such a program can be a message box that waits for a click.
+# Run that one step on its own and look at the screen while it waits.
+if [ -f src/xemacs.exe ] && [ ! -f src/xemacs.dmp ]; then
+  PS=/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe
+  ( cd src && timeout 90 ./xemacs -nd -no-packages -no-configured-paths \
+      -batch -l ../lisp/update-elc.el > "$OUT/update-elc.out" 2>&1; \
+    echo "update-elc exited $?" >> "$OUT/update-elc.out" ) &
+  sleep 20
+  "$PS" -NoProfile -ExecutionPolicy Bypass \
+    -File "$(cygpath -w "$GITHUB_WORKSPACE/ci/xemacs/screenshot.ps1")" \
+    "$(cygpath -w "$OUT/update-elc-hang.png")"
+  wait
+  echo "--- update-elc on its own ---"
+  cat "$OUT/update-elc.out"
+fi
 
 # An executable is not a working XEmacs: the dump may not have happened.
 # It is linked -mwindows and prints nothing to the console, so ask it to
