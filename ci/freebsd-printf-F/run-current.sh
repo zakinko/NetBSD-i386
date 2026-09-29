@@ -50,11 +50,17 @@ OBJ=$(make -V .OBJDIR)
 ls "$OBJ"/Kyuafile "$OBJ"/snprintf_test "$OBJ"/swprintf_test || exit 1
 
 fails() {
-	( cd "$OBJ" && kyua test -k "$OBJ/Kyuafile" >/dev/null 2>&1 )
-	kyua report --results-filter passed,skipped,xfail,broken,failed >"$W/report.$1" 2>&1
+	# 結果の file を名指しする。kyua report は既定で「今いる dir の試験の最新の
+	# 結果」を探すので、test と report を別の dir で打つと 0 件になる
+	# (run 36520987443 がそうだった)
+	rm -f "$W/k.$1.db"
+	kyua test --results-file="$W/k.$1.db" -k "$OBJ/Kyuafile" >/dev/null 2>&1
+	kyua report --results-file="$W/k.$1.db" --results-filter passed,skipped,xfail,broken,failed >"$W/report.$1" 2>&1
+	grep -E '^Test cases:' "$W/report.$1"
 	grep -E '^[a-z_0-9]+:[A-Za-z_0-9]+  ->  ' "$W/report.$1" | sed 's/  \[.*//' | sort >"$W/all.$1"
 	grep -v -- '->  passed' "$W/all.$1" | grep -v -- '->  skipped' | awk '{print $1}' | sort >"$W/fail.$1"
 	echo "Kyua ($1): $(wc -l <"$W/all.$1" | tr -d ' ') 件中、落ちた/壊れた $(wc -l <"$W/fail.$1" | tr -d ' ') 件"
+	[ -s "$W/all.$1" ] || { echo "NG: Kyua の結果が 0 件 (測れていない)"; tail -20 "$W/report.$1"; exit 1; }
 	sed 's/^/  落ち: /' "$W/fail.$1"
 }
 
