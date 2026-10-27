@@ -15,6 +15,12 @@ git checkout -q $BEFORE
 git submodule update -q --init --depth 1 || exit 1
 
 build() {
+  # 測定のためだけの手当て: master の latent_see.cc は素の abs(int64_t) を書き、
+  # DragonFly の libstdc++ では int abs(int) しか見えず std::min が型で落ちる。
+  # 直す前と後の両方に同じく当てる。
+  sed -i '' 's/std::min(earliest_timestamp, abs(/std::min(earliest_timestamp, std::abs(/' \
+    src/core/util/latent_see.cc
+  grep -n 'std::abs(event.timestamp_end)' src/core/util/latent_see.cc || exit 1
   cmake -S . -B $W/b -G Ninja -DCMAKE_BUILD_TYPE=Release \
     -DgRPC_INSTALL=ON -DgRPC_BUILD_TESTS=OFF -DgRPC_SSL_PROVIDER=module \
     -DgRPC_BUILD_CSHARP_EXT=OFF -DCMAKE_INSTALL_PREFIX=$W/inst >$W/cmake.log 2>&1 \
@@ -41,6 +47,7 @@ IOMGR=-event_engine_client,-event_engine_listener
 build
 probe before ""
 probe before "$IOMGR"
+git checkout -q -- src/core/util/latent_see.cc
 git checkout -q $AFTER
 build
 probe after ""
