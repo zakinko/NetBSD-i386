@@ -26,6 +26,14 @@ git -C third_party/abseil-cpp apply -v \
   --include='absl/base/config.h' --include='absl/base/internal/sysinfo.cc' \
   --include='absl/debugging/internal/vdso_support.cc' \
   "$GITHUB_WORKSPACE/ci/grpc-dfly-iomgr/abseil-2160.diff" || exit 1
+# 同梱の版は ABSL_HAVE_MMAP を OS の並びで決め、DragonFly が無い (master は
+# __has_include(<sys/mman.h>))。無いと poison.cc が宣言の無い data を読んで
+# 落ちるので、その直し (abseil#1914, a9268d5f) も当てる。
+f=third_party/abseil-cpp/absl/base/config.h
+sed -i '' 's/defined(__OpenBSD__) || defined(__NetBSD__) || defined(__QNX__) ||/defined(__OpenBSD__) || defined(__NetBSD__) || defined(__QNX__) || defined(__DragonFly__) ||/' $f
+grep -q '__QNX__) || defined(__DragonFly__)' $f || exit 1
+git -C third_party/abseil-cpp apply -v \
+  "$GITHUB_WORKSPACE/ci/grpc-dfly-iomgr/abseil-1914.diff" || exit 1
 # 同梱の版は raw_logging.cc の条件の並びも違うので sed で。
 f=third_party/abseil-cpp/absl/base/internal/raw_logging.cc
 sed -i '' 's/defined(__native_client__) || defined(__OpenBSD__) ||/defined(__native_client__) || defined(__OpenBSD__) || defined(__DragonFly__) ||/' $f

@@ -1,0 +1,60 @@
+commit a9268d5f4b8bc14a8a4b98ca10d9956580a8957c
+Author: Rickard Hallerbäck <rickard.hallerback@gmail.com>
+Date:   Wed Jul 30 11:50:54 2025 -0700
+
+    PR #1914: absl/base/internal/poison.cc: Minor build fix
+    
+    Imported from GitHub PR https://github.com/abseil/abseil-cpp/pull/1914
+    
+    ```
+    : warning: implicit conversion changes signedness: 'int' to 'size_t' (aka 'unsigned long') [-Wsign-conversion]
+       50 |   return getpagesize();
+          |   ~~~~~~ ^~~~~~~~~~~~~
+    ../_deps/absl-src/absl/base/internal/poison.cc:79:29: error: use of undeclared identifier 'data'
+       79 |   return static_cast<char*>(data) + block_size / 2;
+          |                             ^
+    1 warning and 1 error generated.
+    gmake[2]: *** [_deps/absl-build/absl/base/CMakeFiles/poison.dir/build.make:76: _deps/absl-build/absl/base/CMakeFiles/poison.dir/internal/poison.cc.obj] Error 1
+    gmake[1]: *** [CMakeFiles/Makefile2:1843: _deps/absl-build/absl/base/CMakeFiles/poison.dir/all] Error 2
+    gmake: *** [Makefile:136: all] Error 2
+    ```
+    
+    Merge 6b172a21d1e012a335033c77fa4a6ec43bcf8c4a into 785b11b33f686b3c9ddc480e8c8d6bd6ae5b3824
+    
+    Merging this change closes #1914
+    
+    COPYBARA_INTEGRATE_REVIEW=https://github.com/abseil/abseil-cpp/pull/1914 from Ricardicus:master 6b172a21d1e012a335033c77fa4a6ec43bcf8c4a
+    PiperOrigin-RevId: 788985640
+    Change-Id: Ife849052c340985d08a4dda131dad086e670d901
+
+diff --git a/absl/base/internal/poison.cc b/absl/base/internal/poison.cc
+index b33d4c2d..c639c966 100644
+--- a/absl/base/internal/poison.cc
++++ b/absl/base/internal/poison.cc
+@@ -57,19 +57,20 @@ size_t GetPageSize() {
+ 
+ void* InitializePoisonedPointerInternal() {
+   const size_t block_size = GetPageSize();
++  void* data = nullptr;
+ #if defined(ABSL_HAVE_ADDRESS_SANITIZER)
+-  void* data = malloc(block_size);
++  data = malloc(block_size);
+   ASAN_POISON_MEMORY_REGION(data, block_size);
+ #elif defined(ABSL_HAVE_MEMORY_SANITIZER)
+-  void* data = malloc(block_size);
++  data = malloc(block_size);
+   __msan_poison(data, block_size);
+ #elif defined(ABSL_HAVE_MMAP)
+-  void* data = DirectMmap(nullptr, block_size, PROT_NONE,
+-                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
++  data = DirectMmap(nullptr, block_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS,
++                    -1, 0);
+   if (data == MAP_FAILED) return GetBadPointerInternal();
+ #elif defined(_WIN32)
+-  void* data = VirtualAlloc(nullptr, block_size, MEM_RESERVE | MEM_COMMIT,
+-                            PAGE_NOACCESS);
++  data = VirtualAlloc(nullptr, block_size, MEM_RESERVE | MEM_COMMIT,
++                      PAGE_NOACCESS);
+   if (data == nullptr) return GetBadPointerInternal();
+ #else
+   return GetBadPointerInternal();
