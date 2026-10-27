@@ -1,0 +1,301 @@
+diff --git a/absl/base/config.h b/absl/base/config.h
+index 4761f25d4db..7a02670c366 100644
+--- a/absl/base/config.h
++++ b/absl/base/config.h
+@@ -356,7 +356,7 @@ static_assert(ABSL_INTERNAL_INLINE_NAMESPACE_STR[0] != 'h' ||
+ #error ABSL_HAVE_PTHREAD_GETSCHEDPARAM cannot be directly set
+ #elif defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || \
+     defined(_AIX) || defined(__ros__) || defined(__OpenBSD__) ||          \
+-    defined(__NetBSD__) || defined(__VXWORKS__)
++    defined(__NetBSD__) || defined(__VXWORKS__) || defined(__DragonFly__)
+ #define ABSL_HAVE_PTHREAD_GETSCHEDPARAM 1
+ #endif
+ 
+diff --git a/absl/base/internal/raw_logging.cc b/absl/base/internal/raw_logging.cc
+index 7c39f6d3ce7..f05ad7cc263 100644
+--- a/absl/base/internal/raw_logging.cc
++++ b/absl/base/internal/raw_logging.cc
+@@ -43,6 +43,7 @@
+ // this, consider moving both to config.h instead.
+ #if defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) ||     \
+     defined(__hexagon__) || defined(__Fuchsia__) || defined(__OpenBSD__) || \
++    defined(__NetBSD__) || defined(__DragonFly__) ||                       \
+     defined(__EMSCRIPTEN__) || defined(__ASYLO__)
+ 
+ #include <unistd.h>
+diff --git a/absl/base/internal/sysinfo.cc b/absl/base/internal/sysinfo.cc
+index 1f380bcc60b..a52a1516c8f 100644
+--- a/absl/base/internal/sysinfo.cc
++++ b/absl/base/internal/sysinfo.cc
+@@ -49,11 +49,11 @@
+ #include <sys/syscall.h>
+ #endif
+ 
+-#if defined(__APPLE__) || defined(__FreeBSD__)
++#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__DragonFly__)
+ #include <sys/sysctl.h>
+ #endif
+ 
+-#ifdef __FreeBSD__
++#if defined(__FreeBSD__) || defined(__DragonFly__)
+ #include <pthread_np.h>
+ #endif
+ 
+@@ -449,7 +449,7 @@ pid_t GetTID() {
+   return static_cast<pid_t>(tid);
+ }
+ 
+-#elif defined(__FreeBSD__)
++#elif defined(__FreeBSD__) || defined(__DragonFly__)
+ 
+ pid_t GetTID() { return static_cast<pid_t>(pthread_getthreadid_np()); }
+ 
+diff --git a/absl/container/internal/raw_hash_set_test.cc b/absl/container/internal/raw_hash_set_test.cc
+index cc252b4b2e9..9c97f69526c 100644
+--- a/absl/container/internal/raw_hash_set_test.cc
++++ b/absl/container/internal/raw_hash_set_test.cc
+@@ -14,6 +14,10 @@
+ 
+ #include "absl/container/internal/raw_hash_set.h"
+ 
++#if !defined(_WIN32)
++#include <sys/resource.h>
++#endif
++
+ #include <algorithm>
+ #include <array>
+ #include <atomic>
+@@ -5253,6 +5257,18 @@ static_assert(alignof(UnalignedInt32) == 1);
+ // 4. Then a few times we will extend control buffer end.
+ // 5. Finally we will catch up and go to overflow codepath.
+ TEST(Table, GrowExtremelyLargeTable) {
++#if !defined(_WIN32)
++  // The table reserves close to 8 GB of address space on the way up. Where
++  // the data segment is capped below that, OpenBSD's default login class
++  // allows 4 GB, the allocation throws instead of the test proving anything.
++  struct rlimit data_limit;
++  if (getrlimit(RLIMIT_DATA, &data_limit) == 0 &&
++      data_limit.rlim_cur != RLIM_INFINITY &&
++      data_limit.rlim_cur < (rlim_t{8} << 30)) {
++    GTEST_SKIP() << "RLIMIT_DATA is " << data_limit.rlim_cur
++                 << " bytes; this test needs about 8 GB of address space";
++  }
++#endif
+   // ProbedItem8Bytes causes OOMs on some platforms so we use ProbedItem4Bytes.
+   constexpr size_t kTargetCapacity =
+ #if defined(__wasm__) || defined(__asmjs__) || defined(__i386__) || \
+diff --git a/absl/debugging/BUILD.bazel b/absl/debugging/BUILD.bazel
+index b36967a399c..a822c0e7363 100644
+--- a/absl/debugging/BUILD.bazel
++++ b/absl/debugging/BUILD.bazel
+@@ -130,6 +130,7 @@ cc_test(
+     linkopts = ABSL_DEFAULT_LINKOPTS + select({
+         "@rules_cc//cc/compiler:msvc-cl": ["/DEBUG"],
+         "@rules_cc//cc/compiler:clang-cl": ["/DEBUG"],
++        "@platforms//os:openbsd": ["-Wl,--no-execute-only"],
+         "//conditions:default": [],
+     }),
+     deps = [
+diff --git a/absl/debugging/CMakeLists.txt b/absl/debugging/CMakeLists.txt
+index 247e82f2973..012adb302b5 100644
+--- a/absl/debugging/CMakeLists.txt
++++ b/absl/debugging/CMakeLists.txt
+@@ -105,6 +105,7 @@ absl_cc_test(
+     $<$<BOOL:${MSVC}>:-Z7>
+   LINKOPTS
+     $<$<BOOL:${MSVC}>:-DEBUG>
++    $<$<PLATFORM_ID:OpenBSD>:-Wl,--no-execute-only>
+   DEPS
+     absl::base
+     absl::check
+diff --git a/absl/debugging/internal/vdso_support.cc b/absl/debugging/internal/vdso_support.cc
+index 48d4f505b61..72246869b35 100644
+--- a/absl/debugging/internal/vdso_support.cc
++++ b/absl/debugging/internal/vdso_support.cc
+@@ -56,7 +56,7 @@
+ using Elf32_auxv_t = Aux32Info;
+ using Elf64_auxv_t = Aux64Info;
+ #endif
+-#if defined(__FreeBSD__)
++#if defined(__FreeBSD__) || defined(__DragonFly__)
+ #if defined(__ELF_WORD_SIZE) && __ELF_WORD_SIZE == 64
+ using Elf64_auxv_t = Elf64_Auxinfo;
+ #endif
+diff --git a/absl/log/stripping_test.cc b/absl/log/stripping_test.cc
+index b0f718cdd0e..8adc34d0343 100644
+--- a/absl/log/stripping_test.cc
++++ b/absl/log/stripping_test.cc
+@@ -57,11 +57,28 @@
+ 
+ #if defined(__APPLE__)
+ #include <mach-o/dyld.h>
++#elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
++#include <sys/types.h>
++#include <sys/sysctl.h>
++
++#include <limits.h>
+ #elif defined(_WIN32)
+ #include <Windows.h>
+ #include <tchar.h>
+ #endif
+ 
++// OpenBSD gained getexecpath(3) in 8.0 (OpenBSD >= 202610); older releases
++// have no way for a process to find its own executable, so the tests skip
++// there.
++#if defined(__OpenBSD__)
++#include <sys/param.h>
++#if OpenBSD >= 202610
++#include <limits.h>
++#include <unistd.h>
++#define ABSL_LOG_INTERNAL_HAVE_GETEXECPATH 1
++#endif
++#endif
++
+ // Set a flag that controls whether we actually execute fatal statements, but
+ // prevent the compiler from optimizing it out.
+ static volatile bool kReallyDie = false;
+@@ -158,6 +175,12 @@ class FileHasSubstrMatcher final : public ::testing::MatcherInterface<FILE*> {
+ class StrippingTest : public ::testing::Test {
+  protected:
+   void SetUp() override {
++#if defined(__OpenBSD__) && !defined(ABSL_LOG_INTERNAL_HAVE_GETEXECPATH)
++    // Before 8.0, OpenBSD had no /proc/self/exe and no call that returns the
++    // path of the running executable, so there is nothing to search.
++    GTEST_SKIP() << "StrippingTests skipped: cannot open the running "
++                    "executable on OpenBSD before 8.0";
++#endif
+ #ifndef NDEBUG
+     // Non-optimized builds don't necessarily eliminate dead code at all, so we
+     // don't attempt to validate stripping against such builds.
+@@ -240,6 +263,42 @@ class StrippingTest : public ::testing::Test {
+         _tfopen(path.c_str(), _T("rb")), [](FILE* fp) { fclose(fp); });
+     if (!fp) absl::FPrintF(stderr, "Failed to open executable\n");
+     return fp;
++#elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
++    // These have no /proc/self/exe; the kernel answers through sysctl.
++#if defined(__NetBSD__)
++    int mib[] = {CTL_KERN, KERN_PROC_ARGS, -1, KERN_PROC_PATHNAME};
++#else
++    int mib[] = {CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1};
++#endif
++    char path[PATH_MAX];
++    size_t size = sizeof(path);
++    if (sysctl(mib, 4, path, &size, nullptr, 0) != 0) {
++      const std::string err = absl::base_internal::StrError(errno);
++      absl::FPrintF(stderr, "KERN_PROC_PATHNAME failed: %s\n", err);
++      return nullptr;
++    }
++    std::unique_ptr<FILE, std::function<void(FILE*)>> fp(
++        fopen(path, "rb"), [](FILE* fp) { fclose(fp); });
++    if (!fp) {
++      const std::string err = absl::base_internal::StrError(errno);
++      absl::FPrintF(stderr, "Failed to open %s: %s\n", path, err);
++    }
++    return fp;
++#elif defined(ABSL_LOG_INTERNAL_HAVE_GETEXECPATH)
++    // OpenBSD 8.0 and later: getexecpath(3) returns the canonical path.
++    char path[PATH_MAX];
++    if (getexecpath(path, sizeof(path)) != 0) {
++      const std::string err = absl::base_internal::StrError(errno);
++      absl::FPrintF(stderr, "getexecpath failed: %s\n", err);
++      return nullptr;
++    }
++    std::unique_ptr<FILE, std::function<void(FILE*)>> fp(
++        fopen(path, "rb"), [](FILE* fp) { fclose(fp); });
++    if (!fp) {
++      const std::string err = absl::base_internal::StrError(errno);
++      absl::FPrintF(stderr, "Failed to open %s: %s\n", path, err);
++    }
++    return fp;
+ #else
+     absl::FPrintF(stderr,
+                   "OpenTestExecutable() unimplemented on this platform\n");
+diff --git a/absl/strings/internal/str_format/convert_test.cc b/absl/strings/internal/str_format/convert_test.cc
+index fc7d9ba35e6..cb5f477d306 100644
+--- a/absl/strings/internal/str_format/convert_test.cc
++++ b/absl/strings/internal/str_format/convert_test.cc
+@@ -61,6 +61,7 @@ struct NativePrintfTraits {
+   bool hex_float_prefers_denormal_repr;
+   bool hex_float_uses_minimal_precision_when_not_specified;
+   bool hex_float_optimizes_leading_digit_bit_count;
++  bool nan_has_sign_with_plus_flag;
+ };
+ 
+ template <typename T, size_t N>
+@@ -250,13 +251,19 @@ NativePrintfTraits VerifyNativeImplementationImpl() {
+   const double d0180 = 65920.0;  // 0x1.0180p+16
+   const double d0081 = 65665.0;  // 0x1.0081p+16
+   const double d0181 = 65921.0;  // 0x1.0181p+16
++  //
++  // glibc also keeps the leading digit when rounding carries out of the
++  // mantissa: "%.0a" of 1.5 is "0x2p+0". FreeBSD's printf renormalizes it to
++  // "0x1p+1" instead, so that case is part of the check.
++  const double d1p5 = 1.5;  // 0x1.8p+0
+   result.hex_float_has_glibc_rounding =
+       StartsWith(StrPrint("%.2a", d0079), "0x1.00") &&
+       StartsWith(StrPrint("%.2a", d0179), "0x1.01") &&
+       StartsWith(StrPrint("%.2a", d0080), "0x1.00") &&
+       StartsWith(StrPrint("%.2a", d0180), "0x1.02") &&
+       StartsWith(StrPrint("%.2a", d0081), "0x1.01") &&
+-      StartsWith(StrPrint("%.2a", d0181), "0x1.02");
++      StartsWith(StrPrint("%.2a", d0181), "0x1.02") &&
++      StartsWith(StrPrint("%.0a", d1p5), "0x2");
+ 
+   // >>> hex_float_prefers_denormal_repr. Formatting `denormal` on glibc yields
+   // "0x0.0000000000001p-1022", whereas on std libs that don't use denormal
+@@ -280,6 +287,12 @@ NativePrintfTraits VerifyNativeImplementationImpl() {
+       StartsWith(StrPrint("%a", d_15), "0x1.8") &&
+       StartsWith(StrPrint("%La", ld_15), "0xc");
+ 
++  // >>> nan_has_sign_with_plus_flag. glibc prints "+nan" for "%+f" of a NaN;
++  // Apple and the BSDs print "nan" with no sign.
++  result.nan_has_sign_with_plus_flag =
++      StartsWith(StrPrint("%+f", std::numeric_limits<double>::quiet_NaN()),
++                 "+");
++
+   return result;
+ }
+ 
+@@ -896,10 +909,12 @@ void TestWithMultipleFormatsHelper(Floating tested_float) {
+         // MSVC has a different rounding policy than us so we can't test our
+         // implementation against the native one there.
+         continue;
+-#elif defined(__APPLE__)
+-        // Apple formats NaN differently (+nan) vs. (nan)
+-        if (std::isnan(tested_float)) continue;
+ #endif
++        // Apple and the BSDs print NaN without a sign under "%+f"; glibc
++        // prints "+nan", which is what StrFormat does.
++        if (std::isnan(tested_float) && !native_traits.nan_has_sign_with_plus_flag) {
++          continue;
++        }
+         // We use ASSERT_EQ here because failures are usually correlated and a
+         // bug would print way too many failed expectations causing the test
+         // to time out.
+diff --git a/absl/time/internal/cctz/src/time_zone_format.cc b/absl/time/internal/cctz/src/time_zone_format.cc
+index ee4341d509d..35b701dcfe6 100644
+--- a/absl/time/internal/cctz/src/time_zone_format.cc
++++ b/absl/time/internal/cctz/src/time_zone_format.cc
+@@ -22,7 +22,7 @@
+ 
+ #if HAS_STRPTIME
+ #if !defined(_XOPEN_SOURCE) && !defined(__FreeBSD__) && \
+-    !defined(__OpenBSD__) && !defined(__APPLE__)
++    !defined(__OpenBSD__) && !defined(__APPLE__) && !defined(__DragonFly__)
+ #define _XOPEN_SOURCE 500  // Exposes definitions for SUSv2 (UNIX 98).
+ #endif
+ #endif
+diff --git a/absl/time/internal/cctz/src/time_zone_lookup_test.cc b/absl/time/internal/cctz/src/time_zone_lookup_test.cc
+index f53ac03eaf8..e25df396606 100644
+--- a/absl/time/internal/cctz/src/time_zone_lookup_test.cc
++++ b/absl/time/internal/cctz/src/time_zone_lookup_test.cc
+@@ -476,7 +476,8 @@ TEST(MakeTime, SysSecondsLimits) {
+     const time_zone cut = LoadZone("libc:UTC");
+     const year_t max_tm_year = year_t{std::numeric_limits<int>::max()} + 1900;
+     tp = convert(civil_second(max_tm_year, 12, 31, 23, 59, 59), cut);
+-#if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__EMSCRIPTEN__)
++#if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__EMSCRIPTEN__) || \
++    defined(__DragonFly__)
+     // Some gmtime_r() impls fail on extreme positive values.
+ #else
+     EXPECT_EQ("2147485547-12-31T23:59:59+00:00",

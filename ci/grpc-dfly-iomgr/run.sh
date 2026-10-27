@@ -14,13 +14,28 @@ git fetch -q origin dragonfly-iomgr-test
 git checkout -q $BEFORE
 git submodule update -q --init --depth 1 || exit 1
 
+# 測定のためだけの手当て。直す前と後の両方に同じく効く (AFTER との差は
+# dualstack_socket_posix.cc だけで、ここで触る file と重ならない)。
+# 1) master の latent_see.cc は素の abs(int64_t) を書き、DragonFly の libstdc++
+#    では int abs(int) しか見えず std::min が型で落ちる。
+sed -i '' 's/std::min(earliest_timestamp, abs(/std::min(earliest_timestamp, std::abs(/' \
+  src/core/util/latent_see.cc
+grep -q 'std::abs(event.timestamp_end)' src/core/util/latent_see.cc || exit 1
+# 2) 同梱の abseil に DragonFly の腕が無い (abseil#2160 の build に効く部分)。
+git -C third_party/abseil-cpp apply -v \
+  --include='absl/base/config.h' --include='absl/base/internal/sysinfo.cc' \
+  --include='absl/debugging/internal/vdso_support.cc' \
+  "$GITHUB_WORKSPACE/ci/grpc-dfly-iomgr/abseil-2160.diff" || exit 1
+# 同梱の版は raw_logging.cc の条件の並びも違うので sed で。
+f=third_party/abseil-cpp/absl/base/internal/raw_logging.cc
+sed -i '' 's/defined(__native_client__) || defined(__OpenBSD__) ||/defined(__native_client__) || defined(__OpenBSD__) || defined(__DragonFly__) ||/' $f
+grep -q 'defined(__DragonFly__)' $f || exit 1
+# 同梱の版は time_zone_format.cc の行の形が #2160 の土台と違うので sed で。
+f=third_party/abseil-cpp/absl/time/internal/cctz/src/time_zone_format.cc
+sed -i '' 's/!defined(__FreeBSD__) \&\& !defined(__OpenBSD__)$/!defined(__FreeBSD__) \&\& !defined(__OpenBSD__) \&\& !defined(__DragonFly__)/' $f
+grep -q '!defined(__DragonFly__)' $f || exit 1
+
 build() {
-  # 測定のためだけの手当て: master の latent_see.cc は素の abs(int64_t) を書き、
-  # DragonFly の libstdc++ では int abs(int) しか見えず std::min が型で落ちる。
-  # 直す前と後の両方に同じく当てる。
-  sed -i '' 's/std::min(earliest_timestamp, abs(/std::min(earliest_timestamp, std::abs(/' \
-    src/core/util/latent_see.cc
-  grep -n 'std::abs(event.timestamp_end)' src/core/util/latent_see.cc || exit 1
   cmake -S . -B $W/b -G Ninja -DCMAKE_BUILD_TYPE=Release \
     -DgRPC_INSTALL=ON -DgRPC_BUILD_TESTS=OFF -DgRPC_SSL_PROVIDER=module \
     -DgRPC_BUILD_CSHARP_EXT=OFF -DCMAKE_INSTALL_PREFIX=$W/inst >$W/cmake.log 2>&1 \
@@ -47,7 +62,6 @@ IOMGR=-event_engine_client,-event_engine_listener
 build
 probe before ""
 probe before "$IOMGR"
-git checkout -q -- src/core/util/latent_see.cc
 git checkout -q $AFTER
 build
 probe after ""
