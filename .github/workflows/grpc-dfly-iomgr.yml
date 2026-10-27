@@ -16,5 +16,5 @@ jobs:
           envs: 'GITHUB_WORKSPACE'
           cpu: 4
           mem: 12288
-          prepare: pkg install -y cmake ninja git perl5 go coreutils
+          prepare: pkg install -y cmake ninja git perl5 go coreutils llvm19
           run: sh "$GITHUB_WORKSPACE/ci/grpc-dfly-iomgr/run.sh"

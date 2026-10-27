@@ -5,8 +5,9 @@
 set -u
 BEFORE=d797c218374001e41d999416edbe687e4127f22a
 AFTER=74533b2a0ce6a4abfe54c42a749a225adbb1d4d1
+export CC=clang19 CXX=clang++19
 W=/var/tmp/g; mkdir -p $W; cd $W
-uname -a
+uname -a; $CXX --version | head -1
 git clone -q https://github.com/zakinko/grpc src
 cd src
 git fetch -q origin dragonfly-iomgr-test
