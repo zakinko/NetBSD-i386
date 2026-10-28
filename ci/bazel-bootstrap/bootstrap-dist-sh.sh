@@ -95,20 +95,23 @@ if [ "${I386:-0}" = 1 ]; then
 	fi
 fi
 
-# NetBSD と DragonFly は master が host として未対応 (#31069 が open)。#31069 の
-# diff を dist に当て (build_unix_jni.sh の腕は sh 形に写した物、unix_jni.h は
+# NetBSD と DragonFly は master が host として未対応 (#31290 が open)。#31290 の
+# diff を 2026-10-28 の master に載せ直した物 (#31069 の diff のままでは、
+# master が Windows の link option を書き換え、netty の genrule を消し、
+# OpenBSD 8.0 の getexecpath の腕を足したので当たらなくなった。run 40721009100)。
+# その diff を dist に当て (build_unix_jni.sh の腕は sh 形に写した物、unix_jni.h は
 # musl の当て物が代わり)、platforms / rules_java / zstd-jni / rules_go に
 # NetBSD の当て物を single_version_override で差す。pkgsrc の bazel9 が
 # 9.2.0 に対してしている物と同じ束。
 case "$OS" in
 NetBSD|DragonFly)
 	NB=$CI_DIR/netbsd
-	echo "=== NetBSD/DragonFly: bazel #31069 と module の当て物を差す"
-	patch -p1 -f -i "$NB/bazel-31069-netbsd.patch" </dev/null
+	echo "=== NetBSD/DragonFly: bazel #31290 と module の当て物を差す"
+	patch -p1 -f -i "$NB/bazel-31290-netbsd.patch" </dev/null
 	patch -p1 -f -i "$NB/build_unix_jni-netbsd.patch" </dev/null
 	patch -p1 -f -i "$NB/build_unix_jni-dragonfly.patch" </dev/null
 	patch -p1 -f -i "$CI_DIR/musl-stat-master.patch" </dev/null
-	# DragonFly は master にも #31069 にも入っていないので、NetBSD の分の上に
+	# DragonFly は master にも #31290 にも入っていないので、NetBSD の分の上に
 	# 同じ形で足す (src/conditions から unix_jni_bsd.cc まで)
 	if [ "$OS" = DragonFly ]; then
 		patch -p1 -f -i "$NB/bazel-dragonfly.patch" </dev/null

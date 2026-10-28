@@ -11,7 +11,7 @@
 #   GhostBSD  同上
 #   OpenBSD   pdksh 系
 #
-# NetBSD と DragonFly は master が host として未対応 (#31069 待ち) で JDK 25 も
+# NetBSD と DragonFly は master が host として未対応 (#31290 待ち) で JDK 25 も
 # package に無いので、ここには入れない。
 #
 # master の bazel は rules_python 1.7.0 の interpreter script を visibility で
@@ -47,7 +47,7 @@ on:
         type: boolean
         default: false
       netbsd:
-        description: 'NetBSD と DragonFly も回す (bazel #31069 と module の当て物を差す)'
+        description: 'NetBSD と DragonFly も回す (bazel #31290 と module の当て物を差す)'
         type: boolean
         default: false
       jdk_kit:
