@@ -12,6 +12,8 @@
 #   dist.zip の隣に rj_stub という file が在れば、rules_java の java_binary の
 #   起動 stub を POSIX sh にする当て物 (rules_java-posix-stub.patch) を、
 #   bootstrap と煙試験の両方の rules_java に差す
+#   rc_stub が在れば、rules_cc の generate_system_module_map.sh (clang のとき
+#   cc_configure が呼ぶ) を POSIX sh にする当て物を同じく差す
 #   JAVA_HOME    必須
 set -eu
 
@@ -27,6 +29,8 @@ WORK=${WORK:-$PWD/dist-sh-work}
 OS=$(uname -s)
 RJ_STUB=0
 [ -f "$(dirname "$DIST")/rj_stub" ] && RJ_STUB=1
+RC_STUB=0
+[ -f "$(dirname "$DIST")/rc_stub" ] && RC_STUB=1
 
 echo "=== JDK / OS / sh"
 "${JAVA_HOME:?JAVA_HOME が要る}/bin/javac" -version
@@ -315,6 +319,29 @@ single_version_override(
 )
 MOD
 	fi
+fi
+
+# rules_cc の cc_configure は compiler が clang のとき module map を作るのに
+# generate_system_module_map.sh (#!/usr/bin/env bash) を呼ぶ。bash の無い
+# Chimera はここで exit 127 になった (run 40690262896)
+if [ "$RC_STUB" = 1 ]; then
+	echo "=== rules_cc の module map の script を POSIX sh にする当て物を差す"
+	grep -q 'module_name = "rules_cc"' MODULE.bazel \
+		&& { echo "rules_cc の override が既に在る。差し方を足すこと"; exit 1; }
+	mkdir -p toolchain_local
+	cp "$CI_DIR/rules_cc-posix-module-map.patch" toolchain_local/
+	[ -f toolchain_local/BUILD ] || printf 'exports_files(glob(["*.patch"]))\n' > toolchain_local/BUILD
+	RC=$(grep -o 'name = "rules_cc", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
+	cat >> MODULE.bazel <<MOD
+
+# The module map script of cc_configure as POSIX sh (CI only).
+single_version_override(
+    module_name = "rules_cc",
+    version = "$RC",
+    patch_strip = 1,
+    patches = ["//toolchain_local:rules_cc-posix-module-map.patch"],
+)
+MOD
 fi
 
 # OS ごとの手当て。どれも sh 化とは無関係で、素の dist を bash で建てるときにも要る物。
@@ -626,6 +653,12 @@ fi
 if [ "$RJ_STUB" = 1 ]; then
 	cp "$CI_DIR/rules_java-posix-stub.patch" .
 	RJ_PATCHES="${RJ_PATCHES:+$RJ_PATCHES, }\"//:rules_java-posix-stub.patch\""
+fi
+if [ "$RC_STUB" = 1 ]; then
+	cp "$CI_DIR/rules_cc-posix-module-map.patch" .
+	: > BUILD
+	printf 'single_version_override(\n    module_name = "rules_cc",\n    version = "%s",\n    patch_strip = 1,\n    patches = ["//:rules_cc-posix-module-map.patch"],\n)\n' "$RC" >> MODULE.bazel
+	echo "rules_cc $RC に当て物を差した"
 fi
 if [ -n "$RJ_PATCHES" ]; then
 	printf 'single_version_override(\n    module_name = "rules_java",\n    version = "%s",\n    patch_strip = 1,\n    patches = [%s],\n)\n' "$RJ" "$RJ_PATCHES" >> MODULE.bazel

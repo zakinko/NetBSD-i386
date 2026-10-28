@@ -4,16 +4,19 @@
 #
 # 使い方: bsd-master-sh.sh <dist.zip>   (GITHUB_WORKSPACE が要る)
 set -eu
+# dist の隣に no_bash が在れば bash を入れない (bash の無い箱で測る)
+BASH_PKG=bash
+[ -f "$(dirname "$1")/no_bash" ] && BASH_PKG=
 DIST=$1
 OS=$(uname -s)
 echo "### $OS $(uname -r)  /bin/sh は $(/bin/sh -c 'echo $0'; ls -l /bin/sh | sed 's/.* -> //')"
 case "$OS" in
 FreeBSD|GhostBSD|HardenedBSD)
-	env ASSUME_ALWAYS_YES=yes pkg install -y openjdk25 zip unzip python3 bash git patch
+	env ASSUME_ALWAYS_YES=yes pkg install -y openjdk25 zip unzip python3 $BASH_PKG git patch
 	JAVA_HOME=/usr/local/openjdk25 ;;
 MidnightBSD)
 	# mports には bazel が無いが openjdk25 は在る。道具は mport で入れる。
-	mport install -y openjdk25 zip unzip python3 bash git patch || mport install openjdk25 zip unzip python3 bash git patch
+	mport install -y openjdk25 zip unzip python3 $BASH_PKG git patch || mport install openjdk25 zip unzip python3 $BASH_PKG git patch
 	JAVA_HOME=/usr/local/openjdk25
 	# rules_java の local_jdk は MidnightBSD を知らず、include/linux の
 	# jni_md.h を写そうとして落ちる (run 35730047335)。package は FreeBSD 向けの
@@ -23,7 +26,7 @@ OpenBSD)
 	# jdk%25 は「stem が jdk で版が 25」。無印 jdk-25 は別の意味になる
 	# OpenBSD の package は flavor 付きで、python3 は python%3、unzip は
 	# unzip-- と書く。ci/bazel-bsd/run.sh が踏んだ罠と同じ。
-	pkg_add -I jdk%25 zip bash git
+	pkg_add -I jdk%25 zip $BASH_PKG git
 	pkg_add -I 'python%3'
 	pkg_add -I unzip-- || pkg_add -I unzip
 	JAVA_HOME=/usr/local/jdk-25 ;;
@@ -42,7 +45,7 @@ NetBSD)
 		echo "        JDK_KIT=0 のときはこの後 shared library が無いと言われる"
 	fi
 	/usr/sbin/pkg_add -U pkgin
-	pkgin -y install bash zip unzip python313 go126 git-base patch gtar
+	pkgin -y install $BASH_PKG zip unzip python313 go126 git-base patch gtar
 	ln -sf /usr/pkg/bin/python3.13 /usr/pkg/bin/python3
 	PATH=/usr/pkg/bin:/usr/pkg/sbin:/usr/pkg/go126/bin:$PATH; export PATH
 	if [ "${JDK_KIT:-}" = 1 ]; then
@@ -66,7 +69,7 @@ NetBSD)
 		JAVA_VERSION=21; export JAVA_VERSION
 	fi ;;
 DragonFly)
-	pkg install -y git bash zip unzip python3 go curl patch
+	pkg install -y git $BASH_PKG zip unzip python3 go curl patch
 	if [ "${JDK_KIT:-}" = 1 ]; then
 		# dports は openjdk21 止まりで、master は 22 以上が要る。zakinko/jdk25u の
 		# bootstrap kit (DragonFly 6.4 x86_64、cross build、174MB)。DragonFly に

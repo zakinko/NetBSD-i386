@@ -63,7 +63,15 @@ on:
         type: boolean
         default: false
       rj_stub:
-        description: 'rules_java の java_binary 起動 stub を POSIX sh にする当て物を差し、musl の箱には bash を入れない'
+        description: 'rules_java の java_binary 起動 stub を POSIX sh にする当て物を差す'
+        type: boolean
+        default: false
+      rc_stub:
+        description: 'rules_cc の generate_system_module_map.sh を POSIX sh にする当て物を差す'
+        type: boolean
+        default: false
+      no_bash:
+        description: 'musl の箱と BSD に bash を入れない'
         type: boolean
         default: false
       only:
@@ -72,7 +80,7 @@ on:
         default: ''
 
 concurrency:
-  group: bazel-master-sh-${{ github.ref }}-${{ inputs.branch }}-${{ inputs.bsd }}-${{ inputs.wide }}-${{ inputs.jdk21 }}-${{ inputs.netbsd }}-${{ inputs.rj_stub }}-${{ github.run_id }}
+  group: bazel-master-sh-${{ github.ref }}-${{ inputs.branch }}-${{ inputs.bsd }}-${{ inputs.wide }}-${{ inputs.jdk21 }}-${{ inputs.netbsd }}-${{ inputs.rj_stub }}-${{ inputs.rc_stub }}-${{ inputs.no_bash }}-${{ github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -125,12 +133,20 @@ jobs:
       - name: rj_stub の印
         if: ${{ inputs.rj_stub }}
         run: touch rj_stub
+      - name: rc_stub の印
+        if: ${{ inputs.rc_stub }}
+        run: touch rc_stub
+      - name: no_bash の印
+        if: ${{ inputs.no_bash }}
+        run: touch no_bash
       - uses: actions/upload-artifact@v4
         with:
           name: master-sh-dist
           path: |
             bazel-distfile.zip
             rj_stub
+            rc_stub
+            no_bash
           retention-days: 3
 
   linux:
@@ -162,7 +178,7 @@ jobs:
         if: ${{ matrix.container != '' && ((inputs.only != '' && contains(format(',{0},', inputs.only), format(',{0},', matrix.name))) || (inputs.only == '' && (!matrix.wide || inputs.wide))) }}
         run: sh ci/bazel-bootstrap/linux-tools.sh
         env:
-          NO_BASH: ${{ inputs.rj_stub && '1' || '' }}
+          NO_BASH: ${{ inputs.no_bash && '1' || '' }}
       - uses: actions/setup-java@v4
         if: ${{ ((inputs.only != '' && contains(format(',{0},', inputs.only), format(',{0},', matrix.name))) || (inputs.only == '' && (!matrix.wide || inputs.wide))) && !contains(matrix.name, 'musl') && matrix.container != 'alpine:latest' }}
         with: { distribution: temurin, java-version: '25' }
@@ -212,7 +228,7 @@ jobs:
         run: |
           docker run --rm -v "$GITHUB_WORKSPACE:/w" -w /w \
             -e SH_BIN=/bin/sh -e LOG_BASH=1 -e NO_VIS=0 -e "RP_BUMP=${{ inputs.rp_bump }}" \
-            -e "IN_SHELL=${{ matrix.shell }}" -e "NO_BASH=${{ inputs.rj_stub && '1' || '' }}" \
+            -e "IN_SHELL=${{ matrix.shell }}" -e "NO_BASH=${{ inputs.no_bash && '1' || '' }}" \
             "${{ matrix.image }}" "${{ matrix.shell }}" \
             ci/bazel-bootstrap/linux-in-docker.sh /w /w/master-sh-dist/bazel-distfile.zip
 
