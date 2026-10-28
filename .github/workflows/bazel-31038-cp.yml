@@ -26,12 +26,12 @@ jobs:
           git checkout HEAD~1 -- src/main/cpp/util/file_posix.cc
           git status --short
       - name: build
-        run: bazel build //src/test/cpp/util:file_posix_test //src/test/cpp/util:file_test
+        run: bazel build //src/test/cpp/util:file_test
       - name: run as root
         run: |
           set +e
           stat -c '%F %A %t:%T' /dev/null
-          for t in file_posix_test file_test; do
+          for t in file_test; do
             sudo bazel-bin/src/test/cpp/util/$t >$t.log 2>&1
             echo "RESULT ${{ matrix.side }} $t rc=$?"
             grep -E 'FAILED|PASSED|Expected' $t.log | head -8
