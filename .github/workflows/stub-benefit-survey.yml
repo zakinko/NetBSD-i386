@@ -1,0 +1,69 @@
+# rules_java の起動 stub を POSIX sh にする利点を、別の方向から測る。
+#   images: Java を走らせる container image に bash と /bin/sh があるか
+#   timing: stub 一回の起動にかかる時間 (元の bash の stub と POSIX の stub)
+name: stub-benefit-survey
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: stub-benefit-survey-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: bash と /bin/sh があるか
+        run: |
+          for img in eclipse-temurin:25-jre-alpine eclipse-temurin:25-jre \
+              amazoncorretto:25-alpine amazoncorretto:25 \
+              azul/zulu-openjdk-alpine:25-jre bellsoft/liberica-runtime-container:jre-25-musl \
+              gcr.io/distroless/java25-debian13 gcr.io/distroless/java21-debian12 \
+              cgr.dev/chainguard/jre:latest sapmachine:25-jre-ubuntu \
+              ibm-semeru-runtimes:open-25-jre; do
+            docker pull -q "$img" >/dev/null 2>&1 || { echo "SURVEY|$img|pull できない"; continue; }
+            sh_=$(docker run --rm --entrypoint /bin/sh "$img" -c 'echo yes' 2>/dev/null || echo no)
+            bash_=$(docker run --rm --entrypoint /bin/sh "$img" -c 'command -v bash || echo none' 2>/dev/null || echo '?')
+            env_=$(docker run --rm --entrypoint /bin/sh "$img" -c '[ -x /usr/bin/env ] && echo yes || echo no' 2>/dev/null || echo '?')
+            tools=$(docker run --rm --entrypoint /bin/sh "$img" -c 'for t in awk od sed readlink dirname uname; do command -v $t >/dev/null || printf "%s " "-$t"; done' 2>/dev/null || echo '?')
+            echo "SURVEY|$img|/bin/sh=$sh_|bash=$bash_|/usr/bin/env=$env_|missing=${tools:-none}"
+          done
+
+  timing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: templates
+        run: |
+          set -eux
+          mkdir -p t p/java/bazel/rules
+          curl -fsSL https://raw.githubusercontent.com/bazelbuild/rules_java/9.9.0/java/bazel/rules/java_stub_template.txt > t/orig.txt
+          cp t/orig.txt p/java/bazel/rules/java_stub_template.txt
+          (cd p && patch -f -p1 -F0 < ../ci/bazel-bootstrap/rules_java-posix-stub.patch) </dev/null
+          cp p/java/bazel/rules/java_stub_template.txt t/new.txt
+          sudo apt-get install -y -q dash busybox
+      - name: 500 回起こす時間
+        run: |
+          set -eu
+          # compare.sh で偽の JDK と stub を作り、その stub を繰り返し起こす
+          for v in orig new; do
+            sh ci/rules-java-stub/compare.sh t/$v.txt bash /tmp/w-$v >/dev/null
+          done
+          run() {
+            label=$1; shift
+            s=$(date +%s.%N)
+            i=0; while [ $i -lt 500 ]; do "$@" arg >/dev/null 2>&1; i=$((i + 1)); done
+            e=$(date +%s.%N)
+            echo "TIMING|$label|$(echo "($e - $s) * 1000 / 500" | bc -l | cut -c1-6) ms/回"
+          }
+          for round in 1 2; do
+            run "orig bash (runfiles)" bash /tmp/w-orig/bin/prog
+            run "new dash (runfiles)" dash /tmp/w-new/bin/prog
+            run "new busybox (runfiles)" busybox sh /tmp/w-new/bin/prog
+            run "new bash (runfiles)" bash /tmp/w-new/bin/prog
+            run "orig bash (manifest)" bash /tmp/w-orig/bin/mprog
+            run "new dash (manifest)" dash /tmp/w-new/bin/mprog
+          done
