@@ -1,0 +1,419 @@
+diff --git a/java/bazel/rules/java_stub_template.txt b/java/bazel/rules/java_stub_template.txt
+index 8dddd4a..33297bb 100644
+--- a/java/bazel/rules/java_stub_template.txt
++++ b/java/bazel/rules/java_stub_template.txt
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env bash
++#!/bin/sh
+ # Copyright 2014 The Bazel Authors. All rights reserved.
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+@@ -44,7 +44,7 @@
+ #
+ # The remainder of the command line is passed to the program.
+ 
+-set -o posix
++# This script is POSIX sh, so that it also runs where bash is not installed.
+ 
+ # Make it easy to insert 'set -x' or similar commands when debugging problems with this script.
+ eval "$JAVA_STUB_DEBUG"
+@@ -54,24 +54,35 @@ eval "$JAVA_STUB_DEBUG"
+ # against the argv limit.
+ unset CLASSPATH
+ 
+-JVM_FLAGS_CMDLINE=()
++# Flags from --jvm_flag and --jvm_flags, each one quoted for eval.
++JVM_FLAGS_CMDLINE=
++
++# Quotes $1 so that eval reads it back as a single word.
++quote() {
++  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
++}
+ 
+ # Processes an argument for the wrapper. Returns 0 if the given argument
+ # was recognized as an argument for this wrapper, and 1 if it was not.
+-function process_wrapper_argument() {
++process_wrapper_argument() {
+   case "$1" in
+     --debug) JVM_DEBUG_PORT="${DEFAULT_JVM_DEBUG_PORT:-5005}" ;;
+     --debug=*) JVM_DEBUG_PORT="${1#--debug=}" ;;
+     --main_advice=*) MAIN_ADVICE="${1#--main_advice=}" ;;
+     --main_advice_classpath=*) MAIN_ADVICE_CLASSPATH="${1#--main_advice_classpath=}" ;;
+-    --jvm_flag=*) JVM_FLAGS_CMDLINE+=( "${1#--jvm_flag=}" ) ;;
+-    --jvm_flags=*) JVM_FLAGS_CMDLINE+=( ${1#--jvm_flags=} ) ;;
++    --jvm_flag=*) JVM_FLAGS_CMDLINE="$JVM_FLAGS_CMDLINE $(quote "${1#--jvm_flag=}")" ;;
++    --jvm_flags=*)
++        for flag in ${1#--jvm_flags=}; do
++          JVM_FLAGS_CMDLINE="$JVM_FLAGS_CMDLINE $(quote "$flag")"
++        done
++        ;;
+     --singlejar) SINGLEJAR=1 ;;
+     --print_javabin) PRINT_JAVABIN=1 ;;
+     --classpath_limit=*)
+         CLASSPATH_LIMIT="${1#--classpath_limit=}"
+-        echo "$CLASSPATH_LIMIT" | grep -q '^[0-9]\+$' || \
+-          die "ERROR: $self failed, --classpath_limit is not a number"
++        case "$CLASSPATH_LIMIT" in
++          ''|*[!0-9]*) die "ERROR: $self failed, --classpath_limit is not a number" ;;
++        esac
+         ;;
+     *)
+       return 1 ;;
+@@ -80,21 +91,32 @@ function process_wrapper_argument() {
+ }
+ 
+ die() {
+-  printf "%s: $1\n" "$0" "${@:2}" >&2
++  format=$1
++  shift
++  printf "%s: $format\n" "$0" "$@" >&2
+   exit 1
+ }
+ 
++# OSTYPE is set by bash only.
++OS_NAME=${OSTYPE:-$(uname -s)}
++
+ # Windows
+-function is_windows() {
+-  [[ "${OSTYPE}" =~ msys* ]] || [[ "${OSTYPE}" =~ cygwin* ]]
++is_windows() {
++  case "$OS_NAME" in
++    *msys*|*cygwin*|MSYS*|CYGWIN*) return 0 ;;
++  esac
++  return 1
+ }
+ 
+ # macOS
+-function is_macos() {
+-  [[ "${OSTYPE}" =~ darwin* ]]
++is_macos() {
++  case "$OS_NAME" in
++    darwin*|Darwin) return 0 ;;
++  esac
++  return 1
+ }
+ 
+-function available_utf8_locale() {
++available_utf8_locale() {
+   # Both C.UTF-8 and en_US.UTF-8 do not cause any language-specific effects
+   # when set as LC_CTYPE, but neither is certain to exist on all systems.
+   #
+@@ -103,23 +125,34 @@ function available_utf8_locale() {
+   # the LC_CTYPE change as soon as the variable is defined and may emit a
+   # warning when the locale files are not present. By using "env", bash never
+   # sees the change and the 2>/dev/null redirection does the right thing.
+-  if [[ "$(env LC_CTYPE=C.UTF-8 locale charmap 2>/dev/null)" == "UTF-8" ]]; then
++  if [ "$(env LC_CTYPE=C.UTF-8 locale charmap 2>/dev/null)" = "UTF-8" ]; then
+     echo "C.UTF-8"
+-  elif [[ "$(env LC_CTYPE=en_US.UTF-8 locale charmap 2>/dev/null)" == "UTF-8" ]]; then
++  elif [ "$(env LC_CTYPE=en_US.UTF-8 locale charmap 2>/dev/null)" = "UTF-8" ]; then
+     echo "en_US.UTF-8"
+   fi
+ }
+ 
+ # Parse arguments sequentially until the first unrecognized arg is encountered.
+ # Scan the remaining args for --wrapper_script_flag=X options and process them.
+-ARGS=()
+-for ARG in "$@"; do
+-  if [[ "$ARG" == --wrapper_script_flag=* ]]; then
+-    process_wrapper_argument "${ARG#--wrapper_script_flag=}" \
+-      || die "invalid wrapper argument '%s'" "$ARG"
+-  elif [[ "${#ARGS}" -gt 0 ]] || ! process_wrapper_argument "$ARG"; then
+-    ARGS+=( "$ARG" )
+-  fi
++# The arguments for the program are rotated to the end of "$@".
++nargs=$#
++in_args=0
++while [ "$nargs" -gt 0 ]; do
++  ARG=$1
++  shift
++  nargs=$((nargs - 1))
++  case "$ARG" in
++    --wrapper_script_flag=*)
++      process_wrapper_argument "${ARG#--wrapper_script_flag=}" \
++        || die "invalid wrapper argument '%s'" "$ARG"
++      ;;
++    *)
++      if [ "$in_args" = 1 ] || ! process_wrapper_argument "$ARG"; then
++        in_args=1
++        set -- "$@" "$ARG"
++      fi
++      ;;
++  esac
+ done
+ 
+ # Find our runfiles tree.  We need this to construct the classpath
+@@ -151,35 +184,37 @@ else
+   self="$0"
+ fi
+ 
+-if [[ "$self" != /* ]]; then
+-  self="$PWD/$self"
+-fi
++case "$self" in
++  /*) ;;
++  *) self="$PWD/$self" ;;
++esac
+ 
+-if [[ "$SINGLEJAR" != 1 || "%needs_runfiles%" == 1 ]]; then
+-  if [[ -z "$JAVA_RUNFILES" ]]; then
++if [ "$SINGLEJAR" != 1 ] || [ "%needs_runfiles%" = 1 ]; then
++  if [ -z "$JAVA_RUNFILES" ]; then
+     while true; do
+-      if [[ -e "$self.runfiles" ]]; then
++      if [ -e "$self.runfiles" ]; then
+         JAVA_RUNFILES="$self.runfiles"
+         break
+       fi
+-      if [[ $self == *.runfiles/* ]]; then
+-        JAVA_RUNFILES="${self%.runfiles/*}.runfiles"
+-        break
+-      fi
+-      if [[ ! -L "$self" ]]; then
++      case "$self" in
++        *.runfiles/*)
++          JAVA_RUNFILES="${self%.runfiles/*}.runfiles"
++          break
++          ;;
++      esac
++      if [ ! -L "$self" ]; then
+         break
+       fi
+       readlink="$(readlink "$self")"
+-      if [[ "$readlink" = /* ]]; then
+-        self="$readlink"
+-      else
++      case "$readlink" in
++        /*) self="$readlink" ;;
+         # resolve relative symlink
+-        self="${self%/*}/$readlink"
+-      fi
++        *) self="${self%/*}/$readlink" ;;
++      esac
+     done
+-    if [[ -n "$JAVA_RUNFILES" ]]; then
++    if [ -n "$JAVA_RUNFILES" ]; then
+       export TEST_SRCDIR=${TEST_SRCDIR:-$JAVA_RUNFILES}
+-    elif [[ -f "${self}_deploy.jar" && "%needs_runfiles%" == 0 ]]; then
++    elif [ -f "${self}_deploy.jar" ] && [ "%needs_runfiles%" = 0 ]; then
+       SINGLEJAR=1;
+     else
+       die 'Cannot locate runfiles directory. (Set $JAVA_RUNFILES to inhibit searching.)'
+@@ -197,60 +232,41 @@ export RUNFILES_MANIFEST_FILE="${JAVA_RUNFILES}/MANIFEST"
+ export RUNFILES_MANIFEST_ONLY=%runfiles_manifest_only%
+ 
+ if [ -z "$RUNFILES_MANIFEST_ONLY" ]; then
+-  function rlocation() {
+-    if [[ "$1" = /* ]]; then
+-      echo $1
+-    else
+-      echo "$(dirname $RUNFILES_MANIFEST_FILE)/$1"
+-    fi
++  rlocation() {
++    case "$1" in
++      /*) echo $1 ;;
++      *) echo "$(dirname $RUNFILES_MANIFEST_FILE)/$1" ;;
++    esac
+   }
+ else
+-  if ! is_macos; then
+-    # Read file into my_array
+-    oifs=$IFS
+-    IFS=$'\n'
+-    my_array=( $(sed -e 's/\r//g' "$RUNFILES_MANIFEST_FILE") )
+-    IFS=$oifs
+-
+-    # Process each runfile line into a [key,value] entry in runfiles_array
+-    # declare -A is not supported on macOS because an old version of bash is used.
+-    declare -A runfiles_array
+-    for line in "${my_array[@]}"
+-    do
+-      line_split=($line)
+-      runfiles_array[${line_split[0]}]=${line_split[@]:1}
+-    done
+-  fi
+-
+-  function rlocation() {
+-    if [[ "$1" = /* ]]; then
+-      echo $1
+-    else
+-      if is_macos; then
+-        # Print the rest of line after the first space
+-        # First, set the first column to empty and print rest of the line
+-        # Second, use a trick of awk to remove leading and trailing spaces.
+-        echo $(grep "^$1 " $RUNFILES_MANIFEST_FILE | awk '{ $1=""; print }' | awk '{ $1=$1; print }')
+-      else
+-        echo ${runfiles_array[$1]}
+-      fi
+-    fi
++  rlocation() {
++    case "$1" in
++      /*) echo $1 ;;
++      *)
++        # Print the rest of the line after the first field, with the
++        # whitespace between the remaining fields collapsed to one space.
++        key="$1" awk '
++          { sub(/\r$/, "") }
++          $1 == ENVIRON["key"] { $1 = ""; sub(/^ /, ""); print; exit }
++        ' "$RUNFILES_MANIFEST_FILE"
++        ;;
++    esac
+   }
+ fi
+ 
+ # Set JAVABIN to the path to the JVM launcher.
+ %javabin%
+ 
+-if [[ "$PRINT_JAVABIN" == 1 || "%java_start_class%" == "--print_javabin" ]]; then
+-  echo -n "$JAVABIN"
++if [ "$PRINT_JAVABIN" = 1 ] || [ "%java_start_class%" = "--print_javabin" ]; then
++  printf '%s' "$JAVABIN"
+   exit 0
+ fi
+ 
+-if [[ "$SINGLEJAR" == 1 ]]; then
++if [ "$SINGLEJAR" = 1 ]; then
+   CLASSPATH="${self}_deploy.jar"
+   # Check for the deploy jar now.  If it doesn't exist, we can print a
+   # more helpful error message than the JVM.
+-  [[ -r "$CLASSPATH" ]] \
++  [ -r "$CLASSPATH" ] \
+     || die "Option --singlejar was passed, but %s does not exist.\n  (You may need to build it explicitly.)" "$CLASSPATH"
+ else
+   # Create the shortest classpath we can, by making it relative if possible.
+@@ -275,34 +291,31 @@ export CLASSLOADER_PREFIX_PATH="${RUNPATH}"
+ export JACOCO_IS_JAR_WRAPPED=0
+ export CLASSPATH_JAR=""
+ 
+-if [[ -n "$JVM_DEBUG_PORT" ]]; then
++if [ -n "$JVM_DEBUG_PORT" ]; then
+   JVM_DEBUG_SUSPEND=${DEFAULT_JVM_DEBUG_SUSPEND:-"y"}
+   JVM_DEBUG_FLAGS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=${JVM_DEBUG_SUSPEND},address=${JVM_DEBUG_PORT}"
+ fi
+ 
+-if [[ -n "$MAIN_ADVICE_CLASSPATH" ]]; then
++if [ -n "$MAIN_ADVICE_CLASSPATH" ]; then
+   CLASSPATH="${MAIN_ADVICE_CLASSPATH}:${CLASSPATH}"
+ fi
+ 
+ # Check if TEST_TMPDIR is available to use for scratch.
+-if [[ -n "$TEST_TMPDIR" && -d "$TEST_TMPDIR" ]]; then
+-  JVM_FLAGS+=" -Djava.io.tmpdir=$TEST_TMPDIR"
++if [ -n "$TEST_TMPDIR" ] && [ -d "$TEST_TMPDIR" ]; then
++  JVM_FLAGS="$JVM_FLAGS -Djava.io.tmpdir=$TEST_TMPDIR"
+ fi
+ 
+-ARGS=(
+-  ${JVM_DEBUG_FLAGS}
+-  ${JVM_FLAGS}
+-  %jvm_flags%
+-  "${JVM_FLAGS_CMDLINE[@]}"
+-  ${MAIN_ADVICE}
+-  %java_start_class%
+-  "${ARGS[@]}")
++# Prepend the JVM flags and the main class to the program arguments,
++# innermost first.
++set -- ${MAIN_ADVICE} %java_start_class% "$@"
++eval "set -- $JVM_FLAGS_CMDLINE \"\$@\""
++set -- ${JVM_DEBUG_FLAGS} ${JVM_FLAGS} %jvm_flags% "$@"
+ 
+ 
+ # Creates a JAR containing the classpath and put the result to stdout
+-function create_classpath_jar() {
++create_classpath_jar() {
+   # Build class path.
+-  MANIFEST_CLASSPATH=()
++  MANIFEST_CLASSPATH=
+   if is_windows; then
+     CLASSPATH_SEPARATOR=";"
+   else
+@@ -313,22 +326,23 @@ function create_classpath_jar() {
+   IFS="${CLASSPATH_SEPARATOR}" # Use a custom separator for the loop.
+   current_dir=$(pwd)
+   for path in ${CLASSPATH}; do
+-    # Loop through the characters of the path and convert characters that are
+-    # not alphanumeric nor -_.~/ to their 2-digit hexadecimal representation
+-    if [[ ! $path =~ ^[-_.~/a-zA-Z0-9+]*$ ]]; then
+-      local i c buff
+-      local converted_path=""
+-
+-      for ((i=0; i<${#path}; i++)); do
+-        c=${path:$i:1}
+-        case ${c} in
+-              [-_.~/a-zA-Z0-9+] ) buff=${c} ;;
+-              * )               printf -v buff '%%%02x' "'$c'"
+-        esac
+-        converted_path+="${buff}"
+-      done
+-      path=${converted_path}
+-    fi
++    # Convert the bytes of the path that are not alphanumeric nor -_.~/+
++    # to their 2-digit hexadecimal representation.
++    case "$path" in
++      *[!-_.~/a-zA-Z0-9+]*)
++        path=$(printf '%s' "$path" | od -An -v -tx1 | awk '
++          BEGIN {
++            safe = "-_.~/+0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
++            for (i = 32; i < 127; i++) {
++              c = sprintf("%c", i)
++              if (index(safe, c)) keep[sprintf("%02x", i)] = c
++            }
++          }
++          { for (i = 1; i <= NF; i++) out = out ($i in keep ? keep[$i] : "%" $i) }
++          END { printf "%s", out }
++        ')
++        ;;
++    esac
+ 
+     if is_windows; then
+       path="file:/${path}" # e.g. "file:/C:/temp/foo.jar"
+@@ -341,7 +355,7 @@ function create_classpath_jar() {
+       path="file:${path}" # e.g. "file:/usr/local/foo.jar"
+     fi
+ 
+-    MANIFEST_CLASSPATH+=("${path}")
++    MANIFEST_CLASSPATH="${MANIFEST_CLASSPATH:+$MANIFEST_CLASSPATH }${path}"
+   done
+   IFS="$OLDIFS"
+ 
+@@ -350,8 +364,9 @@ function create_classpath_jar() {
+   (
+     echo "Manifest-Version: 1.0"
+ 
+-    CLASSPATH_LINE="Class-Path: ${MANIFEST_CLASSPATH[*]}"
+-    CLASSPATH_MANIFEST_LINES=$(sed -E $'s/(.{71})/\\1\\\n /g' <<< "${CLASSPATH_LINE}")
++    CLASSPATH_LINE="Class-Path: ${MANIFEST_CLASSPATH}"
++    CLASSPATH_MANIFEST_LINES=$(printf '%s\n' "${CLASSPATH_LINE}" | sed 's/\(.\{71\}\)/\1\
++ /g')
+ 
+     echo "$CLASSPATH_MANIFEST_LINES"
+     echo "Created-By: Bazel"
+@@ -387,24 +402,24 @@ fi
+ if ! is_macos; then
+   if [ -z ${LC_CTYPE+x} ] && [ -z ${LC_ALL+x} ] && [ -z ${LANG+x} ]; then
+     UTF8_LOCALE=$(available_utf8_locale)
+-    if [[ -n "$UTF8_LOCALE" ]]; then
++    if [ -n "$UTF8_LOCALE" ]; then
+       export LC_CTYPE="$UTF8_LOCALE"
+     fi
+   fi
+ fi
+ 
+-if (("${#CLASSPATH}" > ${CLASSPATH_LIMIT})); then
++if [ "${#CLASSPATH}" -gt "${CLASSPATH_LIMIT}" ]; then
+   # TODO(cmtia): Remove JACOCO_IS_JAR_WRAPPED when JacocoCoverageRunner will
+   # never need it anymore.
+   export JACOCO_IS_JAR_WRAPPED=1
+   CLASSPATH_MANIFEST_JAR=$(create_classpath_jar)
+   export CLASSPATH_JAR="$(basename $CLASSPATH_MANIFEST_JAR)"
+-  "$JAVABIN" -classpath "$CLASSPATH_MANIFEST_JAR" "${ARGS[@]}"
++  "$JAVABIN" -classpath "$CLASSPATH_MANIFEST_JAR" "$@"
+   exit_code=$?
+   rm -f "$CLASSPATH_MANIFEST_JAR"
+   exit $exit_code
+ else
+   export JACOCO_IS_JAR_WRAPPED=0
+   export CLASSPATH_JAR=""
+-  exec "$JAVABIN" -classpath $CLASSPATH "${ARGS[@]}"
++  exec "$JAVABIN" -classpath $CLASSPATH "$@"
+ fi

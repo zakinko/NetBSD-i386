@@ -1,0 +1,92 @@
+# rules_java の java_binary 起動 stub を POSIX sh にした当て物
+# (ci/bazel-bootstrap/rules_java-posix-stub.patch) を、元の bash の stub と
+# 同じ入力で走らせて、JVM に渡る引数・環境・classpath jar の manifest を
+# 突き合わせる (ci/rules-java-stub/compare.sh)。
+#
+# 基準は Linux の bash 5 で走らせた元の stub。手元の macOS の bash 3.2 では
+# manifest だけの runfiles が declare -A の分岐を通らないので、そこはここで測る。
+name: rules-java-stub
+
+on:
+  workflow_dispatch:
+    inputs:
+      rules_java:
+        description: '当て物を当てる rules_java の tag'
+        type: string
+        default: '9.9.0'
+      bsd:
+        description: 'BSD の /bin/sh でも回す (VM)'
+        type: boolean
+        default: true
+
+concurrency:
+  group: rules-java-stub-${{ github.ref }}-${{ inputs.rules_java }}-${{ inputs.bsd }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: templates
+        run: |
+          set -eux
+          mkdir -p t
+          curl -fsSL "https://raw.githubusercontent.com/bazelbuild/rules_java/${{ inputs.rules_java }}/java/bazel/rules/java_stub_template.txt" > t/orig.txt
+          mkdir -p p/java/bazel/rules
+          cp t/orig.txt p/java/bazel/rules/java_stub_template.txt
+          (cd p && patch -p1 -F0 < ../ci/bazel-bootstrap/rules_java-posix-stub.patch)
+          cp p/java/bazel/rules/java_stub_template.txt t/new.txt
+          head -1 t/orig.txt t/new.txt
+      - name: shells
+        run: sudo apt-get install -y -q dash busybox mksh yash locales && sudo locale-gen en_US.UTF-8
+      - name: compare
+        run: |
+          set -u
+          sh ci/rules-java-stub/compare.sh t/orig.txt bash "$RUNNER_TEMP/w" > t/ref-bash.txt
+          rc=0
+          for s in dash "busybox sh" mksh yash "bash --posix" bash; do
+            n=$(echo "$s" | tr ' ' _)
+            sh ci/rules-java-stub/compare.sh t/new.txt "$s" "$RUNNER_TEMP/w" > "t/new-$n.txt" 2>&1
+            if diff t/ref-bash.txt "t/new-$n.txt" > "t/diff-$n.txt"; then
+              echo "RESULT $s: 基準と一致"
+            else
+              echo "RESULT $s: 差 $(grep -c '^[<>]' "t/diff-$n.txt") 行"; cat -v "t/diff-$n.txt"
+            fi
+          done
+          # 元の stub を dash で走らせると落ちる (bash の構文) ことも残す
+          sh ci/rules-java-stub/compare.sh t/orig.txt dash "$RUNNER_TEMP/w" 2>&1 | grep -m3 -i 'not found\|syntax\|unexpected' || true
+          exit $rc
+      - uses: actions/upload-artifact@v4
+        with: { name: stub-compare, path: t, retention-days: 3 }
+
+  bsd:
+    needs: linux
+    if: ${{ inputs.bsd }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [freebsd, openbsd, netbsd, dragonflybsd]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: stub-compare, path: t }
+      - name: compare (${{ matrix.os }})
+        uses: vmactions/freebsd-vm@v1
+        if: ${{ matrix.os == 'freebsd' }}
+        with: { envs: 'GITHUB_WORKSPACE', run: 'sh "$GITHUB_WORKSPACE/ci/rules-java-stub/bsd.sh"' }
+      - name: compare (${{ matrix.os }})
+        uses: vmactions/openbsd-vm@v1
+        if: ${{ matrix.os == 'openbsd' }}
+        with: { envs: 'GITHUB_WORKSPACE', run: 'sh "$GITHUB_WORKSPACE/ci/rules-java-stub/bsd.sh"' }
+      - name: compare (${{ matrix.os }})
+        uses: vmactions/netbsd-vm@v1
+        if: ${{ matrix.os == 'netbsd' }}
+        with: { envs: 'GITHUB_WORKSPACE', run: 'sh "$GITHUB_WORKSPACE/ci/rules-java-stub/bsd.sh"' }
+      - name: compare (${{ matrix.os }})
+        uses: vmactions/dragonflybsd-vm@v1
+        if: ${{ matrix.os == 'dragonflybsd' }}
+        with: { envs: 'GITHUB_WORKSPACE', run: 'sh "$GITHUB_WORKSPACE/ci/rules-java-stub/bsd.sh"' }

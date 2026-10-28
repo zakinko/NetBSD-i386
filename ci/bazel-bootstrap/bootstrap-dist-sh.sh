@@ -9,6 +9,9 @@
 #   NO_VIS       1 なら --check_visibility=false。master の bazel が rules_python
 #                1.7.0 を visibility で弾く (bash でも同じ) のを越えるため
 #   EXTRA_PATCH  dist に当てる当て物 (Alpine の musl 用など)
+#   dist.zip の隣に rj_stub という file が在れば、rules_java の java_binary の
+#   起動 stub を POSIX sh にする当て物 (rules_java-posix-stub.patch) を、
+#   bootstrap と煙試験の両方の rules_java に差す
 #   JAVA_HOME    必須
 set -eu
 
@@ -22,6 +25,8 @@ NO_VIS=${NO_VIS:-0}
 EXTRA_PATCH=${EXTRA_PATCH:-}
 WORK=${WORK:-$PWD/dist-sh-work}
 OS=$(uname -s)
+RJ_STUB=0
+[ -f "$(dirname "$DIST")/rj_stub" ] && RJ_STUB=1
 
 echo "=== JDK / OS / sh"
 "${JAVA_HOME:?JAVA_HOME が要る}/bin/javac" -version
@@ -276,6 +281,40 @@ single_version_override(
     patches = ["//toolchain_local:rules_go-386.patch"],
 )
 MOD
+fi
+
+# bootstrap の間の bash は、rules_java が作る java_binary の起動 stub
+# (#!/usr/bin/env bash) が package_zipper と adjust_sfx を走らせる所だけに
+# 残っていた (run 40653146511 の Alpine で 2 回、Chimera で 3 回)。それを
+# POSIX sh にした当て物を差す。NetBSD と DragonFly は上で rules_java の
+# override を足しているので、その patches に入れる
+if [ "$RJ_STUB" = 1 ]; then
+	echo "=== rules_java の起動 stub を POSIX sh にする当て物を差す"
+	mkdir -p toolchain_local
+	cp "$CI_DIR/rules_java-posix-stub.patch" toolchain_local/
+	[ -f toolchain_local/BUILD ] || printf 'exports_files(glob(["*.patch"]))\n' > toolchain_local/BUILD
+	if grep -q 'module_name = "rules_java"' MODULE.bazel; then
+		awk '
+			{ print }
+			/"\/\/toolchain_local:rules_java-local.patch",/ {
+				print "        \"//toolchain_local:rules_java-posix-stub.patch\","
+			}
+		' MODULE.bazel > MODULE.bazel.new && mv MODULE.bazel.new MODULE.bazel
+		grep -q rules_java-posix-stub.patch MODULE.bazel \
+			|| { echo "rules_java の override に stub の当て物を差せなかった"; exit 1; }
+	else
+		RJ=$(grep -o 'name = "rules_java", version = "[^"]*"' MODULE.bazel | sed 's/.*version = "//; s/"//')
+		cat >> MODULE.bazel <<MOD
+
+# The java_binary launcher stub as POSIX sh (CI only).
+single_version_override(
+    module_name = "rules_java",
+    version = "$RJ",
+    patch_strip = 1,
+    patches = ["//toolchain_local:rules_java-posix-stub.patch"],
+)
+MOD
+	fi
 fi
 
 # OS ごとの手当て。どれも sh 化とは無関係で、素の dist を bash で建てるときにも要る物。
@@ -577,13 +616,23 @@ case "$OS" in
 FreeBSD|GhostBSD|HardenedBSD|MidnightBSD|OpenBSD|NetBSD|DragonFly) RJ_PATCH=1 ;;
 Linux) if ls /lib/ld-musl-* >/dev/null 2>&1; then RJ_PATCH=1; fi ;;
 esac
+RJ_PATCHES=""
 if [ -n "$RJ_PATCH" ]; then
 	P="$CI_DIR/rules_java-$RJ-local.patch"
 	[ -f "$P" ] || { echo "rules_java $RJ 向けの当て物 ($P) が無い"; exit 1; }
 	cp "$P" rules_java-local.patch
-	printf 'single_version_override(\n    module_name = "rules_java",\n    version = "%s",\n    patch_strip = 1,\n    patches = ["//:rules_java-local.patch"],\n)\n' "$RJ" >> MODULE.bazel
+	RJ_PATCHES='"//:rules_java-local.patch"'
+fi
+if [ "$RJ_STUB" = 1 ]; then
+	cp "$CI_DIR/rules_java-posix-stub.patch" .
+	RJ_PATCHES="${RJ_PATCHES:+$RJ_PATCHES, }\"//:rules_java-posix-stub.patch\""
+fi
+if [ -n "$RJ_PATCHES" ]; then
+	printf 'single_version_override(\n    module_name = "rules_java",\n    version = "%s",\n    patch_strip = 1,\n    patches = [%s],\n)\n' "$RJ" "$RJ_PATCHES" >> MODULE.bazel
 	: > BUILD
-	echo "rules_java $RJ に当て物を差した"
+	echo "rules_java $RJ に当て物を差した: $RJ_PATCHES"
+fi
+if [ -n "$RJ_PATCH" ]; then
 	case "$OS" in
 	NetBSD|DragonFly)
 		# host の OS 検出 (platforms の _translate_os) も NetBSD を知らない

@@ -4,11 +4,14 @@
 # distro の JDK を入れ、JAVA_HOME と (25 が無ければ) JAVA_VERSION を GITHUB_ENV へ書く。
 # glibc の箱は JDK を入れず、あとの setup-java (temurin 25) に任せる。
 set -eu
+# NO_BASH=1 なら bash を入れない (bash の無い箱で bootstrap が通るかを測る)
+BASH_PKG=bash
+[ "${NO_BASH:-}" = 1 ] && BASH_PKG=
 . /etc/os-release
 echo "### distro: $ID ${VERSION_ID:-}  /bin/sh -> $(readlink -f /bin/sh)  musl: $(ls /lib/ld-musl-* 2>/dev/null || echo no)"
 case "$ID" in
 alpine)
-	apk add --no-cache openjdk25 build-base linux-headers zip unzip curl python3 patch findutils coreutils grep sed which git bash
+	apk add --no-cache openjdk25 build-base linux-headers zip unzip curl python3 patch findutils coreutils grep sed which git $BASH_PKG
 	echo "JAVA_HOME=/usr/lib/jvm/java-25-openjdk" >> "$GITHUB_ENV" ;;
 debian|ubuntu)
 	apt-get update -q; DEBIAN_FRONTEND=noninteractive apt-get install -y -q build-essential zip unzip curl python3 patch git
@@ -63,7 +66,7 @@ void)
 	# repo-default.voidlinux.org に向け直す。
 	mkdir -p /etc/xbps.d
 	printf 'repository=https://repo-default.voidlinux.org/current/musl\n' > /etc/xbps.d/00-repository-main.conf
-	xbps-install -Syu xbps >/dev/null; xbps-install -Sy gcc zip unzip curl python3 patch git which findutils bash tar
+	xbps-install -Syu xbps >/dev/null; xbps-install -Sy gcc zip unzip curl python3 patch git which findutils $BASH_PKG tar
 	# musl の Void。JDK は distro の物。25 が在れば 25、無ければ 21 で JAVA_VERSION=21
 	if xbps-install -Sy openjdk25 2>/dev/null; then echo "JAVA_HOME=/usr/lib/jvm/openjdk25" >> "$GITHUB_ENV"
 	else xbps-install -Sy openjdk21; echo "JAVA_HOME=/usr/lib/jvm/openjdk21" >> "$GITHUB_ENV"; echo "JAVA_VERSION=21" >> "$GITHUB_ENV"; fi ;;
@@ -71,7 +74,7 @@ chimera)
 	# musl と BSD userland。toolchain は clang
 	# Chimera に patch という package は無い (run 35703229138)。base-devel が
 	# 持っている。python は python3 の名前でなく python
-	apk add --no-cache clang lld zip unzip curl python base-devel git bash linux-headers
+	apk add --no-cache clang lld zip unzip curl python base-devel git $BASH_PKG linux-headers
 	# patch(1) は chimerautils-extra に在る (cports の main/chimerautils の
 	# template.py が cmd:patch をそこへ入れている)。patch という package は無い
 	apk add --no-cache chimerautils-extra
