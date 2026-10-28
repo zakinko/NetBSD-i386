@@ -24,7 +24,7 @@ jobs:
         if: matrix.side == 'before'
         run: |
           git checkout HEAD~1 -- src/main/cpp/util/file_posix.cc
-          git status --short
+          git diff --stat HEAD
       - name: build
         run: bazel build //src/test/cpp/util:file_test
       - name: run as root
@@ -32,9 +32,10 @@ jobs:
           set +e
           stat -c '%F %A %t:%T' /dev/null
           for t in file_test; do
-            sudo bazel-bin/src/test/cpp/util/$t >$t.log 2>&1
+            d=$(mktemp -d)
+            sudo env TEST_TMPDIR=$d bazel-bin/src/test/cpp/util/$t >$t.log 2>&1
             echo "RESULT ${{ matrix.side }} $t rc=$?"
-            grep -E 'FAILED|PASSED|Expected' $t.log | head -8
+            grep -E '^\[ +(FAILED|PASSED|OK) +\]|Expected|file_posix_test.cc' $t.log | head -40
             echo "RESULT ${{ matrix.side }} after $t: $(stat -c '%F %A %t:%T' /dev/null)"
             if [ ! -c /dev/null ]; then sudo rm -f /dev/null && sudo mknod -m 666 /dev/null c 1 3; fi
           done
