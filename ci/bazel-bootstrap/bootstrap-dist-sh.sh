@@ -718,16 +718,23 @@ if [ -f "$(dirname "$DIST")/rj_plain" ]; then
 	printf 'bazel_dep(name = "rules_java", version = "%s")\n' "$RJ" > MODULE.bazel
 	cp "$WORK/smoke/p/Hello.java" p/
 	printf 'load("@rules_java//java:java_binary.bzl", "java_binary")\njava_binary(name = "hello_java", srcs = ["Hello.java"], main_class = "Hello")\n' > p/BUILD
-	prc=0
-	"$WORK/dist/$BZ" --host_jvm_args=-Djava.net.preferIPv4Stack=true run \
-		--repository_cache="$WORK/dist/derived/repository_cache" ${EXTRA_BAZEL_ARGS:-} \
-		//p:hello_java > "$WORK/plain.log" 2>&1 || prc=$?
-	if [ "$prc" = 0 ] && grep -q '^java-ok$' "$WORK/plain.log"; then
-		echo "RESULT rj_plain $OS: 素のまま走った"
-	else
-		echo "RESULT rj_plain $OS: 落ちた rc=$prc"
-		tr -d '\033' < "$WORK/plain.log" | sed 's/\[[0-9;]*[A-Za-z]//g' |
-			grep -n -E 'ERROR|error|No such|not found|remotejdk|toolchain|incompatible|Cannot|exec' | head -30
-	fi
+	# 二通り: 何も渡さない (利用者の素の状態) と、local の JDK を選ぶ flag
+	# だけを渡す (煙試験が当て物と一緒に渡している物)。後者で落ちる所が、
+	# flag では避けられず rules_java の側で直すべき所になる
+	for mode in none flags; do
+		extra=""
+		[ "$mode" = flags ] && extra="--java_runtime_version=local_jdk --tool_java_runtime_version=local_jdk"
+		prc=0
+		"$WORK/dist/$BZ" --host_jvm_args=-Djava.net.preferIPv4Stack=true run \
+			--repository_cache="$WORK/dist/derived/repository_cache" ${EXTRA_BAZEL_ARGS:-} $extra \
+			//p:hello_java > "$WORK/plain-$mode.log" 2>&1 || prc=$?
+		if [ "$prc" = 0 ] && grep -q '^java-ok$' "$WORK/plain-$mode.log"; then
+			echo "RESULT rj_plain $OS $mode: 走った"
+		else
+			echo "RESULT rj_plain $OS $mode: 落ちた rc=$prc"
+			tr -d '\033' < "$WORK/plain-$mode.log" | sed 's/\[[0-9;]*[A-Za-z]//g' |
+				grep -n -E 'ERROR|No such|not found|remotejdk|toolchain|Closest|Cannot|execvp' | head -20
+		fi
+	done
 fi
 exit $rc
