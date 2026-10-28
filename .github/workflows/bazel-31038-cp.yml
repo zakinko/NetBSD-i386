@@ -1,8 +1,12 @@
-# bazel#31038 の release-10.0.0 への cherry-pick を root で測る。
+# bazel#31038 の release 枝 (10.0.0・9.4.0) への cherry-pick を root で測る。
 # after は cherry-pick そのもの、before は test を残して file_posix.cc だけ戻す。
 name: bazel-31038-cp
 on:
   workflow_dispatch:
+    inputs:
+      ref:
+        description: zakinko/bazel の cherry-pick の commit
+        default: 0a70b0f80a64f1e8d2aaf91cda188bfed848f9db
 concurrency:
   group: bazel-31038-cp
   cancel-in-progress: true
@@ -18,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: zakinko/bazel
-          ref: 0a70b0f80a64f1e8d2aaf91cda188bfed848f9db
+          ref: ${{ inputs.ref }}
           fetch-depth: 2
       - name: before では file_posix.cc だけ戻す
         if: matrix.side == 'before'
