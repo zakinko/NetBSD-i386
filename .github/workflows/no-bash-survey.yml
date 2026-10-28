@@ -1,0 +1,67 @@
+# 素の image に bash が在るかを数える。bazel の posix-sh の動機の裏付け用。
+name: no-bash-survey
+on:
+  workflow_dispatch:
+concurrency:
+  group: no-bash-survey
+  cancel-in-progress: true
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          for img in alpine:3 busybox:stable chimeralinux/chimera:latest \
+                     ghcr.io/void-linux/void-musl-busybox:latest ghcr.io/void-linux/void-musl:latest \
+                     cgr.dev/chainguard/wolfi-base:latest debian:stable-slim ubuntu:24.04 \
+                     fedora:latest rockylinux/rockylinux:9-minimal archlinux:latest \
+                     opensuse/tumbleweed:latest gentoo/stage3:latest nixos/nix:latest \
+                     amazonlinux:2023 openwrt/rootfs:latest; do
+            docker run --rm -v "$PWD/ci/no-bash-survey:/p:ro" --entrypoint /bin/sh "$img" /p/probe.sh "$img" \
+              || echo "SURVEY|$img|FAILED to run"
+          done
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh ci/no-bash-survey/probe.sh macos; /bin/bash --version | head -1; echo "login shell: $(dscl . -read /Users/$USER UserShell)"
+  bsd:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [freebsd, openbsd, netbsd, dragonflybsd, ghostbsd, hardenedbsd, midnightbsd, solaris, omnios, openindiana]
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/freebsd-vm@v1
+        if: matrix.os == 'freebsd'
+        with: { envs: GITHUB_WORKSPACE, run: 'sh "$GITHUB_WORKSPACE/ci/no-bash-survey/probe.sh" freebsd' }
+      - uses: vmactions/openbsd-vm@v1
+        if: matrix.os == 'openbsd'
+        with: { envs: GITHUB_WORKSPACE, run: 'sh "$GITHUB_WORKSPACE/ci/no-bash-survey/probe.sh" openbsd' }
+      - uses: vmactions/netbsd-vm@v1
+        if: matrix.os == 'netbsd'
+        with: { envs: GITHUB_WORKSPACE, run: 'sh "$GITHUB_WORKSPACE/ci/no-bash-survey/probe.sh" netbsd' }
+      - uses: vmactions/dragonflybsd-vm@v1
+        if: matrix.os == 'dragonflybsd'
+        with: { envs: GITHUB_WORKSPACE, run: 'sh "$GITHUB_WORKSPACE/ci/no-bash-survey/probe.sh" dragonfly' }
+      - uses: vmactions/ghostbsd-vm@v1
+        if: matrix.os == 'ghostbsd'
+        with: { envs: GITHUB_WORKSPACE, run: 'sh "$GITHUB_WORKSPACE/ci/no-bash-survey/probe.sh" ghostbsd' }
+      - uses: vmactions/hardenedbsd-vm@v1
+        if: matrix.os == 'hardenedbsd'
+        with: { envs: GITHUB_WORKSPACE, run: 'sh "$GITHUB_WORKSPACE/ci/no-bash-survey/probe.sh" hardenedbsd' }
+      - uses: vmactions/midnightbsd-vm@v1
+        if: matrix.os == 'midnightbsd'
+        with: { envs: GITHUB_WORKSPACE, run: 'sh "$GITHUB_WORKSPACE/ci/no-bash-survey/probe.sh" midnightbsd' }
+      - uses: vmactions/solaris-vm@v1
+        if: matrix.os == 'solaris'
+        with: { envs: GITHUB_WORKSPACE, run: 'sh "$GITHUB_WORKSPACE/ci/no-bash-survey/probe.sh" solaris' }
+      - uses: vmactions/omnios-vm@v1
+        if: matrix.os == 'omnios'
+        with: { envs: GITHUB_WORKSPACE, run: 'sh "$GITHUB_WORKSPACE/ci/no-bash-survey/probe.sh" omnios' }
+      - uses: vmactions/openindiana-vm@v1
+        if: matrix.os == 'openindiana'
+        with: { envs: GITHUB_WORKSPACE, run: 'sh "$GITHUB_WORKSPACE/ci/no-bash-survey/probe.sh" openindiana' }
