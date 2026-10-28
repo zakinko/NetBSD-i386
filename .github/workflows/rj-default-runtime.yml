@@ -1,0 +1,54 @@
+# rules_java-default-runtime.patch が、遠隔の JDK の在る OS の既定を変えないかを測る。
+# 当てる前と後で、Javac の action が起こす java の path を並べる。BSD の側
+# (当てると走るか) は bazel-master-sh.yml の rj_plain の fix で測る。
+name: rj-default-runtime
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: rj-default-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      USE_BAZEL_VERSION: 9.x
+    steps:
+      - uses: actions/checkout@v4
+      - name: 当てる前と後
+        run: |
+          set +e -u +o pipefail
+          for v in before after; do
+            mkdir -p "w-$v/p"; cd "w-$v"
+            echo 'bazel_dep(name = "rules_java", version = "9.9.0")' > MODULE.bazel
+            : > BUILD
+            if [ "$v" = after ]; then
+              cp ../ci/bazel-bootstrap/rules_java-default-runtime.patch rj.patch
+              echo 'single_version_override(module_name = "rules_java", patches = ["//:rj.patch"], patch_strip = 1)' >> MODULE.bazel
+            fi
+            printf 'public class Hello { public static void main(String[] a) { System.out.println("java-ok"); } }\n' > p/Hello.java
+            printf 'load("@rules_java//java:java_binary.bzl", "java_binary")\njava_binary(name = "hello_java", srcs = ["Hello.java"], main_class = "Hello")\n' > p/BUILD
+            jv=$(bazel aquery 'mnemonic("Javac", //p:hello_java)' 2>aq.err | grep -oE '[^ "(]*/bin/java(\.exe)?' | sort -u | tr '\n' ' ')
+            out=$(bazel run //p:hello_java 2>run.err | tr -d '\r'); rc=$?
+            echo "RESULT ${{ matrix.os }} $v javac-java=[${jv:-?}] run rc=$rc out=$out"
+            [ -n "$jv" ] || tail -5 aq.err
+            [ "$rc" = 0 ] || tail -5 run.err
+            echo "$jv" > ../javac-$v.txt
+            bazel shutdown >/dev/null 2>&1
+            cd ..
+          done
+          if cmp -s javac-before.txt javac-after.txt && [ -s javac-before.txt ]; then
+            echo "RESULT ${{ matrix.os }} 同じ java"
+          else
+            echo "RESULT ${{ matrix.os }} 違う java"; exit 1
+          fi

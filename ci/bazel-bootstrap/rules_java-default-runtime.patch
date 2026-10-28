@@ -1,0 +1,41 @@
+diff --git a/toolchains/BUILD b/toolchains/BUILD
+index 9eca53d..8b8c0c3 100644
+--- a/toolchains/BUILD
++++ b/toolchains/BUILD
+@@ -427,6 +427,23 @@ java_runtime_version_alias(
+     visibility = ["//visibility:public"],
+ )
+ 
++# The JDK that runs the compiler in the default toolchain. Remote JDKs are
++# published for Linux, macOS and Windows only; on any other OS no
++# remotejdk_25 toolchain can match, and --tool_java_runtime_version cannot
++# override a runtime named here, so fall back to the selected runtime there.
++# Evaluated in the exec configuration, so it follows the OS the compiler
++# runs on.
++alias(
++    name = "default_toolchain_java_runtime",
++    actual = select({
++        "@platforms//os:linux": ":remotejdk_25",
++        "@platforms//os:macos": ":remotejdk_25",
++        "@platforms//os:windows": ":remotejdk_25",
++        "//conditions:default": ":current_java_runtime",
++    }),
++    visibility = ["//visibility:public"],
++)
++
+ java_runtime_version_alias(
+     name = "jdk_8",
+     runtime_version = "8",
+diff --git a/toolchains/default_java_toolchain.bzl b/toolchains/default_java_toolchain.bzl
+index b047d9d..f23f48c 100644
+--- a/toolchains/default_java_toolchain.bzl
++++ b/toolchains/default_java_toolchain.bzl
+@@ -100,7 +100,7 @@ _BASE_TOOLCHAIN_CONFIGURATION = dict(
+     reduced_classpath_incompatible_processors = [
+         "dagger.hilt.processor.internal.root.RootProcessor",  # see b/21307381
+     ],
+-    java_runtime = Label("//toolchains:remotejdk_25"),
++    java_runtime = Label("//toolchains:default_toolchain_java_runtime"),
+     oneversion = Label("//toolchains:one_version"),
+ )
+ 

@@ -718,12 +718,18 @@ if [ -f "$(dirname "$DIST")/rj_plain" ]; then
 	printf 'bazel_dep(name = "rules_java", version = "%s")\n' "$RJ" > MODULE.bazel
 	cp "$WORK/smoke/p/Hello.java" p/
 	printf 'load("@rules_java//java:java_binary.bzl", "java_binary")\njava_binary(name = "hello_java", srcs = ["Hello.java"], main_class = "Hello")\n' > p/BUILD
-	# 二通り: 何も渡さない (利用者の素の状態) と、local の JDK を選ぶ flag
+	# 三通り: 何も渡さない (利用者の素の状態) と、local の JDK を選ぶ flag
 	# だけを渡す (煙試験が当て物と一緒に渡している物)。後者で落ちる所が、
-	# flag では避けられず rules_java の側で直すべき所になる
-	for mode in none flags; do
+	# flag では避けられず rules_java の側で直すべき所になる。fix は flags に
+	# 上流へ出す当て物 (rules_java-default-runtime.patch) だけを足したもの
+	for mode in none flags fix; do
 		extra=""
-		[ "$mode" = flags ] && extra="--java_runtime_version=local_jdk --tool_java_runtime_version=local_jdk"
+		[ "$mode" != none ] && extra="--java_runtime_version=local_jdk --tool_java_runtime_version=local_jdk"
+		if [ "$mode" = fix ]; then
+			cp "$CI_DIR/rules_java-default-runtime.patch" rj.patch
+			: > BUILD
+			printf 'single_version_override(module_name = "rules_java", patches = ["//:rj.patch"], patch_strip = 1)\n' >> MODULE.bazel
+		fi
 		prc=0
 		"$WORK/dist/$BZ" --host_jvm_args=-Djava.net.preferIPv4Stack=true run \
 			--repository_cache="$WORK/dist/derived/repository_cache" ${EXTRA_BAZEL_ARGS:-} $extra \
