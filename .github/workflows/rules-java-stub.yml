@@ -58,6 +58,23 @@ jobs:
           # 元の stub を dash で走らせると落ちる (bash の構文) ことも残す
           sh ci/rules-java-stub/compare.sh t/orig.txt dash /tmp/stubw 2>&1 | grep -m3 -i 'not found\|syntax\|unexpected' || true
           exit $rc
+      # rules_cc の generate_system_module_map.sh も、Linux の分岐で元の
+      # bash の版と出力を比べる (macOS の分岐は手元で比べた)
+      - name: rules_cc module map
+        run: |
+          set -eu
+          f=cc/private/toolchain/generate_system_module_map.sh
+          mkdir -p rc/cc/private/toolchain
+          curl -fsSL "https://raw.githubusercontent.com/bazelbuild/rules_cc/0.2.25/$f" > rc/$f
+          cp rc/$f t/rc-orig.sh
+          (cd rc && patch -f -p1 -F0 < ../ci/bazel-bootstrap/rules_cc-posix-module-map.patch)
+          head -1 t/rc-orig.sh rc/$f
+          bash t/rc-orig.sh /usr/include /usr/lib/gcc > t/rc-orig.txt
+          wc -l < t/rc-orig.txt
+          for s in dash "busybox sh" mksh bash; do
+            $s rc/$f /usr/include /usr/lib/gcc > t/rc-new.txt
+            cmp -s t/rc-orig.txt t/rc-new.txt && echo "RESULT rules_cc $s: 一致" || { echo "RESULT rules_cc $s: 差"; diff t/rc-orig.txt t/rc-new.txt | head; }
+          done
       - uses: actions/upload-artifact@v4
         with: { name: stub-compare, path: t, retention-days: 3 }
 
