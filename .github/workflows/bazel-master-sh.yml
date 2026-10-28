@@ -74,13 +74,17 @@ on:
         description: 'musl の箱と BSD に bash を入れない'
         type: boolean
         default: false
+      rj_plain:
+        description: '煙試験の後に、当て物も java の flag も無しで java_binary を走らせて記録する'
+        type: boolean
+        default: false
       only:
         description: 'この job だけ回す (job 名を , 区切り。例 midnightbsd,rocky-bash)。空なら他の入力どおり。CI が混むので、通った箱を撃ち直さないため'
         type: string
         default: ''
 
 concurrency:
-  group: bazel-master-sh-${{ github.ref }}-${{ inputs.branch }}-${{ inputs.bsd }}-${{ inputs.wide }}-${{ inputs.jdk21 }}-${{ inputs.netbsd }}-${{ inputs.rj_stub }}-${{ inputs.rc_stub }}-${{ inputs.no_bash }}-${{ github.run_id }}
+  group: bazel-master-sh-${{ github.ref }}-${{ inputs.branch }}-${{ inputs.bsd }}-${{ inputs.wide }}-${{ inputs.jdk21 }}-${{ inputs.netbsd }}-${{ inputs.rj_stub }}-${{ inputs.rc_stub }}-${{ inputs.no_bash }}-${{ inputs.rj_plain }}-${{ github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -139,6 +143,9 @@ jobs:
       - name: no_bash の印
         if: ${{ inputs.no_bash }}
         run: touch no_bash
+      - name: rj_plain の印
+        if: ${{ inputs.rj_plain }}
+        run: touch rj_plain
       - uses: actions/upload-artifact@v4
         with:
           name: master-sh-dist
@@ -147,6 +154,7 @@ jobs:
             rj_stub
             rc_stub
             no_bash
+            rj_plain
           retention-days: 3
 
   linux:

@@ -706,4 +706,27 @@ for t in gen hello_cc hello_java; do
 	fi
 done
 if [ "$rc" = 0 ]; then echo "RESULT smoke $OS OK: genrule と cc と java が走った"; fi
+
+# rj_plain: 当て物も java の flag も無しで java_binary を走らせ、素の rules_java
+# の既定 toolchain がこの箱で何をするかを残す。上の煙試験は BSD と musl では
+# rules_java に当て物を差し、--java_runtime_version=local_jdk を渡しているので、
+# 利用者が素で踏む所を通っていない。判定はしない (job を落とさない)。
+if [ -f "$(dirname "$DIST")/rj_plain" ]; then
+	echo "=== rj_plain: 素の rules_java $RJ で java_binary"
+	mkdir -p "$WORK/plain/p"; cd "$WORK/plain"
+	printf 'bazel_dep(name = "rules_java", version = "%s")\n' "$RJ" > MODULE.bazel
+	cp "$WORK/smoke/p/Hello.java" p/
+	printf 'load("@rules_java//java:java_binary.bzl", "java_binary")\njava_binary(name = "hello_java", srcs = ["Hello.java"], main_class = "Hello")\n' > p/BUILD
+	prc=0
+	"$WORK/dist/$BZ" --host_jvm_args=-Djava.net.preferIPv4Stack=true run \
+		--repository_cache="$WORK/dist/derived/repository_cache" ${EXTRA_BAZEL_ARGS:-} \
+		//p:hello_java > "$WORK/plain.log" 2>&1 || prc=$?
+	if [ "$prc" = 0 ] && grep -q '^java-ok$' "$WORK/plain.log"; then
+		echo "RESULT rj_plain $OS: 素のまま走った"
+	else
+		echo "RESULT rj_plain $OS: 落ちた rc=$prc"
+		tr -d '\033' < "$WORK/plain.log" | sed 's/\[[0-9;]*[A-Za-z]//g' |
+			grep -n -E 'ERROR|error|No such|not found|remotejdk|toolchain|incompatible|Cannot|exec' | head -30
+	fi
+fi
 exit $rc
