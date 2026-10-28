@@ -1,0 +1,9 @@
+--- java/bazel/rules/java_stub_template.txt	2026-10-29 00:54:26
++++ java/bazel/rules/java_stub_template.txt	2026-10-29 00:54:26
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env bash
+-# Copyright 2014 The Bazel Authors. All rights reserved.
++# Copyright 2014  The Bazel Authors. All rights reserved.
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+ # you may not use this file except in compliance with the License.

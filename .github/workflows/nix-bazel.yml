@@ -1,0 +1,77 @@
+# Nix の build sandbox (/bin/sh はあるが /usr/bin/env は無い) で、rules_java の
+# 起動 stub と rules_cc の module map の script を #!/bin/sh にすれば、
+# nixpkgs がその二つに当てている shebang の書き換えが要らなくなるかを測る。
+name: nix-bazel
+
+on:
+  workflow_dispatch:
+    inputs:
+      nixpkgs:
+        description: 'nixpkgs の commit'
+        type: string
+        default: 'bd6ba882f888fcea4b833e13fe3dd8e235e8dba9'
+      build:
+        description: 'bazel_9 を source から建てる (時間がかかる)'
+        type: boolean
+        default: true
+
+concurrency:
+  group: nix-bazel-${{ github.ref }}-${{ inputs.nixpkgs }}-${{ inputs.build }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            sandbox = true
+      - name: templates
+        run: |
+          set -eux
+          curl -fsSL https://raw.githubusercontent.com/bazelbuild/rules_java/9.1.0/java/bazel/rules/java_stub_template.txt > ci/nix-bazel/stub-orig.txt
+          p="$RUNNER_TEMP/p"; mkdir -p "$p/java/bazel/rules"
+          cp ci/nix-bazel/stub-orig.txt "$p/java/bazel/rules/java_stub_template.txt"
+          (cd "$p" && patch -f -p0 -F0 -i "$GITHUB_WORKSPACE/ci/nix-bazel/rules_java-ours.diff") </dev/null
+          cp "$p/java/bazel/rules/java_stub_template.txt" ci/nix-bazel/stub-new.txt
+          head -1 ci/nix-bazel/stub-orig.txt ci/nix-bazel/stub-new.txt
+      - name: sandbox の中で起こす
+        run: |
+          nix show-config | grep -E '^sandbox'
+          nix-build -L --no-out-link ci/nix-bazel/probe.nix \
+            --argstr nixpkgsRev "${{ inputs.nixpkgs }}" --arg ciDir ./ci 2>&1 | grep -a 'PROBE|'
+
+  build:
+    if: ${{ inputs.build }}
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [ours, control]
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: 場所を空ける
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            sandbox = true
+      - name: bazel_9 を建てる (${{ matrix.variant }})
+        run: |
+          rc=0
+          nix-build -L --no-out-link ci/nix-bazel/build.nix \
+            --argstr nixpkgsRev "${{ inputs.nixpkgs }}" --arg ciDir ./ci \
+            --argstr variant "${{ matrix.variant }}" > build.log 2>&1 || rc=$?
+          grep -a 'VARIANT' build.log | head -2
+          if [ $rc = 0 ]; then
+            echo "RESULT nix bazel_9 ${{ matrix.variant }}: 建った"
+          else
+            echo "RESULT nix bazel_9 ${{ matrix.variant }}: 落ちた rc=$rc"
+            grep -a -n -i 'env: .bash\|No such file\|exit code: 127\|ERROR:' build.log | head -20
+            tail -40 build.log
+          fi
+          exit $rc
