@@ -55,7 +55,7 @@ jobs:
           run() {
             label=$1; shift
             s=$(date +%s.%N)
-            i=0; while [ $i -lt 500 ]; do "$@" arg >/dev/null 2>&1; i=$((i + 1)); done
+            i=0; while [ $i -lt 500 ]; do "$@" arg >/dev/null 2>&1 || true; i=$((i + 1)); done
             e=$(date +%s.%N)
             echo "TIMING|$label|$(echo "($e - $s) * 1000 / 500" | bc -l | cut -c1-6) ms/回"
           }
@@ -67,3 +67,28 @@ jobs:
             run "orig bash (manifest)" bash /tmp/w-orig/bin/mprog
             run "new dash (manifest)" dash /tmp/w-new/bin/mprog
           done
+
+  alpine-jre:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: templates
+        run: |
+          set -eux
+          mkdir -p t p/java/bazel/rules
+          curl -fsSL https://raw.githubusercontent.com/bazelbuild/rules_java/9.9.0/java/bazel/rules/java_stub_template.txt > t/orig.txt
+          cp t/orig.txt p/java/bazel/rules/java_stub_template.txt
+          (cd p && patch -f -p1 -F0 < ../ci/bazel-bootstrap/rules_java-posix-stub.patch) </dev/null
+          cp p/java/bazel/rules/java_stub_template.txt t/new.txt
+      - name: Alpine の Temurin の中で、shebang から stub を起こす
+        run: |
+          cat > t/in.sh <<'EOF'
+          set -u
+          for v in orig new; do
+            sh /w/ci/rules-java-stub/compare.sh /w/t/$v.txt /bin/sh /tmp/w-$v >/dev/null 2>&1
+            out=$(/tmp/w-$v/bin/prog arg 2>&1); rc=$?
+            echo "ALPINEJRE|$v|rc=$rc|$(echo "$out" | head -1 | cut -c1-120)"
+          done
+          EOF
+          docker run --rm -v "$PWD:/w" eclipse-temurin:25-jre-alpine sh /w/t/in.sh
