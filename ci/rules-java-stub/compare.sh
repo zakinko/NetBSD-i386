@@ -36,7 +36,7 @@ for v in JAVA_RUNFILES TEST_SRCDIR RUNFILES_MANIFEST_FILE \
   eval "printf '  %s=%s\n' $v \"\${$v-<unset>}\""
 done
 case "${2-}" in
-  *.jar) [ -f "$2" ] && printf '  classpath jar exists\n' ;;
+  *-classpath.jar*) [ -f "$2" ] && printf '  classpath jar exists\n' ;;
 esac
 exit 3
 EOF
