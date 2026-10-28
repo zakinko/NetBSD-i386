@@ -136,13 +136,14 @@ NetBSD|DragonFly)
 	# (run 35774683548) ので、在る方へ patches を差し込む
 	awk '
 		/module_name = "grpc"/ { ingrpc = 1 }
-		ingrpc && /patches = \[/ {
-			print "    patches = ["
-			print "        \"//third_party:grpc-load-fixes.patch\","
+		# master の grpc の patches は複数行の並び (2026-10 に三本と注記に
+		# 増えた)。並びを書き換えると残りが余って構文エラーになる
+		# (run 40742778030) ので、bazel 自身の当て物の後ろ、閉じ括弧の
+		# 直前に一行差すだけにする
+		ingrpc && /patches = \[/ { inlist = 1 }
+		inlist && /^    \],/ {
 			print "        \"//toolchain_local:grpc-dragonfly.patch\","
-			print "    ]," 
-			ingrpc = 0
-			next
+			inlist = 0; ingrpc = 0
 		}
 		/module_name = "c-ares"/ { inca = 1 }
 		inca && /^\)/ {
