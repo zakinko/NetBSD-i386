@@ -41,7 +41,7 @@ jobs:
       - name: sandbox の中で起こす
         run: |
           nix show-config | grep -E '^sandbox'
-          nix-build -L --no-out-link ci/nix-bazel/probe.nix \
+          nix-build --no-out-link ci/nix-bazel/probe.nix \
             --argstr nixpkgsRev "${{ inputs.nixpkgs }}" --arg ciDir ./ci 2>&1 | grep -a 'PROBE|'
 
   build:
@@ -63,7 +63,7 @@ jobs:
       - name: bazel_9 を建てる (${{ matrix.variant }})
         run: |
           rc=0
-          nix-build -L --no-out-link ci/nix-bazel/build.nix \
+          nix-build --no-out-link ci/nix-bazel/build.nix \
             --argstr nixpkgsRev "${{ inputs.nixpkgs }}" --arg ciDir ./ci \
             --argstr variant "${{ matrix.variant }}" > build.log 2>&1 || rc=$?
           grep -a 'VARIANT' build.log | head -2
