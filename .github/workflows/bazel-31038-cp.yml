@@ -1,0 +1,40 @@
+# bazel#31038 の release-10.0.0 への cherry-pick を root で測る。
+# after は cherry-pick そのもの、before は test を残して file_posix.cc だけ戻す。
+name: bazel-31038-cp
+on:
+  workflow_dispatch:
+concurrency:
+  group: bazel-31038-cp
+  cancel-in-progress: true
+jobs:
+  run:
+    strategy:
+      fail-fast: false
+      matrix:
+        side: [before, after]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: zakinko/bazel
+          ref: 0a70b0f80a64f1e8d2aaf91cda188bfed848f9db
+          fetch-depth: 2
+      - name: before では file_posix.cc だけ戻す
+        if: matrix.side == 'before'
+        run: |
+          git checkout HEAD~1 -- src/main/cpp/util/file_posix.cc
+          git status --short
+      - name: build
+        run: bazel build //src/test/cpp/util:file_posix_test //src/test/cpp/util:file_test
+      - name: run as root
+        run: |
+          set +e
+          stat -c '%F %A %t:%T' /dev/null
+          for t in file_posix_test file_test; do
+            sudo bazel-bin/src/test/cpp/util/$t >$t.log 2>&1
+            echo "RESULT ${{ matrix.side }} $t rc=$?"
+            grep -E 'FAILED|PASSED|Expected' $t.log | head -8
+            echo "RESULT ${{ matrix.side }} after $t: $(stat -c '%F %A %t:%T' /dev/null)"
+            if [ ! -c /dev/null ]; then sudo rm -f /dev/null && sudo mknod -m 666 /dev/null c 1 3; fi
+          done
