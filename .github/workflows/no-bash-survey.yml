@@ -25,7 +25,10 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - run: sh ci/no-bash-survey/probe.sh macos; /bin/bash --version | head -1; echo "login shell: $(dscl . -read /Users/$USER UserShell)"
+      - run: |
+          sh ci/no-bash-survey/probe.sh macos
+          /bin/bash --version | head -1
+          dscl . -read /Users/$USER UserShell
   bsd:
     strategy:
       fail-fast: false
