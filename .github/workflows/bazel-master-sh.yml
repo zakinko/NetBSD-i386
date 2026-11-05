@@ -78,6 +78,10 @@ on:
         description: '煙試験の後に、当て物も java の flag も無しで java_binary を走らせて記録する'
         type: boolean
         default: false
+      rj_commit:
+        description: 'rj_plain の fix を、この rules_java の commit に当物を足した木で測る。空なら dist の版'
+        type: string
+        default: ''
       only:
         description: 'この job だけ回す (job 名を , 区切り。例 midnightbsd,rocky-bash)。空なら他の入力どおり。CI が混むので、通った箱を撃ち直さないため'
         type: string
@@ -146,6 +150,9 @@ jobs:
       - name: rj_plain の印
         if: ${{ inputs.rj_plain }}
         run: touch rj_plain
+      - name: rj_commit の印
+        if: ${{ inputs.rj_commit != '' }}
+        run: echo "${{ inputs.rj_commit }}" > rj_commit
       - uses: actions/upload-artifact@v4
         with:
           name: master-sh-dist
@@ -155,6 +162,7 @@ jobs:
             rc_stub
             no_bash
             rj_plain
+            rj_commit
           retention-days: 3
 
   linux:

@@ -728,7 +728,13 @@ if [ -f "$(dirname "$DIST")/rj_plain" ]; then
 		if [ "$mode" = fix ]; then
 			cp "$CI_DIR/rules_java-default-runtime.patch" rj.patch
 			: > BUILD
-			printf 'single_version_override(module_name = "rules_java", patches = ["//:rj.patch"], patch_strip = 1)\n' >> MODULE.bazel
+			rjc=$(cat "$(dirname "$DIST")/rj_commit" 2>/dev/null || :)
+			if [ -n "$rjc" ]; then
+				# git の無い箱でも引けるよう archive で取る
+				printf 'archive_override(module_name = "rules_java", urls = ["https://github.com/bazelbuild/rules_java/archive/%s.tar.gz"], strip_prefix = "rules_java-%s", patches = ["//:rj.patch"], patch_strip = 1)\n' "$rjc" "$rjc" >> MODULE.bazel
+			else
+				printf 'single_version_override(module_name = "rules_java", patches = ["//:rj.patch"], patch_strip = 1)\n' >> MODULE.bazel
+			fi
 		fi
 		prc=0
 		"$WORK/dist/$BZ" --host_jvm_args=-Djava.net.preferIPv4Stack=true run \
