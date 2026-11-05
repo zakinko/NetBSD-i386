@@ -390,7 +390,7 @@ index 0000000000..50462210ec
 --- /dev/null
 +++ b/src/md5_netbsd.sh
 @@ -0,0 +1,19 @@
-+#!/usr/bin/env bash
++#!/bin/sh
 +#
 +# Copyright 2025 The Bazel Authors. All rights reserved.
 +#
