@@ -37,6 +37,10 @@ on:
         description: 'stock の段で建てる release の版 (例 9.3.0rc2)'
         type: string
         default: '9.3.0rc2'
+      rc_branch:
+        description: 'rules-cc の段で測る zakinko/rules_cc の枝 (空なら run.sh の既定)'
+        type: string
+        default: ''
       stock_patch:
         description: 'stock の段で素の木へ当てる ci/bazel-bootstrap/ の当て物 (空なら素のまま)'
         type: string
@@ -57,6 +61,7 @@ jobs:
     env:
       DIST_VER: ${{ inputs.dist_ver }}
       STOCK_PATCH_NAME: ${{ inputs.stock_patch }}
+      RC_BRANCH: ${{ inputs.rc_branch }}
     steps:
       - uses: actions/checkout@v4
       - uses: vmactions/netbsd-vm@v1
@@ -64,7 +69,7 @@ jobs:
           mem: 8192
           cpu: 4
           copyback: false
-          envs: 'GITHUB_WORKSPACE DIST_VER STOCK_PATCH_NAME'
+          envs: 'GITHUB_WORKSPACE DIST_VER STOCK_PATCH_NAME RC_BRANCH'
           run: |
             set -x
             sh "$GITHUB_WORKSPACE/ci/bazel-bsd/run.sh" ${{ inputs.stage }}
@@ -76,6 +81,7 @@ jobs:
     env:
       DIST_VER: ${{ inputs.dist_ver }}
       STOCK_PATCH_NAME: ${{ inputs.stock_patch }}
+      RC_BRANCH: ${{ inputs.rc_branch }}
     steps:
       - uses: actions/checkout@v4
       - uses: vmactions/freebsd-vm@v1
@@ -83,7 +89,7 @@ jobs:
           mem: 8192
           cpu: 4
           copyback: false
-          envs: 'GITHUB_WORKSPACE DIST_VER STOCK_PATCH_NAME'
+          envs: 'GITHUB_WORKSPACE DIST_VER STOCK_PATCH_NAME RC_BRANCH'
           run: |
             set -x
             sh "$GITHUB_WORKSPACE/ci/bazel-bsd/run.sh" ${{ inputs.stage }}
@@ -95,6 +101,7 @@ jobs:
     env:
       DIST_VER: ${{ inputs.dist_ver }}
       STOCK_PATCH_NAME: ${{ inputs.stock_patch }}
+      RC_BRANCH: ${{ inputs.rc_branch }}
     steps:
       - uses: actions/checkout@v4
       - uses: vmactions/openbsd-vm@v1
@@ -102,7 +109,7 @@ jobs:
           mem: 8192
           cpu: 4
           copyback: false
-          envs: 'GITHUB_WORKSPACE DIST_VER STOCK_PATCH_NAME'
+          envs: 'GITHUB_WORKSPACE DIST_VER STOCK_PATCH_NAME RC_BRANCH'
           run: |
             set -x
             sh "$GITHUB_WORKSPACE/ci/bazel-bsd/run.sh" ${{ inputs.stage }}
@@ -114,6 +121,7 @@ jobs:
     env:
       DIST_VER: ${{ inputs.dist_ver }}
       STOCK_PATCH_NAME: ${{ inputs.stock_patch }}
+      RC_BRANCH: ${{ inputs.rc_branch }}
     steps:
       - uses: actions/checkout@v4
       - uses: vmactions/dragonflybsd-vm@v1
@@ -121,7 +129,7 @@ jobs:
           mem: 8192
           cpu: 4
           copyback: false
-          envs: 'GITHUB_WORKSPACE DIST_VER STOCK_PATCH_NAME'
+          envs: 'GITHUB_WORKSPACE DIST_VER STOCK_PATCH_NAME RC_BRANCH'
           run: |
             set -x
             sh "$GITHUB_WORKSPACE/ci/bazel-bsd/run.sh" ${{ inputs.stage }}
@@ -133,6 +141,7 @@ jobs:
     env:
       DIST_VER: ${{ inputs.dist_ver }}
       STOCK_PATCH_NAME: ${{ inputs.stock_patch }}
+      RC_BRANCH: ${{ inputs.rc_branch }}
     steps:
       - uses: actions/checkout@v4
       - uses: vmactions/ghostbsd-vm@v1
@@ -140,7 +149,7 @@ jobs:
           mem: 8192
           cpu: 4
           copyback: false
-          envs: 'GITHUB_WORKSPACE DIST_VER STOCK_PATCH_NAME'
+          envs: 'GITHUB_WORKSPACE DIST_VER STOCK_PATCH_NAME RC_BRANCH'
           run: |
             set -x
             sh "$GITHUB_WORKSPACE/ci/bazel-bsd/run.sh" ${{ inputs.stage }}
