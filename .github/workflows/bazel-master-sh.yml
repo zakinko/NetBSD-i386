@@ -82,13 +82,17 @@ on:
         description: 'rj_plain の fix を、この rules_java の commit に当物を足した木で測る。空なら dist の版'
         type: string
         default: ''
+      rc_pr:
+        description: 'zakinko/rules_cc のこの枝を、建った bazel で #862 の回帰検査にかける。空なら測らない'
+        type: string
+        default: ''
       only:
         description: 'この job だけ回す (job 名を , 区切り。例 midnightbsd,rocky-bash)。空なら他の入力どおり。CI が混むので、通った箱を撃ち直さないため'
         type: string
         default: ''
 
 concurrency:
-  group: bazel-master-sh-${{ github.ref }}-${{ inputs.branch }}-${{ inputs.bsd }}-${{ inputs.wide }}-${{ inputs.jdk21 }}-${{ inputs.netbsd }}-${{ inputs.rj_stub }}-${{ inputs.rc_stub }}-${{ inputs.no_bash }}-${{ inputs.rj_plain }}-${{ github.run_id }}
+  group: bazel-master-sh-${{ github.ref }}-${{ inputs.branch }}-${{ inputs.bsd }}-${{ inputs.wide }}-${{ inputs.jdk21 }}-${{ inputs.netbsd }}-${{ inputs.rj_stub }}-${{ inputs.rc_stub }}-${{ inputs.no_bash }}-${{ inputs.rj_plain }}-${{ github.run_id }}-${{ inputs.rc_pr }}
   cancel-in-progress: true
 
 jobs:
@@ -150,6 +154,12 @@ jobs:
       - name: rj_plain の印
         if: ${{ inputs.rj_plain }}
         run: touch rj_plain
+      - name: rc_pr の枝を取る
+        if: ${{ inputs.rc_pr != '' }}
+        run: |
+          curl -fsSL -o rc_pr.tar.gz "https://github.com/zakinko/rules_cc/archive/refs/heads/${{ inputs.rc_pr }}.tar.gz"
+          git ls-remote https://github.com/zakinko/rules_cc.git "refs/heads/${{ inputs.rc_pr }}" > rc_pr.tar.gz.ref
+          cat rc_pr.tar.gz.ref
       - name: rj_commit の印
         if: ${{ inputs.rj_commit != '' }}
         run: echo "${{ inputs.rj_commit }}" > rj_commit
@@ -163,6 +173,8 @@ jobs:
             no_bash
             rj_plain
             rj_commit
+            rc_pr.tar.gz
+            rc_pr.tar.gz.ref
           retention-days: 3
 
   linux:
