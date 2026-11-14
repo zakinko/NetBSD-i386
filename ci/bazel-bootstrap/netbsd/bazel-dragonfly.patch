@@ -26,14 +26,6 @@
          "//conditions:default": ["md5_default.sh"],
      }),
  )
-@@ -336,6 +337,7 @@
-         "//src/conditions:freebsd": "cat $(SRCS) | sed -e 's@#!/bin/bash@#!/usr/local/bin/bash@' > $@",
-         "//src/conditions:openbsd": "cat $(SRCS) | sed -e 's@#!/bin/bash@#!/usr/local/bin/bash@' > $@",
-         "//src/conditions:netbsd": "cat $(SRCS) | sed -e 's@#!/bin/bash@#!/usr/pkg/bin/bash@' > $@",
-+        "//src/conditions:dragonfly": "cat $(SRCS) | sed -e 's@#!/bin/bash@#!/usr/local/bin/bash@' > $@",
-         "//conditions:default": "cp $(SRCS) $@",
-     }),
- )
 --- a/src/conditions/BUILD
 +++ b/src/conditions/BUILD
 @@ -171,6 +171,12 @@
