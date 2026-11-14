@@ -99,6 +99,9 @@ fi
 # diff を 2026-10-28 の master に載せ直した物 (#31069 の diff のままでは、
 # master が Windows の link option を書き換え、netty の genrule を消し、
 # OpenBSD 8.0 の getexecpath の腕を足したので当たらなくなった。run 40721009100)。
+# 2026-11-14 に、上流が package-bazel.sh と package_bazel_on_host_platform の
+# genrule を消した (6524399f1d) ので、その genrule に netbsd の腕を足す hunk を外して
+# master に載せ直した。外さないと src/BUILD で当たらない (run 43606895131)。
 # その diff を dist に当て (build_unix_jni.sh の腕は sh 形に写した物、unix_jni.h は
 # musl の当て物が代わり)、platforms / rules_java / zstd-jni / rules_go に
 # NetBSD の当て物を single_version_override で差す。pkgsrc の bazel9 が

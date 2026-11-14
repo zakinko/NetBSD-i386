@@ -19,23 +19,15 @@ index 059e3fd68a..a6b9251841 100644
      }) + """
          target_arch=""" + select({
 diff --git a/src/BUILD b/src/BUILD
-index 3ff6f2adbd..df05623555 100644
+index 6e6e670d14..24fbe8b277 100644
 --- a/src/BUILD
 +++ b/src/BUILD
-@@ -26,6 +26,7 @@ sh_binary(
+@@ -27,6 +27,7 @@ sh_binary(
          "//src/conditions:darwin": ["md5_darwin_freebsd.sh"],
          "//src/conditions:freebsd": ["md5_darwin_freebsd.sh"],
          "//src/conditions:openbsd": ["md5_openbsd.sh"],
 +        "//src/conditions:netbsd": ["md5_netbsd.sh"],
          "//conditions:default": ["md5_default.sh"],
-     }),
- )
-@@ -334,6 +335,7 @@ genrule(
-     cmd = select({
-         "//src/conditions:freebsd": "cat $(SRCS) | sed -e 's@#!/bin/bash@#!/usr/local/bin/bash@' > $@",
-         "//src/conditions:openbsd": "cat $(SRCS) | sed -e 's@#!/bin/bash@#!/usr/local/bin/bash@' > $@",
-+        "//src/conditions:netbsd": "cat $(SRCS) | sed -e 's@#!/bin/bash@#!/usr/pkg/bin/bash@' > $@",
-         "//conditions:default": "cp $(SRCS) $@",
      }),
  )
 diff --git a/src/conditions/BUILD b/src/conditions/BUILD
@@ -56,7 +48,7 @@ index ecce52075c..0e5fe32246 100644
      name = "windows",
      constraint_values = ["@platforms//os:windows"],
 diff --git a/src/main/cpp/BUILD b/src/main/cpp/BUILD
-index fa9698f026..e68ca201c8 100644
+index 22fcfb8eb5..ce38969491 100644
 --- a/src/main/cpp/BUILD
 +++ b/src/main/cpp/BUILD
 @@ -27,6 +27,10 @@ cc_library(
@@ -79,7 +71,7 @@ index fa9698f026..e68ca201c8 100644
          "//conditions:default": [
              "-lrt",
          ],
-@@ -142,6 +148,8 @@ cc_binary(
+@@ -171,6 +177,8 @@ cc_binary(
          ],
          "//src/conditions:openbsd": [
          ],
@@ -239,7 +231,7 @@ index 68d31a1d8a..ccf84188a8 100644
    WINDOWS("windows", "Windows", false),
    UNKNOWN("unknown", "", false);
 diff --git a/src/main/native/BUILD b/src/main/native/BUILD
-index 04200f7966..ae6e90e271 100644
+index 20f25b5c3d..45e07cc25e 100644
 --- a/src/main/native/BUILD
 +++ b/src/main/native/BUILD
 @@ -8,6 +8,7 @@ copy_file(
@@ -386,7 +378,7 @@ index 664f272ddc..66d75c0ddd 100644
      // collected the status of the PID we were interested in, terminate the
 diff --git a/src/md5_netbsd.sh b/src/md5_netbsd.sh
 new file mode 100755
-index 0000000000..50462210ec
+index 0000000000..fc8ad1133f
 --- /dev/null
 +++ b/src/md5_netbsd.sh
 @@ -0,0 +1,19 @@
@@ -410,7 +402,7 @@ index 0000000000..50462210ec
 +# double the hash the way md5_openbsd.sh does and take the 32 hex digits.
 +/usr/bin/md5 "$@" | /usr/bin/md5 | head -c 32
 diff --git a/src/tools/singlejar/BUILD b/src/tools/singlejar/BUILD
-index 9d3da4d250..ad1318eba7 100644
+index b8576e2ec8..4bce864240 100644
 --- a/src/tools/singlejar/BUILD
 +++ b/src/tools/singlejar/BUILD
 @@ -87,6 +87,7 @@ cc_binary(
