@@ -753,7 +753,7 @@ fi
 # rc_pr.tar.gz: rules_cc の PR の枝を、ここで建った bazel で測る (rc-pr-check.sh)
 if [ -f "$(dirname "$DIST")/rc_pr.tar.gz" ]; then
 	echo "=== rc_pr: rules_cc の PR の枝を測る"
-	W="$WORK/rcpr" sh "$CI_DIR/rc-pr-check.sh" "$WORK/dist/$BZ" \
+	W="$WORK/rcpr" BASHLOG="$BASHLOG" sh "$CI_DIR/rc-pr-check.sh" "$WORK/dist/$BZ" \
 		"$(cd "$(dirname "$DIST")" && pwd)/rc_pr.tar.gz" "$WORK/dist/derived/repository_cache" || rc=1
 fi
 exit $rc

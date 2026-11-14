@@ -226,6 +226,64 @@ else
 	fail=1
 fi
 
+# cc_static_library の検査 (validate_static_library.sh) を、bash を呼ばずに
+# 走らせられるか。重複の無い物は建ち、重複の在る物は "Duplicate symbols" で
+# 落ちることを見る。落ちる側を見ないと、検査が走らずに素通りしても緑になる。
+# bash の記録 wrapper が張られている箱では、この二回の build の間に bash を
+# 何回呼んだかも数える。
+echo "--- cc_static_library (validate_static_library) ---"
+mkdir -p "$T/sl"
+echo 'int sl_a(void) { return 1; }' > "$T/sl/a.c"
+echo 'int sl_b(void) { return 2; }' > "$T/sl/b.c"
+echo 'int sl_a(void) { return 3; }' > "$T/sl/dup.c"
+cat > "$T/sl/BUILD.bazel" <<'M'
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_static_library.bzl", "cc_static_library")
+
+cc_library(name = "a", srcs = ["a.c"])
+cc_library(name = "b", srcs = ["b.c"])
+cc_library(name = "dup", srcs = ["dup.c"])
+
+cc_static_library(name = "ok", deps = [":a", ":b"])
+cc_static_library(name = "bad", deps = [":a", ":dup"], tags = ["manual"])
+M
+nb0=0
+[ -n "${BASHLOG:-}" ] && [ -f "$BASHLOG" ] && nb0=$(wc -l < "$BASHLOG" | tr -d ' ')
+VSL=$(find "$LCC" -name validate_static_library.sh 2>/dev/null | head -1)
+if [ -z "$VSL" ]; then
+	say "static 測れない: validate_static_library.sh が生成されていない (nm か c++filt が無い)"
+	fail=1
+else
+	echo "  $(head -1 "$VSL")  ($VSL)"
+	DSW=$(find "$LCC" -name deps_scanner_wrapper.sh 2>/dev/null | head -1)
+	[ -n "$DSW" ] && echo "  $(head -1 "$DSW")  ($DSW)"
+	if "$B" build --repository_cache="$REPO_CACHE" ${EXTRA_BAZEL_ARGS:-} --repo_contents_cache= \
+		--override_module=rules_cc="$RC" //sl:ok > "$T/sl-ok.log" 2>&1; then
+		say "static OK: 重複の無い cc_static_library が建つ"
+	else
+		tail -20 "$T/sl-ok.log"
+		say "static NG: 重複の無い cc_static_library が建たない"
+		fail=1
+	fi
+	if "$B" build --repository_cache="$REPO_CACHE" ${EXTRA_BAZEL_ARGS:-} --repo_contents_cache= \
+		--override_module=rules_cc="$RC" //sl:bad > "$T/sl-bad.log" 2>&1; then
+		say "static NG: 重複の在る cc_static_library が通ってしまった"
+		fail=1
+	elif grep -q 'Duplicate symbols found' "$T/sl-bad.log"; then
+		grep -A3 'Duplicate symbols found' "$T/sl-bad.log" | head -4
+		say "static OK: 重複を Duplicate symbols で落とす"
+	else
+		tail -20 "$T/sl-bad.log"
+		say "static NG: 重複の在る物が別の理由で落ちた"
+		fail=1
+	fi
+fi
+if [ -n "${BASHLOG:-}" ] && [ -f "$BASHLOG" ]; then
+	nb1=$(wc -l < "$BASHLOG" | tr -d ' ')
+	tail -n +$((nb0 + 1)) "$BASHLOG" | head -5
+	say "static bash-calls $((nb1 - nb0))"
+fi
+
 if [ $fail -eq 0 ]; then
 	say "段 rules-cc まで完了"
 	exit 0
