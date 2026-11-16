@@ -69,6 +69,10 @@ NetBSD)
 		JAVA_VERSION=21; export JAVA_VERSION
 	fi ;;
 DragonFly)
+	# image の package が dports より古いと、新しい curl だけが入って古い
+	# libssl を引けず "Shared object libssl.so.17 not found" で落ちる
+	# (run 43635229921)。先に全部を上げてから入れる。
+	pkg upgrade -y
 	pkg install -y git $BASH_PKG zip unzip python3 go curl patch
 	if [ "${JDK_KIT:-}" = 1 ]; then
 		# dports は openjdk21 止まりで、master は 22 以上が要る。zakinko/jdk25u の
