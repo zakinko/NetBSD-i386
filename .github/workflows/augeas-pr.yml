@@ -1,0 +1,119 @@
+# 上流へ出している augeas の PR (#889 GNU make に頼らない、#895 GNU の道具に頼らない
+# 試験) の枝を、tarball にしてから各 OS で測る。手で起動する。
+name: augeas-pr
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: '回す箱 (空なら全部。, 区切り)'
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: augeas-pr-${{ inputs.only }}
+  cancel-in-progress: true
+jobs:
+  dist:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 三本の枝を tarball にする
+        run: |
+          set -e
+          sudo apt-get update -q >/dev/null
+          sudo apt-get install -y -q autoconf automake bison flex libtool-bin libreadline-dev libselinux1-dev libxml2-dev pkg-config >/dev/null
+          mkdir -p out
+          for b in test-master test-889 test-895; do
+            git clone -q --depth 1 -b $b https://github.com/zakinko/augeas.git $b
+            ( cd $b
+              rev=$(git rev-parse HEAD:.gnulib); rm -rf .gnulib; git init -q .gnulib
+              git -C .gnulib fetch -q --depth 1 https://github.com/coreutils/gnulib.git $rev && git -C .gnulib checkout -q $rev
+              git rev-parse HEAD
+              ./autogen.sh >../$b.log 2>&1 || { tail -30 ../$b.log; exit 1; }
+              make dist >>../$b.log 2>&1 || { tail -30 ../$b.log; exit 1; }
+              mv augeas-*.tar.gz ../out/$b.tar.gz )
+            tar tzf out/$b.tar.gz | sed 's,^[^/]*/,,' | sort > out/$b.list
+            echo "$b $(wc -l < out/$b.list) lens=$(grep -c '^lenses/[^/]*\.aug$' out/$b.list)"
+          done
+          diff out/test-master.list out/test-889.list && echo 'RESULT dist: master と #889 の tarball は同じ一覧 (GNU make)'
+      - uses: actions/upload-artifact@v4
+        with: { name: augeas-dist, path: out, retention-days: 3 }
+  linux:
+    needs: dist
+    if: ${{ inputs.only == '' || contains(inputs.only, 'linux') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: augeas-dist, path: dist }
+      - run: |
+          sudo apt-get update -q >/dev/null
+          sudo apt-get install -y -q libreadline-dev libxml2-dev libselinux1-dev pkg-config bmake busybox-static >/dev/null
+          BSDMAKE=bmake GMAKE=make sh ci/augeas-pr.sh "$PWD/dist"
+  macos:
+    needs: dist
+    if: ${{ inputs.only == '' || contains(inputs.only, 'macos') }}
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: augeas-dist, path: dist }
+      - run: |
+          brew install -q bmake libxml2 readline pkgconf >/dev/null 2>&1 || true
+          export PKG_CONFIG_PATH="$(brew --prefix libxml2)/lib/pkgconfig:$(brew --prefix readline)/lib/pkgconfig"
+          export CPPFLAGS="-I$(brew --prefix readline)/include" LDFLAGS="-L$(brew --prefix readline)/lib"
+          BSDMAKE=bmake GMAKE=make sh ci/augeas-pr.sh "$PWD/dist"
+  freebsd:
+    needs: dist
+    if: ${{ inputs.only == '' || contains(inputs.only, 'freebsd') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: augeas-dist, path: dist }
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          copyback: false
+          envs: 'GITHUB_WORKSPACE'
+          run: |
+            env ASSUME_ALWAYS_YES=yes pkg install -y libxml2 readline pkgconf gmake >/dev/null
+            export CPPFLAGS=-I/usr/local/include LDFLAGS=-L/usr/local/lib
+            BSDMAKE=make GMAKE=gmake sh "$GITHUB_WORKSPACE/ci/augeas-pr.sh" "$GITHUB_WORKSPACE/dist"
+  openbsd:
+    needs: dist
+    if: ${{ inputs.only == '' || contains(inputs.only, 'openbsd') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: augeas-dist, path: dist }
+      - uses: vmactions/openbsd-vm@v1
+        with:
+          copyback: false
+          envs: 'GITHUB_WORKSPACE'
+          run: |
+            pkg_add -I libxml readline-- gmake >/dev/null 2>&1 || pkg_add -I libxml readline gmake
+            export CPPFLAGS=-I/usr/local/include LDFLAGS=-L/usr/local/lib
+            BSDMAKE=make GMAKE=gmake sh "$GITHUB_WORKSPACE/ci/augeas-pr.sh" "$GITHUB_WORKSPACE/dist"
+  netbsd:
+    needs: dist
+    if: ${{ inputs.only == '' || contains(inputs.only, 'netbsd') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: augeas-dist, path: dist }
+      - uses: vmactions/netbsd-vm@v1
+        with:
+          copyback: false
+          envs: 'GITHUB_WORKSPACE'
+          run: |
+            /usr/sbin/pkg_add -U pkgin >/dev/null 2>&1 || true
+            pkgin -y install libxml2 readline pkgconf gmake >/dev/null
+            export CPPFLAGS=-I/usr/pkg/include LDFLAGS="-L/usr/pkg/lib -Wl,-R/usr/pkg/lib" PATH=/usr/pkg/bin:$PATH
+            BSDMAKE=make GMAKE=gmake sh "$GITHUB_WORKSPACE/ci/augeas-pr.sh" "$GITHUB_WORKSPACE/dist"
