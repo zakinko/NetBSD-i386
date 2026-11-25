@@ -148,6 +148,13 @@ NetBSD|DragonFly)
 			print "        \"//toolchain_local:grpc-dragonfly.patch\","
 			inlist = 0; ingrpc = 0
 		}
+		# 2026-11 に abseil-cpp も master の override になった。grpc と同じ形
+		/module_name = "abseil-cpp"/ { inab = 1 }
+		inab && /patches = \[/ { inablist = 1 }
+		inablist && /^    \],/ {
+			print "        \"//toolchain_local:abseil-dragonfly.patch\","
+			inablist = 0; inab = 0
+		}
 		/module_name = "c-ares"/ { inca = 1 }
 		inca && /^\)/ {
 			print "    patch_strip = 1,"
@@ -156,7 +163,14 @@ NetBSD|DragonFly)
 		}
 		{ print }
 	' MODULE.bazel > MODULE.bazel.new && mv MODULE.bazel.new MODULE.bazel
-	for want in c-ares-dragonfly.patch grpc-dragonfly.patch; do
+	# c-ares は 2026-11 に override から外れ、abseil-cpp は逆に入った。
+	# 差し込めなかった方は自分で override を足す
+	for m in c-ares abseil-cpp; do
+		case "$m" in c-ares) pp=c-ares-dragonfly.patch ;; *) pp=abseil-dragonfly.patch ;; esac
+		grep -q "$pp" MODULE.bazel && continue
+		printf '\nsingle_version_override(\n    module_name = "%s",\n    patch_strip = 1,\n    patches = ["//toolchain_local:%s"],\n)\n' "$m" "$pp" >> MODULE.bazel
+	done
+	for want in c-ares-dragonfly.patch grpc-dragonfly.patch abseil-dragonfly.patch; do
 		grep -q "$want" MODULE.bazel || { echo "override に $want を差せなかった"; exit 1; }
 	done
 	cat >> MODULE.bazel <<MOD
@@ -189,11 +203,6 @@ single_version_override(
     version = "$RG",
     patch_strip = 1,
     patches = ["//toolchain_local:rules_go-pr4711.patch"],
-)
-single_version_override(
-    module_name = "abseil-cpp",
-    patch_strip = 1,
-    patches = ["//toolchain_local:abseil-dragonfly.patch"],
 )
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.host(name = "go_default_sdk")
