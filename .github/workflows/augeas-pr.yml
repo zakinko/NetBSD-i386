@@ -98,6 +98,8 @@ jobs:
           run: |
             pkg_add -I libxml readline-- gmake >/dev/null 2>&1 || pkg_add -I libxml readline gmake
             export CPPFLAGS=-I/usr/local/include LDFLAGS=-L/usr/local/lib
+            # -fexceptions の link が落ちる (augeas#891)。ここで測る物ではないので避ける
+            export CFLAGS="-g -O2 -fno-exceptions -fno-asynchronous-unwind-tables"
             BSDMAKE=make GMAKE=gmake sh "$GITHUB_WORKSPACE/ci/augeas-pr.sh" "$GITHUB_WORKSPACE/dist"
   netbsd:
     needs: dist
