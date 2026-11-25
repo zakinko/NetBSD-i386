@@ -40,9 +40,17 @@ uname -srm; "$SH_BIN" -c 'echo "sh は $0"'
 rm -rf "$WORK"; mkdir -p "$WORK/dist"
 ( cd "$WORK/dist" && unzip -q "$DIST" )
 cd "$WORK/dist"
+# master のままの枝 (compile.sh が bash) は、sh 化と関係の無い直しを測るための物。
+# 箱の bash で走らせる。一部だけ sh の枝は、変更が入り損ねた物なので落とす。
+if head -1 compile.sh | grep -q bash; then
+	SH_BIN=$(command -v bash) || { echo "compile.sh は bash だが、箱に bash が無い"; exit 1; }
+	LOG_BASH=0
+	echo "compile.sh が bash の枝: $SH_BIN で走らせる (sh 化の試験ではない)"
+else
 for f in compile.sh scripts/bootstrap/compile.sh scripts/bootstrap/buildenv.sh scripts/bootstrap/bootstrap.sh; do
 	head -1 "$f" | grep -q '^#!/bin/sh$' || { echo "$f の shebang が #!/bin/sh でない (dist に枝の変更が入っていない)"; exit 1; }
 done
+fi
 if [ -n "$EXTRA_PATCH" ]; then
 	echo "=== 当て物を当てる ($EXTRA_PATCH)"
 	patch -p1 -f -i "$EXTRA_PATCH" </dev/null
@@ -573,7 +581,7 @@ BZ=output/bazel
 if [ -x output/bazel.exe ]; then BZ=output/bazel.exe; fi
 if [ -x "$BZ" ] && "$BZ" version 2>/dev/null | grep -q '^Build label:'; then
 	"$BZ" version | grep 'Build label'
-	echo "RESULT master-sh $OS $SH_BIN OK: 枝の dist を sh だけで bootstrap できた"
+	echo "RESULT master-sh $OS $SH_BIN OK: 枝の dist を bootstrap できた"
 else
 	echo "RESULT master-sh $OS $SH_BIN NG"
 	# compile.sh が binary を作ったのに version が答えないことがある
