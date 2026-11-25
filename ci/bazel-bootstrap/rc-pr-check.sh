@@ -278,6 +278,30 @@ else
 		fail=1
 	fi
 fi
+# C++20 module の scan (deps_scanner_wrapper.sh)。gcc は 14 から scan できる。
+# clang は clang-scan-deps が要り、BSD の base には無いので Linux だけで見る。
+# 見るのは scan の action だけで、その後の compile が通るかは問わない。
+if [ "$OS" = Linux ]; then
+	mkdir -p "$T/mod"
+	printf 'export module m;\nexport int f() { return 42; }\n' > "$T/mod/m.cppm"
+	cat > "$T/mod/BUILD.bazel" <<'M'
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+cc_library(name = "m", module_interfaces = ["m.cppm"], features = ["cpp_modules"], copts = ["-std=c++20"], tags = ["manual"])
+M
+	"$B" build --repository_cache="$REPO_CACHE" ${EXTRA_BAZEL_ARGS:-} --repo_contents_cache= \
+		--override_module=rules_cc="$RC" --experimental_cpp_modules //mod:m > "$T/mod.log" 2>&1
+	if grep -q 'Deps scanning .* failed' "$T/mod.log"; then
+		grep -E 'Deps scanning|env:' "$T/mod.log" | cut -c1-200 | head -3
+		say "module scan NG: $(grep -o 'Deps scanning .* failed: ([^)]*)' "$T/mod.log" | head -1)"
+		fail=1
+	elif [ -n "$(find -L "$T/bazel-out" -name '*.ddi' 2>/dev/null | head -1)" ]; then
+		say "module scan OK: .ddi が出来た"
+	else
+		tail -8 "$T/mod.log"
+		say "module scan 測れない"
+	fi
+fi
 if [ -n "${BASHLOG:-}" ] && [ -f "$BASHLOG" ]; then
 	nb1=$(wc -l < "$BASHLOG" | tr -d ' ')
 	tail -n +$((nb0 + 1)) "$BASHLOG" | head -5
