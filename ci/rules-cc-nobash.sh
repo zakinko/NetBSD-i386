@@ -11,7 +11,7 @@ ls -l "$(dirname "$CLANG")/clang-scan-deps"
 rm -f /bin/bash /usr/bin/bash
 if command -v bash; then echo "bash が残っている"; exit 1; fi
 
-T=/t; mkdir -p $T/log.d
+T=/t; mkdir -p $T/log.d /ob
 cat > $T/MODULE.bazel <<'M'
 module(name = "t")
 bazel_dep(name = "rules_cc", version = "0.2.22")
@@ -46,7 +46,7 @@ for r in $REFS; do
 		show() { grep -E 'Exit|env:|ERROR|rror:' $LOG | cut -c1-260 | head -6; }
 		rc=0; build //:usem > $LOG 2>&1 || rc=$?
 		if [ $rc = 0 ] && ./bazel-bin/usem; then say "module: 建って走った"; else say "module: 落ちた rc=$rc"; show; fi
-		L=$($B info output_base 2>/dev/null)/external
+		L=$($B info output_base 2>/dev/null || :)/external
 		for s in deps_scanner_wrapper.sh validate_static_library.sh; do f=$(find "$L" -name $s 2>/dev/null | head -1); if [ -n "$f" ]; then say "$s $(head -1 "$f")"; fi; done
 		say "ddi $(find -L bazel-out/ -name '*.ddi' 2>/dev/null | wc -l)"
 		rc=0; build //:ok > $LOG 2>&1 || rc=$?
