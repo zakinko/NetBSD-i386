@@ -41,7 +41,7 @@ for b in test-master test-889; do
 	for mk in "$GMAKE" "$BSDMAKE"; do
 		for where in in out; do
 			B=$W/$b.$where.$(basename $mk); rm -rf "$B"
-			if [ $where = in ]; then cp -R "$W/$b/src" "$B"; c=./configure; else mkdir "$B"; c=$W/$b/src/configure; fi
+			if [ $where = in ]; then cp -Rp "$W/$b/src" "$B"; c=./configure; else mkdir "$B"; c=$W/$b/src/configure; fi
 			# 外で組むには、木の中が configure 済みであってはならない
 			if [ $where = out ] && [ -f "$W/$b/src/Makefile" ]; then (cd "$W/$b/src" && $GMAKE distclean >/dev/null 2>&1); fi
 			(cd "$B" && $c >"$W/c" 2>&1) || { say "$b $mk $where configure NG"; tail -5 "$W/c"; continue; }
@@ -62,7 +62,7 @@ for b in test-master test-889; do
 	cmp -s "$W/l.$(basename $GMAKE)" "$W/l.$(basename $BSDMAKE)" && say "$b distdir: 二つの make で同じ" || { say "$b distdir: 違う"; diff "$W/l.$(basename $GMAKE)" "$W/l.$(basename $BSDMAKE)" | head -8; }
 done
 # 全体が BSD make で建つか
-B=$W/full; cp -R "$W/test-889/src" "$B"
+B=$W/full; cp -Rp "$W/test-889/src" "$B"
 (cd "$B" && { [ -f Makefile ] || ./configure >/dev/null 2>&1; } && $BSDMAKE >"$W/f" 2>&1 && $BSDMAKE DESTDIR="$B/dest" install >>"$W/f" 2>&1); say "test-889 $BSDMAKE 全体の build と install rc=$? lens=$(find "$B/dest" -name '*.aug' 2>/dev/null | wc -l | tr -d ' ')"
 tail -4 "$W/f"
 exit 0
