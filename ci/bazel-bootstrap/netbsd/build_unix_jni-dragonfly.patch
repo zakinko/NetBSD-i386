@@ -4,7 +4,7 @@ Applies on top of build_unix_jni-netbsd.patch.  CI only for now.
 
 --- a/scripts/bootstrap/build_unix_jni.sh
 +++ b/scripts/bootstrap/build_unix_jni.sh
-@@ -58,6 +58,10 @@
+@@ -65,6 +65,10 @@
    SOURCES="$SOURCES src/main/native/unix_jni_bsd.cc"
    set -- "$@" "-I${JAVA_HOME}/include/netbsd"
    ;;
@@ -14,4 +14,13 @@ Applies on top of build_unix_jni-netbsd.patch.  CI only for now.
 +  ;;
  esac
  
- # shellcheck disable=SC2086  # $SOURCES is a list
+ RUST_LIBS=""
+@@ -76,7 +80,7 @@
+   done < "${RUST_LINK_FLAGS}"
+   case "$PLATFORM" in
+     linux) RUST_LIBS="-ldl -lpthread" ;;
+-    freebsd|netbsd|openbsd) RUST_LIBS="-lpthread" ;;
++    dragonfly|freebsd|netbsd|openbsd) RUST_LIBS="-lpthread" ;;
+   esac
+   # shellcheck disable=SC2086  # $SOURCES and $RUST_LIBS are lists
+   c++ "$@" $SOURCES "${RUST_LIB}" $RUST_LIBS -o "$OUT"

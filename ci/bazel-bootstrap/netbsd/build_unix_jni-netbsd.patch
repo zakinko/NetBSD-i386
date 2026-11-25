@@ -1,6 +1,6 @@
 --- a/scripts/bootstrap/build_unix_jni.sh
 +++ b/scripts/bootstrap/build_unix_jni.sh
-@@ -54,6 +54,10 @@
+@@ -61,6 +61,10 @@
    SOURCES="$SOURCES src/main/native/unix_jni_bsd.cc"
    set -- "$@" "-I${JAVA_HOME}/include/freebsd"
    ;;
@@ -10,4 +10,13 @@
 +  ;;
  esac
  
- # shellcheck disable=SC2086  # $SOURCES is a list
+ RUST_LIBS=""
+@@ -72,7 +76,7 @@
+   done < "${RUST_LINK_FLAGS}"
+   case "$PLATFORM" in
+     linux) RUST_LIBS="-ldl -lpthread" ;;
+-    freebsd|openbsd) RUST_LIBS="-lpthread" ;;
++    freebsd|netbsd|openbsd) RUST_LIBS="-lpthread" ;;
+   esac
+   # shellcheck disable=SC2086  # $SOURCES and $RUST_LIBS are lists
+   c++ "$@" $SOURCES "${RUST_LIB}" $RUST_LIBS -o "$OUT"
