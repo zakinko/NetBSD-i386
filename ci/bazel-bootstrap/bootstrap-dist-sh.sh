@@ -213,6 +213,24 @@ MOD
 	;;
 esac
 
+# 2026-11-20 から bootstrap に Rust が要る。OpenBSD / NetBSD / DragonFly は
+# rules_rust の拡張子の表に無い (run 45531987032 の OpenBSD) か、rules_rs が呼ぶ
+# bazel_lib の repo_utils が "unrecognized os" で断る (NetBSD と DragonFly)。
+case "$OS" in
+OpenBSD|NetBSD|DragonFly)
+	if grep -q '@rules_rs//rs:rules_rust.bzl' MODULE.bazel; then
+		echo "=== rules_rust と bazel_lib に BSD の当て物を差す"
+		grep -q 'module_name = "bazel_lib"' MODULE.bazel && { echo "bazel_lib の override が既に在る"; exit 1; }
+		mkdir -p toolchain_local
+		[ -f toolchain_local/BUILD ] || printf 'exports_files(glob(["*.patch"]))\n' > toolchain_local/BUILD
+		cp "$CI_DIR/bazel_lib-bsd.patch" "$CI_DIR/rules_rust-bsd.patch" "$CI_DIR/rules_rust-dragonfly.patch" toolchain_local/
+		RR='"//toolchain_local:rules_rust-bsd.patch"'
+		# @platforms//os:dragonfly は platforms #143 (上で差している) が足す
+		[ "$OS" = DragonFly ] && RR="$RR, \"//toolchain_local:rules_rust-dragonfly.patch\""
+		printf '\nsingle_version_override(\n    module_name = "bazel_lib",\n    patch_strip = 1,\n    patches = ["//toolchain_local:bazel_lib-bsd.patch"],\n)\nrules_rust.patch(\n    patches = [%s],\n    strip = 1,\n)\n' "$RR" >> MODULE.bazel
+	fi ;;
+esac
+
 # MidnightBSD は __FreeBSD__ も定義する FreeBSD 派生で、JDK は FreeBSD 向けの
 # build (include/freebsd)。uname -s だけが違うので、綴りを知る箇所を一つずつ
 # 教えて、次にどこで止まるかを見る。

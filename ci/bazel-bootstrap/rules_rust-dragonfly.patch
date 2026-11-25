@@ -1,0 +1,11 @@
+--- a/rust/platform/triple_mappings.bzl
++++ b/rust/platform/triple_mappings.bzl
+@@ -166,7 +166,7 @@
+     "android": "android",
+     "bitrig": None,
+     "darwin": "osx",
+-    "dragonfly": None,
++    "dragonfly": "dragonfly",
+     "eabi": "none",
+     "eabihf": "none",
+     "emscripten": "emscripten",

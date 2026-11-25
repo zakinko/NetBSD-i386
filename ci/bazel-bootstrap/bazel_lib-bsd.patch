@@ -1,0 +1,45 @@
+diff --git a/lib/private/repo_utils.bzl b/lib/private/repo_utils.bzl
+index aeee188..4f1f837 100644
+--- a/lib/private/repo_utils.bzl
++++ b/lib/private/repo_utils.bzl
+@@ -12,6 +12,18 @@ def _is_freebsd(rctx):
+     """Returns true if the host operating system is FreeBSD"""
+     return rctx.os.name.lower().startswith("freebsd")
+ 
++def _is_netbsd(rctx):
++    """Returns true if the host operating system is NetBSD"""
++    return rctx.os.name.lower().startswith("netbsd")
++
++def _is_openbsd(rctx):
++    """Returns true if the host operating system is OpenBSD"""
++    return rctx.os.name.lower().startswith("openbsd")
++
++def _is_dragonfly(rctx):
++    """Returns true if the host operating system is DragonFly BSD"""
++    return rctx.os.name.lower().startswith("dragonfly")
++
+ def _is_windows(rctx):
+     """Returns true if the host operating system is Windows"""
+     return rctx.os.name.lower().find("windows") != -1
+@@ -23,7 +35,7 @@ def _os(rctx):
+         rctx: rctx
+ 
+     Returns:
+-        The string "windows", "linux", "freebsd" or "darwin" that describes the host os
++        The string "windows", "linux", "freebsd", "netbsd", "openbsd", "dragonfly" or "darwin" that describes the host os
+     """
+     if _is_darwin(rctx):
+         return "darwin"
+@@ -31,6 +43,12 @@ def _os(rctx):
+         return "linux"
+     if _is_freebsd(rctx):
+         return "freebsd"
++    if _is_netbsd(rctx):
++        return "netbsd"
++    if _is_openbsd(rctx):
++        return "openbsd"
++    if _is_dragonfly(rctx):
++        return "dragonfly"
+     if _is_windows(rctx):
+         return "windows"
+     fail("unrecognized os")
