@@ -1,0 +1,34 @@
+# rules_cc の toolchain の script を、bash を外した Debian で走らせる。
+# C++20 module の deps scanner の wrapper (gcc 用と clang 用) は BSD の base では
+# 走らせられない (clang-scan-deps が無い) ので、ここで測る。
+name: rules-cc-nobash
+on:
+  workflow_dispatch:
+    inputs:
+      refs:
+        description: 'zakinko/rules_cc の枝 (空白区切り)。main は bazelbuild/rules_cc の main'
+        default: 'main posix-toolchain-scripts'
+      bazel:
+        default: '9.3.3'
+permissions:
+  contents: read
+concurrency:
+  group: rules-cc-nobash-${{ inputs.refs }}
+  cancel-in-progress: true
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: 走らせる
+        run: |
+          curl -fsSL -o bazel "https://github.com/bazelbuild/bazel/releases/download/${{ inputs.bazel }}/bazel-${{ inputs.bazel }}-linux-x86_64"
+          chmod +x bazel
+          for r in ${{ inputs.refs }}; do
+            o=zakinko; [ "$r" = main ] && o=bazelbuild
+            mkdir -p "rc/$r"
+            curl -fsSL "https://github.com/$o/rules_cc/archive/refs/heads/$r.tar.gz" | tar xz -C "rc/$r" --strip-components 1
+            echo "$r $(git ls-remote https://github.com/$o/rules_cc.git "refs/heads/$r" | cut -f1)"
+          done
+          docker run --rm -v "$PWD:/w" -e REFS="${{ inputs.refs }}" debian:stable sh /w/ci/rules-cc-nobash.sh
