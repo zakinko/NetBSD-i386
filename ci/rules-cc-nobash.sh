@@ -39,9 +39,9 @@ LOG=$T/log.d/log
 for r in $REFS; do
 	for c in gcc clang; do
 		case $c in gcc) CC=/usr/bin/gcc ;; clang) CC=$CLANG ;; esac
-		export CC
+		export CC; X=; [ $c = gcc ] && X="--cxxopt=-fmodules-ts"
 		B="/w/bazel --batch --output_user_root=/ob/$r-$c"
-		build() { $B build --experimental_cpp_modules --override_module=rules_cc=/w/rc/$r --repo_env=CC="$CC" --verbose_failures "$@"; }
+		build() { $B build --experimental_cpp_modules --override_module=rules_cc=/w/rc/$r --repo_env=CC="$CC" --verbose_failures $X "$@"; }
 		say() { echo "RESULT $r $c $*"; }
 		show() { grep -E 'Exit|env:|ERROR|rror:' $LOG | cut -c1-260 | head -6; }
 		rc=0; build //:usem > $LOG 2>&1 || rc=$?
